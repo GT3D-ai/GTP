@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Projects</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      min-height: 100vh;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .top-bar h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f0f3f6;
+    }
+
+    .top-bar a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .top-bar a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .project-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      text-decoration: none;
+      color: #e1e4e8;
+      display: block;
+    }
+
+    .project-card:hover {
+      border-color: #58a6ff;
+      background: #1c2333;
+    }
+
+    .project-card-icon {
+      font-size: 1.8rem;
+      margin-bottom: 10px;
+    }
+
+    .project-card-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: #484f58;
+      padding: 48px 24px;
+    }
+
+    .placeholder-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+
+    .placeholder p {
+      font-size: 0.95rem;
+    }
+
+    .error-msg {
+      color: #f85149;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>Projects</h1>
+    <a href="/index.html">Upload Photos</a>
+  </div>
+
+  <div class="container">
+    <div id="projectList">
+      <div class="placeholder">
+        <p>Loading projects...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const projectList = document.getElementById("projectList");
+
+    async function loadProjects() {
+      try {
+        const res = await fetch("/api/projects");
+        if (!res.ok) throw new Error("Failed to load projects");
+        const projects = await res.json();
+
+        if (projects.length === 0) {
+          projectList.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128194;</div><p>No projects found. Create one using:<br><code style="color:#8b949e">node new-project.js &lt;project-name&gt;</code></p></div>';
+          return;
+        }
+
+        const grid = document.createElement("div");
+        grid.className = "project-grid";
+
+        projects.forEach((name) => {
+          const card = document.createElement("a");
+          card.className = "project-card";
+          card.href = `/viewer.html?project=${encodeURIComponent(name)}`;
+          card.innerHTML = `
+            <div class="project-card-icon">&#128194;</div>
+            <div class="project-card-name">${name}</div>
+          `;
+          card.addEventListener("click", (e) => e.preventDefault());
+
+          const links = document.createElement("div");
+          links.style.cssText = "display:flex; gap:12px; margin-top:10px; font-size:0.8rem;";
+          links.innerHTML = `
+            <a href="/viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">360 Photos</a>
+            <a href="/images.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">2D Images</a>
+          `;
+          card.appendChild(links);
+          card.style.cursor = "default";
+          grid.appendChild(card);
+        });
+
+        projectList.innerHTML = "";
+        projectList.appendChild(grid);
+      } catch (err) {
+        projectList.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
+    }
+
+    loadProjects();
+  </script>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>360 Photo Viewer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .top-bar h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f0f3f6;
+    }
+
+    .top-bar a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .top-bar a:hover { text-decoration: underline; }
+
+    .level-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 20px;
+      background: #0d1117;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .level-bar label {
+      font-size: 0.8rem;
+      color: #8b949e;
+      flex-shrink: 0;
+    }
+
+    .level-select {
+      padding: 6px 10px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e1e4e8;
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 160px;
+    }
+
+    .level-select:focus { border-color: #58a6ff; }
+
+    .create-level-btn {
+      background: none;
+      border: 1px solid #30363d;
+      color: #58a6ff;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .create-level-btn:hover { background: #161b22; border-color: #58a6ff; }
+
+    .main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 280px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 14px 16px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 2px;
+    }
+
+    .file-item:hover { background: #21262d; }
+    .file-item.active { background: #1c2333; border: 1px solid #58a6ff; }
+
+    .file-item-icon {
+      width: 32px;
+      height: 32px;
+      background: #21262d;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .file-item.active .file-item-icon { background: #1a3a5c; }
+
+    .file-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-item-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-item-meta {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-top: 2px;
+    }
+
+    .assign-select {
+      padding: 3px 6px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e1e4e8;
+      font-size: 0.7rem;
+      outline: none;
+      flex-shrink: 0;
+      max-width: 100px;
+    }
+
+    .assign-select:focus { border-color: #58a6ff; }
+
+    .viewer-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    #panorama {
+      width: 100%;
+      height: 100%;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: #484f58;
+    }
+
+    .placeholder-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+
+    .placeholder p {
+      font-size: 0.95rem;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 17, 23, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      color: #8b949e;
+      font-size: 0.95rem;
+    }
+
+    .loading-overlay.hidden { display: none; }
+
+    .error-msg {
+      color: #f85149;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .file-list::-webkit-scrollbar { width: 6px; }
+    .file-list::-webkit-scrollbar-track { background: transparent; }
+    .file-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1 id="pageTitle">360 Photo Viewer</h1>
+    <div style="display:flex; gap:16px;">
+      <a href="/projects.html">Projects</a>
+      <a id="imagesLink" href="/images.html">2D Images</a>
+      <a id="uploadLink" href="/index.html">Upload Photos</a>
+    </div>
+  </div>
+
+  <div class="level-bar" id="levelBar" style="display:none;">
+    <label for="levelSelect">Level:</label>
+    <select class="level-select" id="levelSelect">
+      <option value="">All Levels</option>
+    </select>
+    <button class="create-level-btn" id="createLevelBtn">+ Create Level</button>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">Images in Bucket</div>
+      <div class="file-list" id="fileList">
+        <div class="placeholder" style="padding: 24px;">
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="viewer-area">
+      <div id="panorama">
+        <div class="placeholder" id="viewerPlaceholder">
+          <div class="placeholder-icon">&#127758;</div>
+          <p>Select an image to view</p>
+        </div>
+      </div>
+      <div class="loading-overlay hidden" id="loadingOverlay">Loading panorama...</div>
+    </div>
+  </div>
+
+  <script>
+    const fileList = document.getElementById("fileList");
+    const panoramaEl = document.getElementById("panorama");
+    const viewerPlaceholder = document.getElementById("viewerPlaceholder");
+    const loadingOverlay = document.getElementById("loadingOverlay");
+
+    let viewer = null;
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const project = params.get("project");
+    const levelSelect = document.getElementById("levelSelect");
+    const levelBar = document.getElementById("levelBar");
+    const createLevelBtn = document.getElementById("createLevelBtn");
+    let currentLevel = "";
+    let cachedLevels = [];
+
+    if (project) {
+      document.getElementById("pageTitle").textContent = `360 Viewer — ${project}`;
+      updateUploadLink();
+      levelBar.style.display = "flex";
+      loadLevels();
+    }
+
+    function updateUploadLink() {
+      let href = `/index.html?project=${encodeURIComponent(project)}`;
+      if (currentLevel) href += `&level=${encodeURIComponent(currentLevel)}`;
+      document.getElementById("uploadLink").href = href;
+      document.getElementById("imagesLink").href = `/images.html?project=${encodeURIComponent(project)}`;
+    }
+
+    async function loadLevels() {
+      try {
+        const res = await fetch(`/api/levels?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        const levels = await res.json();
+        cachedLevels = levels;
+        levelSelect.innerHTML = '<option value="">All Levels</option>';
+        levels.forEach((lvl) => {
+          const opt = document.createElement("option");
+          opt.value = lvl;
+          opt.textContent = lvl;
+          levelSelect.appendChild(opt);
+        });
+        if (currentLevel) levelSelect.value = currentLevel;
+      } catch {}
+    }
+
+    levelSelect.addEventListener("change", () => {
+      currentLevel = levelSelect.value;
+      updateUploadLink();
+      loadFiles();
+    });
+
+    createLevelBtn.addEventListener("click", async () => {
+      const name = prompt("Enter level name:");
+      if (!name || !name.trim()) return;
+      try {
+        const res = await fetch("/api/create-level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, level: name.trim() }),
+        });
+        if (!res.ok) throw new Error("Failed to create level");
+        await loadLevels();
+        levelSelect.value = name.trim();
+        currentLevel = name.trim();
+        updateUploadLink();
+        loadFiles();
+      } catch (err) {
+        alert("Error creating level: " + err.message);
+      }
+    });
+
+    async function loadFiles() {
+      try {
+        let url = "/api/files";
+        const qp = new URLSearchParams();
+        if (project) qp.set("project", project);
+        if (currentLevel) qp.set("level", currentLevel);
+        if (qp.toString()) url += "?" + qp.toString();
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to load files");
+        const files = await res.json();
+
+        // Also fetch unassigned files when showing all levels
+        let unassignedNames = new Set();
+        if (project && !currentLevel) {
+          const uRes = await fetch(`/api/files?project=${encodeURIComponent(project)}&unassigned=true`);
+          if (uRes.ok) {
+            const uFiles = await uRes.json();
+            uFiles.forEach((f) => unassignedNames.add(f.name));
+          }
+        }
+
+        if (files.length === 0) {
+          fileList.innerHTML = '<div class="placeholder" style="padding:24px"><p>No photos in this project</p></div>';
+          return;
+        }
+
+        fileList.innerHTML = "";
+        files.forEach((file) => {
+          const isUnassigned = unassignedNames.has(file.name);
+          const item = document.createElement("div");
+          item.className = "file-item";
+
+          let assignHtml = "";
+          if (isUnassigned && cachedLevels.length > 0) {
+            assignHtml = `<select class="assign-select" data-file="${file.name}" title="Assign to level">
+              <option value="">Assign...</option>
+              ${cachedLevels.map((l) => `<option value="${l}">${l}</option>`).join("")}
+            </select>`;
+          }
+
+          item.innerHTML = `
+            <div class="file-item-icon">&#127758;</div>
+            <div class="file-item-info">
+              <div class="file-item-name" title="${file.displayName}">${file.displayName}</div>
+              <div class="file-item-meta">${formatSize(file.size)}</div>
+            </div>
+            ${assignHtml}
+          `;
+
+          // Click on the item (not the select) to load panorama
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".assign-select")) return;
+            loadPanorama(file.name, item);
+          });
+
+          // Handle assign dropdown change
+          const sel = item.querySelector(".assign-select");
+          if (sel) {
+            sel.addEventListener("change", async (e) => {
+              e.stopPropagation();
+              const level = sel.value;
+              if (!level) return;
+              sel.disabled = true;
+              try {
+                const r = await fetch("/api/assign-level", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ file: file.name, project, level }),
+                });
+                if (!r.ok) throw new Error("Failed to assign");
+                loadFiles();
+              } catch (err) {
+                alert("Error assigning level: " + err.message);
+                sel.disabled = false;
+                sel.value = "";
+              }
+            });
+          }
+
+          fileList.appendChild(item);
+        });
+      } catch (err) {
+        fileList.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
+    }
+
+    function isPanoramic(url) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const ratio = img.width / img.height;
+          resolve(ratio >= 1.8 && ratio <= 2.2);
+        };
+        img.onerror = () => resolve(false);
+        img.src = url;
+      });
+    }
+
+    function showViewerError(msg) {
+      if (viewer) {
+        viewer.destroy();
+        viewer = null;
+      }
+      panoramaEl.innerHTML = `<div class="placeholder"><div class="placeholder-icon">&#128247;</div><p style="color:#f85149">${msg}</p></div>`;
+      loadingOverlay.classList.add("hidden");
+      setTimeout(() => {
+        panoramaEl.innerHTML = `<div class="placeholder" id="viewerPlaceholder"><div class="placeholder-icon">&#127758;</div><p>Select an image to view</p></div>`;
+        document.querySelectorAll(".file-item.active").forEach((el) => el.classList.remove("active"));
+      }, 3000);
+    }
+
+    async function loadPanorama(fileName, itemEl) {
+      // Update active state
+      document.querySelectorAll(".file-item.active").forEach((el) => el.classList.remove("active"));
+      itemEl.classList.add("active");
+
+      // Show loading
+      viewerPlaceholder.style.display = "none";
+      loadingOverlay.classList.remove("hidden");
+
+      try {
+        const url = `/api/image?file=${encodeURIComponent(fileName)}`;
+
+        const panoramic = await isPanoramic(url);
+        if (!panoramic) {
+          showViewerError("The selected file is not a panoramic image");
+          return;
+        }
+
+        // Destroy previous viewer
+        if (viewer) {
+          viewer.destroy();
+          viewer = null;
+        }
+
+        viewer = pannellum.viewer("panorama", {
+          type: "equirectangular",
+          panorama: url,
+          autoLoad: true,
+          compass: true,
+          showControls: true,
+          mouseZoom: true,
+          autoRotate: -2,
+          loadedCallback: () => {
+            loadingOverlay.classList.add("hidden");
+          },
+        });
+
+        // Also hide loading after a timeout in case callback doesn't fire
+        setTimeout(() => loadingOverlay.classList.add("hidden"), 8000);
+      } catch (err) {
+        loadingOverlay.classList.add("hidden");
+        panoramaEl.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
+    }
+
+    loadFiles();
+  </script>
+</body>
+</html>
