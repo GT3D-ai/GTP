@@ -696,7 +696,26 @@
     async function init() {
       await Promise.all([loadFloorPlans(), load360Files(), loadMappings(), loadLevels()]);
       if (!mappings.floorPlans) mappings.floorPlans = {};
+      applyDefaultLevel();
       refreshFloorPlanDisplay();
+      render360List();
+      renderPins();
+    }
+
+    // Pick the level to show on first open: session-remembered for this project,
+    // else case-insensitive "level 1", else leave as All Levels.
+    function applyDefaultLevel() {
+      const key = `mapEditor.level.${project}`;
+      const remembered = sessionStorage.getItem(key);
+      let target = "";
+      if (remembered && cachedLevels.includes(remembered)) {
+        target = remembered;
+      } else {
+        const l1 = cachedLevels.find((l) => l.toLowerCase() === "level 1");
+        if (l1) target = l1;
+      }
+      currentLevelFilter = target;
+      levelFilter.value = target;
     }
 
     function refreshFloorPlanDisplay() {
@@ -731,6 +750,8 @@
 
     levelFilter.addEventListener("change", () => {
       currentLevelFilter = levelFilter.value;
+      // Remember the choice for the rest of the session
+      sessionStorage.setItem(`mapEditor.level.${project}`, currentLevelFilter);
       resetZoom();
       refreshFloorPlanDisplay();
       render360List();
