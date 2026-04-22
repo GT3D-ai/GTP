@@ -92,15 +92,15 @@
     }
     .pin:hover .pin-tooltip { display: block; }
 
-    /* Bottom level bar */
+    /* Level bar — above the map */
     .level-bar {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.75rem;
-      padding: 0.75rem var(--space-md);
+      padding: 0.5rem var(--space-md);
       background: var(--bg-elevated);
-      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
       flex-shrink: 0;
     }
     .level-bar label {
@@ -234,6 +234,13 @@
     </div>
   </header>
 
+  <div class="level-bar">
+    <label for="levelSelect">Level</label>
+    <select id="levelSelect">
+      <option value="">Loading…</option>
+    </select>
+  </div>
+
   <div class="map-area" id="mapArea">
     <div class="placeholder" id="mapPlaceholder">
       <div class="placeholder-icon">&#128506;</div>
@@ -243,13 +250,6 @@
       <img id="floorPlanImg" alt="Floor plan">
     </div>
     <div class="zoom-indicator" id="zoomIndicator">100%</div>
-  </div>
-
-  <div class="level-bar">
-    <label for="levelSelect">Level</label>
-    <select id="levelSelect">
-      <option value="">Loading…</option>
-    </select>
   </div>
 
   <div class="viewer-modal" id="viewerModal">
