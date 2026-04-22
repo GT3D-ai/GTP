@@ -105,36 +105,38 @@
     }
     .pin:hover .pin-tooltip { display: block; }
 
-    /* Level bar — above the map */
+    /* Level bar — above the map, visually part of the map region */
     .level-bar {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.75rem;
+      gap: 0.5rem;
       padding: 0.5rem var(--space-md);
-      background: var(--bg-elevated);
-      border-bottom: 1px solid var(--line);
+      margin-top: 8px; /* small buffer between header and level selector */
+      background: var(--secondary-block);
       flex-shrink: 0;
     }
     .level-bar label {
-      font-size: 0.72rem;
+      font-size: 0.65rem;
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--ink-muted);
+      color: rgba(255, 255, 255, 0.55);
     }
     .level-bar select {
-      padding: 0.4rem 0.65rem;
-      background: var(--bg-elevated);
-      border: 1px solid var(--line-strong);
-      color: var(--ink);
+      padding: 0.25rem 0.5rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
       font-family: var(--font-sans);
-      font-size: 0.8125rem;
+      font-size: 0.75rem;
       outline: none;
-      min-width: 160px;
-      transition: border-color var(--transition);
+      min-width: 120px;
+      transition: border-color var(--transition), background var(--transition);
     }
-    .level-bar select:focus { border-color: var(--ink); }
+    .level-bar select:hover { background: rgba(255, 255, 255, 0.14); }
+    .level-bar select:focus { border-color: var(--accent); }
+    .level-bar select option { background: var(--secondary-block); color: #fff; }
 
     /* Zoom indicator */
     .zoom-indicator {
