@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map Editor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .top-bar h1 { font-size: 1.1rem; font-weight: 600; color: #f0f3f6; }
+    .top-bar a { color: #58a6ff; text-decoration: none; font-size: 0.85rem; }
+    .top-bar a:hover { text-decoration: underline; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 20px;
+      background: #0d1117;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .toolbar label { font-size: 0.8rem; color: #8b949e; flex-shrink: 0; }
+
+    .toolbar select {
+      padding: 6px 10px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e1e4e8;
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 200px;
+    }
+
+    .toolbar select:focus { border-color: #58a6ff; }
+
+    .save-status {
+      font-size: 0.75rem;
+      color: #3fb950;
+      margin-left: auto;
+    }
+
+    .main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 260px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 12px 16px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .sidebar-hint {
+      padding: 8px 16px;
+      font-size: 0.7rem;
+      color: #484f58;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .drag-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: grab;
+      transition: background 0.15s;
+      margin-bottom: 2px;
+      font-size: 0.8rem;
+    }
+
+    .drag-item:hover { background: #21262d; }
+    .drag-item:active { cursor: grabbing; }
+
+    .drag-item-icon {
+      width: 28px; height: 28px;
+      background: #21262d;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .drag-item-name {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .drag-item.placed { opacity: 0.4; }
+
+    .drag-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .drag-item-actions select {
+      padding: 2px 4px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e1e4e8;
+      font-size: 0.65rem;
+      outline: none;
+      max-width: 80px;
+      cursor: pointer;
+    }
+
+    .drag-item-actions select:focus { border-color: #58a6ff; }
+
+    .drag-item-actions .delete-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: #8b949e;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .drag-item-actions .delete-btn:hover { color: #f85149; border-color: #f8514966; background: #f851490d; }
+
+    .map-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: #0a0c10;
+    }
+
+    .map-container {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .map-container img {
+      max-width: 100%;
+      max-height: calc(100vh - 100px);
+      display: block;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .map-container.drop-active img {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: #484f58;
+    }
+
+    .placeholder-icon { font-size: 3rem; margin-bottom: 12px; }
+    .placeholder p { font-size: 0.95rem; }
+
+    .pin {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #ffffff;
+      border: 2px solid #0f1117;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 5;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+      transition: background 0.3s, box-shadow 0.3s, transform 0.15s;
+    }
+
+    .pin:hover {
+      transform: translate(-50%, -50%) scale(1.4);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+    }
+
+    .pin.movable {
+      background: #ffd700;
+      border-color: #b8960f;
+      box-shadow: 0 0 10px rgba(255, 215, 0, 0.7);
+      cursor: grab;
+    }
+
+    .pin.movable:hover {
+      box-shadow: 0 0 16px rgba(255, 215, 0, 0.9);
+    }
+
+    .pin.dragging {
+      background: #ffd700;
+      border-color: #b8960f;
+      box-shadow: 0 0 16px rgba(255, 215, 0, 0.9);
+      cursor: grabbing;
+      z-index: 20;
+      transform: translate(-50%, -50%) scale(1.6);
+    }
+
+    .pin-tooltip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      color: #e1e4e8;
+      white-space: nowrap;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    .pin:hover .pin-tooltip { display: block; }
+
+    .pin-context-menu {
+      position: fixed;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 4px 0;
+      z-index: 100;
+      min-width: 140px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      display: none;
+    }
+
+    .pin-context-menu.visible { display: block; }
+
+    .pin-context-menu-header {
+      padding: 6px 12px;
+      font-size: 0.7rem;
+      color: #484f58;
+      border-bottom: 1px solid #21262d;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .pin-context-menu-item {
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.1s;
+    }
+
+    .pin-context-menu-item:hover { background: #21262d; }
+
+    .pin-context-menu-item.move { color: #ffd700; }
+    .pin-context-menu-item.remove { color: #f85149; }
+    .pin-context-menu-item.view { color: #58a6ff; }
+
+    .file-list::-webkit-scrollbar { width: 6px; }
+    .file-list::-webkit-scrollbar-track { background: transparent; }
+    .file-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+    .thumb-popover {
+      position: fixed;
+      z-index: 200;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      display: none;
+    }
+
+    .thumb-popover.visible { display: block; }
+
+    .thumb-popover img {
+      width: 120px;
+      height: 120px;
+      border-radius: 4px;
+      display: block;
+      object-fit: cover;
+    }
+
+    .thumb-popover .thumb-label {
+      font-size: 0.65rem;
+      color: #8b949e;
+      text-align: center;
+      margin-top: 4px;
+      max-width: 120px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .drag-item-name { cursor: pointer; }
+    .drag-item-name:hover { color: #58a6ff; }
+
+    .pano-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 300;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pano-modal-overlay.visible { display: flex; }
+
+    .pano-modal {
+      width: 80vw;
+      height: 70vh;
+      background: #0f1117;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pano-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .pano-modal-title {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #e1e4e8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pano-modal-close {
+      background: none;
+      border: none;
+      color: #8b949e;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+
+    .pano-modal-close:hover { color: #e1e4e8; background: #21262d; }
+
+    .pano-modal-viewer {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .error-msg { color: #f85149; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1 id="pageTitle">Map Editor</h1>
+    <div style="display:flex; gap:16px;">
+      <a href="/projects.html">Projects</a>
+      <a id="viewerLink" href="/viewer.html">360 Viewer</a>
+      <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <label for="floorPlanSelect">Floor Plan:</label>
+    <select id="floorPlanSelect">
+      <option value="">Select a 2D image...</option>
+    </select>
+    <label for="levelFilter">Level:</label>
+    <select id="levelFilter">
+      <option value="">All Levels</option>
+    </select>
+    <span class="save-status" id="saveStatus"></span>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">360 Photos</div>
+      <div class="sidebar-hint">Drag onto floor plan to place</div>
+      <div class="file-list" id="fileList">
+        <div class="placeholder" style="padding:24px"><p>Loading...</p></div>
+      </div>
+    </div>
+
+    <div class="map-area" id="mapArea">
+      <div class="placeholder" id="mapPlaceholder">
+        <div class="placeholder-icon">&#128506;</div>
+        <p>Select a floor plan to begin</p>
+      </div>
+      <div class="map-container" id="mapContainer" style="display:none;">
+        <img id="floorPlanImg" alt="Floor plan">
+      </div>
+    </div>
+  </div>
+
+  <div class="pano-modal-overlay" id="panoModalOverlay">
+    <div class="pano-modal">
+      <div class="pano-modal-header">
+        <span class="pano-modal-title" id="panoModalTitle"></span>
+        <button class="pano-modal-close" id="panoModalClose">&times;</button>
+      </div>
+      <div class="pano-modal-viewer" id="panoModalViewer"></div>
+    </div>
+  </div>
+
+  <div class="thumb-popover" id="thumbPopover">
+    <img id="thumbPopoverImg" alt="Thumbnail">
+    <div class="thumb-label" id="thumbPopoverLabel"></div>
+  </div>
+
+  <div class="pin-context-menu" id="pinContextMenu">
+    <div class="pin-context-menu-header" id="pinContextName"></div>
+    <div class="pin-context-menu-item view" id="pinContextView">&#127758; View 360</div>
+    <div class="pin-context-menu-item move" id="pinContextMove">&#9995; Move</div>
+    <div class="pin-context-menu-item remove" id="pinContextRemove">&#10060; Remove</div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const project = params.get("project");
+
+    const floorPlanSelect = document.getElementById("floorPlanSelect");
+    const levelFilter = document.getElementById("levelFilter");
+    const mapPlaceholder = document.getElementById("mapPlaceholder");
+    const mapContainer = document.getElementById("mapContainer");
+    const floorPlanImg = document.getElementById("floorPlanImg");
+    const mapArea = document.getElementById("mapArea");
+    const fileList = document.getElementById("fileList");
+    const saveStatus = document.getElementById("saveStatus");
+
+    let mappings = { floorPlanImage: null, pins: [] };
+    let allFiles360 = [];
+    let cachedLevels = [];
+    let currentLevelFilter = "";
+
+    // ---- Panorama modal ----
+    const panoModalOverlay = document.getElementById("panoModalOverlay");
+    const panoModalTitle = document.getElementById("panoModalTitle");
+    const panoModalViewer = document.getElementById("panoModalViewer");
+    const panoModalClose = document.getElementById("panoModalClose");
+    let panoViewer = null;
+
+    function openPanoModal(fileName) {
+      const displayName = fileName.split("/").pop();
+      panoModalTitle.textContent = displayName;
+      panoModalOverlay.classList.add("visible");
+
+      if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+      panoModalViewer.innerHTML = "";
+
+      panoViewer = pannellum.viewer(panoModalViewer, {
+        type: "equirectangular",
+        panorama: `/api/image?file=${encodeURIComponent(fileName)}`,
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        mouseZoom: true,
+        autoRotate: -2,
+      });
+    }
+
+    function closePanoModal() {
+      panoModalOverlay.classList.remove("visible");
+      if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+      panoModalViewer.innerHTML = "";
+    }
+
+    panoModalClose.addEventListener("click", closePanoModal);
+    panoModalOverlay.addEventListener("click", (e) => {
+      if (e.target === panoModalOverlay) closePanoModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && panoModalOverlay.classList.contains("visible")) closePanoModal();
+    });
+
+    const thumbPopover = document.getElementById("thumbPopover");
+    const thumbPopoverImg = document.getElementById("thumbPopoverImg");
+    const thumbPopoverLabel = document.getElementById("thumbPopoverLabel");
+    let activeThumbFile = null;
+
+    function showThumbPopover(fileName, displayName, anchorEl) {
+      if (activeThumbFile === fileName) {
+        hideThumbPopover();
+        return;
+      }
+      activeThumbFile = fileName;
+      thumbPopoverImg.src = `/api/thumbnail?file=${encodeURIComponent(fileName)}`;
+      thumbPopoverLabel.textContent = displayName;
+
+      const rect = anchorEl.getBoundingClientRect();
+      thumbPopover.style.left = (rect.right + 8) + "px";
+      thumbPopover.style.top = rect.top + "px";
+      thumbPopover.classList.add("visible");
+
+      // Keep in viewport
+      requestAnimationFrame(() => {
+        const popRect = thumbPopover.getBoundingClientRect();
+        if (popRect.right > window.innerWidth) {
+          thumbPopover.style.left = (rect.left - popRect.width - 8) + "px";
+        }
+        if (popRect.bottom > window.innerHeight) {
+          thumbPopover.style.top = (window.innerHeight - popRect.height - 8) + "px";
+        }
+      });
+    }
+
+    function hideThumbPopover() {
+      thumbPopover.classList.remove("visible");
+      activeThumbFile = null;
+    }
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".drag-item-name") && !e.target.closest(".thumb-popover")) {
+        hideThumbPopover();
+      }
+    });
+
+    if (project) {
+      document.getElementById("pageTitle").textContent = `Map Editor — ${project}`;
+      document.getElementById("viewerLink").href = `/viewer.html?project=${encodeURIComponent(project)}`;
+      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
+      init();
+    }
+
+    async function init() {
+      await Promise.all([loadFloorPlans(), load360Files(), loadMappings(), loadLevels()]);
+      if (mappings.floorPlanImage) {
+        floorPlanSelect.value = mappings.floorPlanImage;
+        showFloorPlan(mappings.floorPlanImage);
+      }
+    }
+
+    async function loadLevels() {
+      try {
+        const res = await fetch(`/api/levels?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        const levels = await res.json();
+        cachedLevels = levels;
+        levelFilter.innerHTML = '<option value="">All Levels</option>';
+        levels.forEach((lvl) => {
+          const opt = document.createElement("option");
+          opt.value = lvl;
+          opt.textContent = lvl;
+          levelFilter.appendChild(opt);
+        });
+      } catch {}
+    }
+
+    levelFilter.addEventListener("change", () => {
+      currentLevelFilter = levelFilter.value;
+      render360List();
+    });
+
+    async function loadFloorPlans() {
+      try {
+        const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        const files = await res.json();
+        floorPlanSelect.innerHTML = '<option value="">Select a 2D image...</option>';
+        files.forEach((f) => {
+          const opt = document.createElement("option");
+          opt.value = f.name;
+          opt.textContent = f.displayName;
+          floorPlanSelect.appendChild(opt);
+        });
+      } catch {}
+    }
+
+    async function load360Files() {
+      try {
+        const res = await fetch(`/api/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        allFiles360 = await res.json();
+        render360List();
+      } catch {}
+    }
+
+    async function loadMappings() {
+      try {
+        const res = await fetch(`/api/mappings?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        mappings = await res.json();
+      } catch {}
+    }
+
+    async function saveMappings() {
+      saveStatus.textContent = "Saving...";
+      try {
+        const res = await fetch("/api/mappings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, data: mappings }),
+        });
+        if (!res.ok) throw new Error();
+        saveStatus.textContent = "Saved";
+        setTimeout(() => { saveStatus.textContent = ""; }, 2000);
+      } catch {
+        saveStatus.textContent = "Save failed";
+        saveStatus.style.color = "#f85149";
+        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = "#3fb950"; }, 3000);
+      }
+    }
+
+    function render360List() {
+      const placedSet = new Set(mappings.pins.map((p) => p.image360));
+      fileList.innerHTML = "";
+      allFiles360.forEach((file) => {
+        if (file.name.endsWith("/") || file.name.endsWith("mappings.json")) return;
+
+        // Filter by level
+        if (currentLevelFilter && project) {
+          const levelPrefix = project + "/" + currentLevelFilter + "/";
+          if (!file.name.startsWith(levelPrefix)) return;
+        }
+        const item = document.createElement("div");
+        item.className = "drag-item" + (placedSet.has(file.name) ? " placed" : "");
+        item.draggable = true;
+        item.dataset.file = file.name;
+        item.dataset.display = file.displayName;
+
+        // Determine file's current level from its path
+        let fileCurrentLevel = "";
+        if (project) {
+          const relPath = file.name.replace(project + "/", "");
+          const parts = relPath.split("/");
+          if (parts.length > 1) fileCurrentLevel = parts[0];
+        }
+
+        // Build level select
+        let levelHtml = "";
+        if (project && cachedLevels.length > 0) {
+          const options = cachedLevels
+            .filter((l) => l !== fileCurrentLevel)
+            .map((l) => `<option value="${l}">${l}</option>`)
+            .join("");
+          const unassignOpt = fileCurrentLevel ? `<option value="__unassign__">Unassigned</option>` : "";
+          const label = fileCurrentLevel ? "Move..." : "Assign...";
+          levelHtml = `<select data-file="${file.name}" title="Change level">
+            <option value="">${label}</option>${options}${unassignOpt}
+          </select>`;
+        }
+
+        item.innerHTML = `
+          <div class="drag-item-icon">&#127758;</div>
+          <div class="drag-item-name" title="${file.displayName}">${file.displayName}</div>
+          <div class="drag-item-actions">
+            ${levelHtml}
+            <button class="delete-btn" title="Delete photo">&#128465;</button>
+          </div>
+        `;
+
+        // Click on name to show thumbnail
+        const nameEl = item.querySelector(".drag-item-name");
+        nameEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showThumbPopover(file.name, file.displayName, nameEl);
+        });
+
+        item.addEventListener("dragstart", (e) => {
+          if (e.target.closest(".drag-item-actions")) { e.preventDefault(); return; }
+          e.dataTransfer.setData("text/plain", file.name);
+          e.dataTransfer.effectAllowed = "copy";
+        });
+
+        // Handle level change
+        const sel = item.querySelector(".drag-item-actions select");
+        if (sel) {
+          sel.addEventListener("change", async (e) => {
+            e.stopPropagation();
+            const level = sel.value;
+            if (!level) return;
+            sel.disabled = true;
+            try {
+              const assignLevel = level === "__unassign__" ? "" : level;
+              const r = await fetch("/api/assign-level", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: file.name, project, level: assignLevel }),
+              });
+              if (!r.ok) throw new Error("Failed to change level");
+              await load360Files();
+              renderPins();
+            } catch (err) {
+              alert("Error changing level: " + err.message);
+              sel.disabled = false;
+              sel.value = "";
+            }
+          });
+        }
+
+        // Handle delete
+        const delBtn = item.querySelector(".delete-btn");
+        delBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Delete "${file.displayName}"? This cannot be undone.`)) return;
+          delBtn.disabled = true;
+          try {
+            const r = await fetch("/api/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ file: file.name }),
+            });
+            if (!r.ok) throw new Error("Failed to delete");
+            // Remove any map pin referencing this file
+            const hadPin = mappings.pins.some((p) => p.image360 === file.name);
+            mappings.pins = mappings.pins.filter((p) => p.image360 !== file.name);
+            if (hadPin) {
+              renderPins();
+              saveMappings();
+            }
+            await load360Files();
+          } catch (err) {
+            alert("Error deleting photo: " + err.message);
+            delBtn.disabled = false;
+          }
+        });
+
+        fileList.appendChild(item);
+      });
+      if (fileList.children.length === 0) {
+        fileList.innerHTML = '<div class="placeholder" style="padding:24px"><p>No 360 photos</p></div>';
+      }
+    }
+
+    floorPlanSelect.addEventListener("change", () => {
+      if (floorPlanSelect.value) {
+        mappings.floorPlanImage = floorPlanSelect.value;
+        showFloorPlan(floorPlanSelect.value);
+        saveMappings();
+      } else {
+        mapContainer.style.display = "none";
+        mapPlaceholder.style.display = "";
+      }
+    });
+
+    function showFloorPlan(imagePath) {
+      floorPlanImg.src = `/api/2d/image?file=${encodeURIComponent(imagePath)}`;
+      floorPlanImg.onload = () => {
+        mapPlaceholder.style.display = "none";
+        mapContainer.style.display = "inline-block";
+        renderPins();
+      };
+    }
+
+    // Drop handling on the map container
+    mapContainer.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      mapContainer.classList.add("drop-active");
+    });
+
+    mapContainer.addEventListener("dragleave", () => {
+      mapContainer.classList.remove("drop-active");
+    });
+
+    mapContainer.addEventListener("drop", (e) => {
+      e.preventDefault();
+      mapContainer.classList.remove("drop-active");
+      const image360 = e.dataTransfer.getData("text/plain");
+      if (!image360) return;
+
+      // Already placed?
+      if (mappings.pins.some((p) => p.image360 === image360)) {
+        alert("This image is already placed on the map.");
+        return;
+      }
+
+      // Calculate percentage position relative to the image
+      const rect = floorPlanImg.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+      const pin = {
+        id: "pin_" + Date.now(),
+        x: Math.round(x * 10000) / 10000,
+        y: Math.round(y * 10000) / 10000,
+        image360: image360,
+      };
+
+      mappings.pins.push(pin);
+      renderPins();
+      render360List();
+      saveMappings();
+    });
+
+    let activeDrag = null;
+    let justDragged = false;
+    const contextMenu = document.getElementById("pinContextMenu");
+    const contextName = document.getElementById("pinContextName");
+    const contextView = document.getElementById("pinContextView");
+    const contextMove = document.getElementById("pinContextMove");
+    const contextRemove = document.getElementById("pinContextRemove");
+    let contextPin = null; // the pin data for the open context menu
+    let contextPinEl = null; // the pin DOM element
+
+    // Close context menu on any click outside
+    document.addEventListener("click", () => hideContextMenu());
+    document.addEventListener("contextmenu", (e) => {
+      // Close if right-clicking elsewhere
+      if (!e.target.closest(".pin")) hideContextMenu();
+    });
+
+    function hideContextMenu() {
+      contextMenu.classList.remove("visible");
+      contextPin = null;
+      contextPinEl = null;
+    }
+
+    function showContextMenu(e, pin, el) {
+      contextPin = pin;
+      contextPinEl = el;
+      contextName.textContent = pin.image360.split("/").pop();
+      contextMenu.style.left = e.clientX + "px";
+      contextMenu.style.top = e.clientY + "px";
+      contextMenu.classList.add("visible");
+
+      // Keep menu in viewport
+      requestAnimationFrame(() => {
+        const rect = contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+          contextMenu.style.left = (e.clientX - rect.width) + "px";
+        }
+        if (rect.bottom > window.innerHeight) {
+          contextMenu.style.top = (e.clientY - rect.height) + "px";
+        }
+      });
+    }
+
+    // Context menu actions
+    contextView.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!contextPin) return;
+      openPanoModal(contextPin.image360);
+      hideContextMenu();
+    });
+
+    contextRemove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!contextPin) return;
+      mappings.pins = mappings.pins.filter((p) => p.id !== contextPin.id);
+      renderPins();
+      render360List();
+      saveMappings();
+      hideContextMenu();
+    });
+
+    let moveModePin = null; // pin ID currently in move mode
+
+    contextMove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!contextPin || !contextPinEl) return;
+      const pinEl = contextPinEl;
+      const pinId = contextPin.id;
+      hideContextMenu();
+
+      // Enter move mode
+      moveModePin = pinId;
+      pinEl.classList.add("movable");
+    });
+
+    function renderPins() {
+      mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
+
+      mappings.pins.forEach((pin) => {
+        const el = document.createElement("div");
+        el.className = "pin";
+        el.style.left = (pin.x * 100) + "%";
+        el.style.top = (pin.y * 100) + "%";
+
+        const displayName = pin.image360.split("/").pop();
+        el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
+
+        // Mousedown — if in move mode, start dragging immediately
+        el.addEventListener("mousedown", (e) => {
+          if (moveModePin === pin.id) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove("movable");
+            el.classList.add("dragging");
+            activeDrag = { el, pinId: pin.id };
+          }
+        });
+
+        // Click — only open viewer if NOT in move mode and NOT just dragged
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (justDragged) { justDragged = false; return; }
+          if (activeDrag) return;
+          if (moveModePin === pin.id) return;
+          openPanoModal(pin.image360);
+        });
+
+        // Right-click → show context menu
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // Cancel any existing move mode
+          if (moveModePin) {
+            mapContainer.querySelectorAll(".pin.movable").forEach((p) => p.classList.remove("movable"));
+            moveModePin = null;
+          }
+          showContextMenu(e, pin, el);
+        });
+
+        // Restore movable state if this pin is in move mode (after re-render)
+        if (moveModePin === pin.id) {
+          el.classList.add("movable");
+        }
+
+        mapContainer.appendChild(el);
+      });
+    }
+
+    // Cancel move mode when clicking on the map background (not a pin)
+    mapContainer.addEventListener("click", (e) => {
+      if (e.target.closest(".pin")) return;
+      if (moveModePin) {
+        mapContainer.querySelectorAll(".pin.movable").forEach((p) => p.classList.remove("movable"));
+        moveModePin = null;
+      }
+    });
+
+    // Global mousemove → move the dragged pin
+    document.addEventListener("mousemove", (e) => {
+      if (!activeDrag) return;
+      e.preventDefault();
+      const rect = floorPlanImg.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      activeDrag.el.style.left = (Math.max(0, Math.min(1, x)) * 100) + "%";
+      activeDrag.el.style.top = (Math.max(0, Math.min(1, y)) * 100) + "%";
+    });
+
+    // Global mouseup → drop the pin at new location
+    document.addEventListener("mouseup", () => {
+      if (!activeDrag) return;
+      const el = activeDrag.el;
+      const pinId = activeDrag.pinId;
+      const finalX = parseFloat(el.style.left) / 100;
+      const finalY = parseFloat(el.style.top) / 100;
+
+      const pin = mappings.pins.find((p) => p.id === pinId);
+      if (pin) {
+        pin.x = Math.round(finalX * 10000) / 10000;
+        pin.y = Math.round(finalY * 10000) / 10000;
+        saveMappings();
+      }
+
+      el.classList.remove("dragging");
+      justDragged = true;
+      moveModePin = null;
+      activeDrag = null;
+    });
+  </script>
+</body>
+</html>

@@ -232,14 +232,18 @@
     <h1 id="pageTitle">2D Image Uploader</h1>
     <div style="display:flex; gap:16px;">
       <a href="/projects.html">Projects</a>
+      <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
       <a id="viewerLink" href="/viewer.html">360 Viewer</a>
       <a id="uploaderLink" href="/index.html">360 Uploader</a>
     </div>
   </div>
 
   <div class="container">
-    <label class="field-label" for="projectName">Project Name <span style="color:#f85149">*</span></label>
-    <input class="field-input" type="text" id="projectName" placeholder="Enter project name">
+    <label class="field-label" for="projectSelect">Project <span style="color:#f85149">*</span></label>
+    <select class="field-input" id="projectSelect" style="cursor:pointer;">
+      <option value="">Select a project...</option>
+    </select>
+    <input class="field-input" type="text" id="newProjectName" placeholder="Enter new project name" style="display:none; margin-top:8px;">
 
     <div class="drop-zone" id="dropZone">
       <div class="drop-zone-icon">&#128444;</div>
@@ -276,19 +280,70 @@
     const params = new URLSearchParams(window.location.search);
     const projectFromUrl = params.get("project");
 
-    const projectNameEl = document.getElementById("projectName");
+    const projectSelect = document.getElementById("projectSelect");
+    const newProjectName = document.getElementById("newProjectName");
     const viewerLink = document.getElementById("viewerLink");
     const uploaderLink = document.getElementById("uploaderLink");
 
-    if (projectFromUrl) {
-      projectNameEl.value = projectFromUrl;
-      projectNameEl.readOnly = true;
-      projectNameEl.style.opacity = "0.7";
-      viewerLink.href = `/viewer.html?project=${encodeURIComponent(projectFromUrl)}`;
-      uploaderLink.href = `/index.html?project=${encodeURIComponent(projectFromUrl)}`;
-      document.getElementById("pageTitle").textContent = `2D Images — ${projectFromUrl}`;
-      loadGallery(projectFromUrl);
+    async function loadProjectDropdown() {
+      try {
+        const res = await fetch("/api/projects");
+        if (!res.ok) return;
+        const projects = await res.json();
+        projectSelect.innerHTML = '<option value="">Select a project...</option>';
+        projects.forEach((name) => {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          projectSelect.appendChild(opt);
+        });
+        const newOpt = document.createElement("option");
+        newOpt.value = "__new__";
+        newOpt.textContent = "+ Add New Project";
+        projectSelect.appendChild(newOpt);
+
+        if (projectFromUrl) {
+          projectSelect.value = projectFromUrl;
+          projectSelect.disabled = true;
+          projectSelect.style.opacity = "0.7";
+          updateProjectLinks(projectFromUrl);
+          document.getElementById("pageTitle").textContent = `2D Images — ${projectFromUrl}`;
+          loadGallery(projectFromUrl);
+        }
+      } catch {}
     }
+
+    function updateProjectLinks(project) {
+      viewerLink.href = `/viewer.html?project=${encodeURIComponent(project)}`;
+      uploaderLink.href = `/index.html?project=${encodeURIComponent(project)}`;
+      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
+    }
+
+    function getSelectedProject() {
+      if (projectSelect.value === "__new__") {
+        return newProjectName.value.trim();
+      }
+      return projectSelect.value;
+    }
+
+    projectSelect.addEventListener("change", () => {
+      if (projectSelect.value === "__new__") {
+        newProjectName.style.display = "block";
+        newProjectName.focus();
+        document.getElementById("gallerySection").style.display = "none";
+      } else if (projectSelect.value) {
+        newProjectName.style.display = "none";
+        newProjectName.value = "";
+        updateProjectLinks(projectSelect.value);
+        loadGallery(projectSelect.value);
+      } else {
+        newProjectName.style.display = "none";
+        newProjectName.value = "";
+        document.getElementById("gallerySection").style.display = "none";
+      }
+    });
+
+    loadProjectDropdown();
 
     const dropZone = document.getElementById("dropZone");
     const fileInput = document.getElementById("fileInput");
@@ -375,15 +430,21 @@
     uploadBtn.addEventListener("click", async () => {
       if (selectedFiles.length === 0) return;
 
-      const project = projectNameEl.value.trim();
+      const project = getSelectedProject();
       if (!project) {
-        projectNameEl.style.borderColor = "#f85149";
-        projectNameEl.focus();
-        statusMessage.textContent = "Please enter a Project Name before uploading.";
+        if (projectSelect.value === "__new__") {
+          newProjectName.style.borderColor = "#f85149";
+          newProjectName.focus();
+        } else {
+          projectSelect.style.borderColor = "#f85149";
+          projectSelect.focus();
+        }
+        statusMessage.textContent = "Please select or enter a Project Name before uploading.";
         statusMessage.className = "status-message visible error";
         return;
       }
-      projectNameEl.style.borderColor = "#30363d";
+      projectSelect.style.borderColor = "#30363d";
+      newProjectName.style.borderColor = "#30363d";
 
       uploadBtn.disabled = true;
       uploadBtn.textContent = "Uploading...";

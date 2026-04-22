@@ -3,6 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { Storage } = require("@google-cloud/storage");
+const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 
 const BUCKET_NAME = "gt-platform-360-photos-bucket";
 const PORT = 3000;
@@ -12,7 +13,7 @@ const upload = multer({ dest: path.join(__dirname, "tmp") });
 const storage = new Storage();
 const bucket = storage.bucket(BUCKET_NAME);
 
-const IMAGE_BUCKET_NAME = "gt-platform-image-storage";
+const IMAGE_BUCKET_NAME = "gt_platform_image_storage";
 const imageBucket = storage.bucket(IMAGE_BUCKET_NAME);
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -27,7 +28,7 @@ app.get("/api/projects", async (req, res) => {
   try {
     const [, , apiResponse] = await bucket.getFiles({ delimiter: "/", autoPaginate: false });
     const prefixes = apiResponse.prefixes || [];
-    const projects = prefixes.map((p) => p.replace(/\/$/, ""));
+    const projects = prefixes.map((p) => p.replace(/\/$/, "")).filter((p) => p !== "_thumbs");
     res.json(projects);
   } catch (err) {
     console.error("List projects error:", err.message);
@@ -48,7 +49,7 @@ app.get("/api/levels", async (req, res) => {
       autoPaginate: false,
     });
     const prefixes = apiResponse.prefixes || [];
-    const levels = prefixes.map((p) => p.replace(project + "/", "").replace(/\/$/, ""));
+    const levels = prefixes.map((p) => p.replace(project + "/", "").replace(/\/$/, "")).filter((l) => l !== "_thumbs");
     res.json(levels);
   } catch (err) {
     console.error("List levels error:", err.message);
@@ -75,19 +76,33 @@ app.post("/api/create-level", async (req, res) => {
   }
 });
 
-// Move a file to a level (copy + delete)
+// Move a file to a level (copy + delete). Empty level moves to project root.
 app.post("/api/assign-level", async (req, res) => {
   const { file: srcPath, project, level } = req.body;
-  if (!srcPath || !project || !level) {
-    return res.status(400).json({ error: "file, project, and level are required" });
+  if (!srcPath || !project) {
+    return res.status(400).json({ error: "file and project are required" });
   }
   try {
     const fileName = srcPath.split("/").pop();
-    const destPath = `${project}/${level}/${fileName}`;
+    const destPath = level ? `${project}/${level}/${fileName}` : `${project}/${fileName}`;
+    if (srcPath === destPath) {
+      return res.json({ success: true, from: srcPath, to: destPath });
+    }
     const srcFile = bucket.file(srcPath);
     const destFile = bucket.file(destPath);
     await srcFile.copy(destFile);
     await srcFile.delete();
+
+    // Move thumbnail if it exists
+    const oldThumbPath = getThumbPath(srcPath);
+    const newThumbPath = getThumbPath(destPath);
+    const thumbFile = bucket.file(oldThumbPath);
+    const [thumbExists] = await thumbFile.exists();
+    if (thumbExists) {
+      await thumbFile.copy(bucket.file(newThumbPath));
+      await thumbFile.delete();
+    }
+
     console.log(`Moved: ${srcPath} -> ${destPath}`);
     res.json({ success: true, from: srcPath, to: destPath });
   } catch (err) {
@@ -116,7 +131,7 @@ app.get("/api/files", async (req, res) => {
       options.autoPaginate = false;
       const [files] = await bucket.getFiles(options);
       const list = files
-        .filter((f) => !f.name.endsWith("/"))
+        .filter((f) => !f.name.endsWith("/") && !f.name.startsWith("_thumbs/"))
         .map((f) => ({
           name: f.name,
           displayName: f.name.replace(prefix, ""),
@@ -129,7 +144,7 @@ app.get("/api/files", async (req, res) => {
     }
     const [files] = await bucket.getFiles(options);
     const list = files
-      .filter((f) => !f.name.endsWith("/")) // exclude folder placeholders
+      .filter((f) => !f.name.endsWith("/") && !f.name.startsWith("_thumbs/"))
       .map((f) => {
         const relativePath = prefix ? f.name.replace(prefix, "") : f.name;
         return {
@@ -186,6 +201,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
     const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${encodeURIComponent(destName)}`;
     console.log(`Uploaded: gs://${BUCKET_NAME}/${destName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+    try {
+      await generateThumbnail(tmpPath, destName);
+    } catch (thumbErr) {
+      console.error("Thumbnail generation failed:", thumbErr.message);
+    }
+
     res.json({ success: true, fileName: baseName, destName, fileSize, gcsPath: `gs://${BUCKET_NAME}/${destName}`, url: publicUrl, project: project || null });
   } catch (err) {
     console.error("Upload failed:", err.message);
@@ -226,6 +248,13 @@ app.post("/api/upload-multiple", upload.array("files", 50), async (req, res) => 
 
       const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${encodeURIComponent(destName)}`;
       console.log(`Uploaded: gs://${BUCKET_NAME}/${destName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+
+      try {
+        await generateThumbnail(tmpPath, destName);
+      } catch (thumbErr) {
+        console.error(`Thumbnail generation failed for ${baseName}:`, thumbErr.message);
+      }
+
       results.push({ success: true, fileName: baseName, destName, url: publicUrl });
     } catch (err) {
       console.error(`Upload failed for ${baseName}:`, err.message);
@@ -236,6 +265,24 @@ app.post("/api/upload-multiple", upload.array("files", 50), async (req, res) => 
   }
 
   res.json({ results, project: project || null });
+});
+
+// Delete a 360 photo from GCS
+app.post("/api/delete", async (req, res) => {
+  const { file: filePath } = req.body;
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const file = bucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.delete();
+    await deleteThumbnail(filePath);
+    console.log(`Deleted: gs://${BUCKET_NAME}/${filePath}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Proxy image from GCS (supports paths with slashes)
@@ -256,7 +303,101 @@ app.get("/api/image", async (req, res) => {
   }
 });
 
-// ---- 2D Image endpoints (gt-platform-image-storage) ----
+// Serve thumbnail for a 360 image
+app.get("/api/thumbnail", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).send("file parameter required");
+
+    const thumbPath = getThumbPath(filePath);
+    const file = bucket.file(thumbPath);
+    const [exists] = await file.exists();
+
+    if (!exists) {
+      try {
+        await generateThumbnailFromGCS(filePath);
+      } catch (err) {
+        return res.status(404).send("Thumbnail not found and generation failed");
+      }
+    }
+
+    res.set("Content-Type", "image/jpeg");
+    res.set("Cache-Control", "public, max-age=86400");
+    bucket.file(thumbPath).createReadStream().pipe(res);
+  } catch (err) {
+    console.error("Thumbnail proxy error:", err.message);
+    res.status(500).send(err.message);
+  }
+});
+
+// Generate thumbnails for all existing images that lack one
+app.post("/api/generate-thumbnails", async (req, res) => {
+  try {
+    const project = req.body.project;
+    const options = {};
+    if (project) options.prefix = project + "/";
+
+    const [files] = await bucket.getFiles(options);
+    const imageFiles = files.filter((f) => {
+      const name = f.name;
+      return !name.startsWith("_thumbs/")
+        && !name.endsWith("/")
+        && !name.endsWith(".json")
+        && /\.(jpg|jpeg|png|webp|tiff?)$/i.test(name);
+    });
+
+    let generated = 0, skipped = 0, failed = 0;
+
+    for (const f of imageFiles) {
+      try {
+        const result = await generateThumbnailFromGCS(f.name);
+        if (result) generated++; else skipped++;
+      } catch (err) {
+        console.error(`Thumb failed for ${f.name}:`, err.message);
+        failed++;
+      }
+    }
+
+    console.log(`Thumbnail backfill complete: ${generated} generated, ${skipped} skipped, ${failed} failed`);
+    res.json({ total: imageFiles.length, generated, skipped, failed });
+  } catch (err) {
+    console.error("Generate thumbnails error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Mappings (pin 360 images onto 2D floor plans) ----
+
+app.get("/api/mappings", async (req, res) => {
+  const project = req.query.project;
+  if (!project) return res.status(400).json({ error: "project is required" });
+  try {
+    const file = bucket.file(`${project}/mappings.json`);
+    const [exists] = await file.exists();
+    if (!exists) return res.json({ floorPlanImage: null, pins: [] });
+    const [content] = await file.download();
+    res.json(JSON.parse(content.toString()));
+  } catch (err) {
+    console.error("Get mappings error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/mappings", async (req, res) => {
+  const { project, data } = req.body;
+  if (!project || !data) return res.status(400).json({ error: "project and data are required" });
+  try {
+    const file = bucket.file(`${project}/mappings.json`);
+    await file.save(JSON.stringify(data, null, 2), { contentType: "application/json" });
+    console.log(`Saved mappings: gs://${BUCKET_NAME}/${project}/mappings.json`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Save mappings error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- 2D Image endpoints (gt_platform_image_storage) ----
 
 // List 2D images in a project
 app.get("/api/2d/files", async (req, res) => {
@@ -322,6 +463,23 @@ app.post("/api/2d/upload", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     fs.unlink(tmpPath, () => {});
+  }
+});
+
+// Delete 2D image
+app.post("/api/2d/delete", async (req, res) => {
+  const { file: filePath } = req.body;
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.delete();
+    console.log(`Deleted 2D: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("2D delete error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

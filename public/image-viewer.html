@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Image Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .top-bar h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f0f3f6;
+    }
+
+    .top-bar a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .top-bar a:hover { text-decoration: underline; }
+
+    .main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 280px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 14px 16px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 2px;
+    }
+
+    .file-item:hover { background: #21262d; }
+    .file-item.active { background: #1c2333; border: 1px solid #58a6ff; }
+
+    .file-item-thumb {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #21262d;
+    }
+
+    .file-item.active .file-item-thumb { border: 1px solid #58a6ff; }
+
+    .file-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-item-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-item-meta {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-top: 2px;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #484f58;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px;
+      line-height: 1;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+
+    .delete-btn:hover { color: #f85149; }
+
+    .viewer-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: #0a0c10;
+    }
+
+    .viewer-area img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: none;
+    }
+
+    .viewer-area img.visible { display: block; }
+
+    .placeholder {
+      text-align: center;
+      color: #484f58;
+    }
+
+    .placeholder-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+
+    .placeholder p {
+      font-size: 0.95rem;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 17, 23, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      color: #8b949e;
+      font-size: 0.95rem;
+    }
+
+    .loading-overlay.hidden { display: none; }
+
+    .error-msg {
+      color: #f85149;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .image-info-bar {
+      display: none;
+      padding: 8px 20px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      font-size: 0.8rem;
+      color: #8b949e;
+      flex-shrink: 0;
+    }
+
+    .image-info-bar.visible { display: flex; gap: 24px; }
+
+    .file-list::-webkit-scrollbar { width: 6px; }
+    .file-list::-webkit-scrollbar-track { background: transparent; }
+    .file-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1 id="pageTitle">2D Image Viewer</h1>
+    <div style="display:flex; gap:16px;">
+      <a href="/projects.html">Projects</a>
+      <a id="viewerLink" href="/viewer.html">360 Viewer</a>
+      <a id="mapEditorLink" href="/map-editor.html">Map</a>
+      <a id="uploadLink" href="/images.html">Upload Images</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">Images</div>
+      <div class="file-list" id="fileList">
+        <div class="placeholder" style="padding: 24px;">
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="viewer-area" id="viewerArea">
+      <div class="placeholder" id="viewerPlaceholder">
+        <div class="placeholder-icon">&#128444;</div>
+        <p>Select an image to view</p>
+      </div>
+      <img id="viewerImage" alt="">
+      <div class="loading-overlay hidden" id="loadingOverlay">Loading image...</div>
+    </div>
+  </div>
+
+  <div class="image-info-bar" id="imageInfoBar">
+    <span id="infoName"></span>
+    <span id="infoDimensions"></span>
+    <span id="infoSize"></span>
+  </div>
+
+  <script>
+    const fileList = document.getElementById("fileList");
+    const viewerPlaceholder = document.getElementById("viewerPlaceholder");
+    const viewerImage = document.getElementById("viewerImage");
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const imageInfoBar = document.getElementById("imageInfoBar");
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const project = params.get("project");
+
+    if (project) {
+      document.getElementById("pageTitle").textContent = `2D Viewer — ${project}`;
+      document.getElementById("uploadLink").href = `/images.html?project=${encodeURIComponent(project)}`;
+      document.getElementById("viewerLink").href = `/viewer.html?project=${encodeURIComponent(project)}`;
+      document.getElementById("mapEditorLink").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
+    }
+
+    async function loadFiles() {
+      try {
+        let url = "/api/2d/files";
+        if (project) url += `?project=${encodeURIComponent(project)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to load files");
+        const files = await res.json();
+
+        if (files.length === 0) {
+          fileList.innerHTML = '<div class="placeholder" style="padding:24px"><p>No images in this project</p></div>';
+          return;
+        }
+
+        fileList.innerHTML = "";
+        files.forEach((file) => {
+          const thumbUrl = `/api/2d/image?file=${encodeURIComponent(file.name)}`;
+          const item = document.createElement("div");
+          item.className = "file-item";
+          item.innerHTML = `
+            <img class="file-item-thumb" src="${thumbUrl}" alt="${file.displayName}" loading="lazy">
+            <div class="file-item-info">
+              <div class="file-item-name" title="${file.displayName}">${file.displayName}</div>
+              <div class="file-item-meta">${formatSize(file.size)}</div>
+            </div>
+            <button class="delete-btn" title="Delete image">&times;</button>
+          `;
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".delete-btn")) return;
+            showImage(file, item);
+          });
+          item.querySelector(".delete-btn").addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteImage(file);
+          });
+          fileList.appendChild(item);
+        });
+      } catch (err) {
+        fileList.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
+    }
+
+    let currentFile = null;
+
+    async function deleteImage(file) {
+      if (!confirm(`Delete "${file.displayName}"?`)) return;
+      try {
+        const res = await fetch("/api/2d/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: file.name }),
+        });
+        if (!res.ok) throw new Error("Delete failed");
+        // If the deleted image is currently displayed, clear the viewer
+        if (currentFile && currentFile.name === file.name) {
+          viewerImage.classList.remove("visible");
+          viewerPlaceholder.innerHTML = '<div class="placeholder-icon">&#128444;</div><p>Select an image to view</p>';
+          viewerPlaceholder.style.display = "";
+          imageInfoBar.classList.remove("visible");
+          currentFile = null;
+        }
+        loadFiles();
+      } catch (err) {
+        alert("Error deleting image: " + err.message);
+      }
+    }
+
+    function showImage(file, itemEl) {
+      currentFile = file;
+      document.querySelectorAll(".file-item.active").forEach((el) => el.classList.remove("active"));
+      itemEl.classList.add("active");
+
+      viewerPlaceholder.style.display = "none";
+      viewerImage.classList.remove("visible");
+      loadingOverlay.classList.remove("hidden");
+
+      const url = `/api/2d/image?file=${encodeURIComponent(file.name)}`;
+
+      viewerImage.onload = () => {
+        loadingOverlay.classList.add("hidden");
+        viewerImage.classList.add("visible");
+
+        document.getElementById("infoName").textContent = file.displayName;
+        document.getElementById("infoDimensions").textContent = `${viewerImage.naturalWidth} x ${viewerImage.naturalHeight}`;
+        document.getElementById("infoSize").textContent = formatSize(file.size);
+        imageInfoBar.classList.add("visible");
+      };
+
+      viewerImage.onerror = () => {
+        loadingOverlay.classList.add("hidden");
+        viewerPlaceholder.innerHTML = `<div class="placeholder-icon">&#128444;</div><p style="color:#f85149">Failed to load image</p>`;
+        viewerPlaceholder.style.display = "";
+        imageInfoBar.classList.remove("visible");
+      };
+
+      viewerImage.src = url;
+    }
+
+    loadFiles();
+  </script>
+</body>
+</html>

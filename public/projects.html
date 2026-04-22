@@ -138,13 +138,18 @@
             <div class="project-card-icon">&#128194;</div>
             <div class="project-card-name">${name}</div>
           `;
-          card.addEventListener("click", (e) => e.preventDefault());
+          card.addEventListener("click", (e) => {
+            if (!e.target.closest("a[href]") || e.target.closest("a[href]") === card) {
+              e.preventDefault();
+            }
+          });
 
           const links = document.createElement("div");
           links.style.cssText = "display:flex; gap:12px; margin-top:10px; font-size:0.8rem;";
           links.innerHTML = `
             <a href="/viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">360 Photos</a>
-            <a href="/images.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">2D Images</a>
+            <a href="/image-viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">2D Images</a>
+            <a href="/map-editor.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">Map</a>
           `;
           card.appendChild(links);
           card.style.cursor = "default";
