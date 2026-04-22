@@ -43,8 +43,6 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --max-instances 10 \
-            --use-http2 \
-            --set-env-vars USE_HTTP2=true \
             --service-account "$RUNTIME_SA" \
             --quiet
 
