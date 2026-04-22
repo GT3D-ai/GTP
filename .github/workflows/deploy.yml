@@ -43,6 +43,7 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --max-instances 10 \
+            --no-use-http2 \
             --service-account "$RUNTIME_SA" \
             --quiet
 
