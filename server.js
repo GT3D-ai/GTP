@@ -60,10 +60,16 @@ function resolveIapEmail(req) {
 
 async function resolveUser(req, res, next) {
   const email = resolveIapEmail(req);
-  if (!email) return res.status(401).json({ error: "Not authenticated" });
+  // Anonymous requests are allowed — the LB lets public paths through without
+  // IAP. Per-route guards (requireAdmin / requireProjectRole) still reject
+  // anonymous writes with 403.
+  if (!email) {
+    req.userEmail = null;
+    req.user = null;
+    return next();
+  }
   req.userEmail = email;
   try {
-    // If roster is empty, bootstrap this caller as the first admin
     const roster = await userService.loadRoster();
     if (Object.keys(roster.users).length === 0) {
       await userService.bootstrapIfEmpty(email);
@@ -74,7 +80,7 @@ async function resolveUser(req, res, next) {
     if (!profile && req.path !== "/me") {
       return res.status(403).json({ error: "Not authorized. Ask an admin to add you." });
     }
-    req.user = profile; // may be null on /api/me for un-rostered users
+    req.user = profile;
     next();
   } catch (err) {
     console.error("resolveUser error:", err.message);
@@ -120,15 +126,17 @@ function requireProjectRole(minRole) {
 // All /api/* routes go through resolveUser
 app.use("/api", resolveUser);
 
-// List top-level project folders, filtered by what the current user can access
+// List top-level project folders, filtered by what the current user can access.
+// Anonymous callers get [] — they don't enumerate projects, they arrive on a
+// specific /map-viewer/<project> URL and ask for scoped data directly.
 app.get("/api/projects", async (req, res) => {
   try {
+    if (!req.user) return res.json([]);
     const [, , apiResponse] = await bucket.getFiles({ delimiter: "/", autoPaginate: false });
     const prefixes = apiResponse.prefixes || [];
     const allProjects = prefixes
       .map((p) => p.replace(/\/$/, ""))
       .filter((p) => p !== "_thumbs" && p !== "_platform");
-    // Admins see everything; everyone else sees only assigned projects
     const accessible = await userService.accessibleProjects(req.user.email, allProjects);
     res.json(accessible);
   } catch (err) {
@@ -138,7 +146,7 @@ app.get("/api/projects", async (req, res) => {
 });
 
 // List levels (subfolders) within a project
-app.get("/api/levels", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/levels", async (req, res) => {
   const project = req.query.project;
   if (!project) {
     return res.status(400).json({ error: "project is required" });
@@ -150,7 +158,9 @@ app.get("/api/levels", requireProjectRole("viewer"), async (req, res) => {
       autoPaginate: false,
     });
     const prefixes = apiResponse.prefixes || [];
-    const levels = prefixes.map((p) => p.replace(project + "/", "").replace(/\/$/, "")).filter((l) => l !== "_thumbs");
+    const levels = prefixes
+      .map((p) => p.replace(project + "/", "").replace(/\/$/, ""))
+      .filter((l) => l !== "_thumbs" && l !== "_platform");
     res.json(levels);
   } catch (err) {
     console.error("List levels error:", err.message);
@@ -273,7 +283,7 @@ app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole(
 });
 
 // Get project metadata
-app.get("/api/project-info", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/project-info", async (req, res) => {
   const project = req.query.project;
   if (!project) return res.status(400).json({ error: "project is required" });
   try {
@@ -342,7 +352,7 @@ app.post("/api/assign-level", requireProjectRole("editor"), async (req, res) => 
 });
 
 // List files, optionally scoped to a project
-app.get("/api/files", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/files", async (req, res) => {
   try {
     const project = req.query.project;
     const level = req.query.level;
@@ -549,7 +559,7 @@ app.post("/api/delete", requireProjectRole("editor"), async (req, res) => {
 });
 
 // Proxy image from GCS (supports paths with slashes)
-app.get("/api/image", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/image", async (req, res) => {
   try {
     const filePath = req.query.file;
     const file = bucket.file(filePath);
@@ -567,7 +577,7 @@ app.get("/api/image", requireProjectRole("viewer"), async (req, res) => {
 });
 
 // Serve thumbnail for a 360 image
-app.get("/api/thumbnail", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/thumbnail", async (req, res) => {
   try {
     const filePath = req.query.file;
     if (!filePath) return res.status(400).send("file parameter required");
@@ -631,7 +641,7 @@ app.post("/api/generate-thumbnails", requireAdmin, async (req, res) => {
 
 // ---- Mappings (pin 360 images onto 2D floor plans) ----
 
-app.get("/api/mappings", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/mappings", async (req, res) => {
   const project = req.query.project;
   if (!project) return res.status(400).json({ error: "project is required" });
   try {
@@ -663,7 +673,7 @@ app.post("/api/mappings", requireProjectRole("editor"), async (req, res) => {
 // ---- 2D Image endpoints (gt_platform_image_storage) ----
 
 // List 2D images in a project
-app.get("/api/2d/files", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/2d/files", async (req, res) => {
   try {
     const project = req.query.project;
     const options = {};
@@ -747,7 +757,7 @@ app.post("/api/2d/delete", requireProjectRole("editor"), async (req, res) => {
 });
 
 // Proxy 2D image from GCS
-app.get("/api/2d/image", requireProjectRole("viewer"), async (req, res) => {
+app.get("/api/2d/image", async (req, res) => {
   try {
     const filePath = req.query.file;
     const file = imageBucket.file(filePath);
