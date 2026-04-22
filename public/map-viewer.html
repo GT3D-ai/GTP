@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map Viewer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .project-headline {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f0f3f6;
+      letter-spacing: 0.2px;
+    }
+
+    .top-bar a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.82rem;
+    }
+
+    .top-bar a:hover { text-decoration: underline; }
+
+    .map-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: #0a0c10;
+    }
+
+    .map-container {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .map-container img {
+      max-width: 100%;
+      max-height: calc(100vh - 120px);
+      display: block;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: #484f58;
+    }
+
+    .placeholder-icon { font-size: 3rem; margin-bottom: 12px; }
+    .placeholder p { font-size: 0.95rem; }
+
+    .pin {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: #ffffff;
+      border: 2px solid #0f1117;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 5;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .pin:hover {
+      transform: translate(-50%, -50%) scale(1.35);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.9);
+    }
+
+    .pin-tooltip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.72rem;
+      color: #e1e4e8;
+      white-space: nowrap;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    .pin:hover .pin-tooltip { display: block; }
+
+    .level-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px 20px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .level-bar label {
+      font-size: 0.75rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .level-bar select {
+      padding: 5px 10px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e1e4e8;
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 140px;
+    }
+
+    .level-bar select:focus { border-color: #58a6ff; }
+
+    /* Fullscreen 360 modal */
+    .viewer-modal {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 1000;
+      display: none;
+    }
+
+    .viewer-modal.visible { display: block; }
+
+    #pano360 {
+      width: 100%;
+      height: 100%;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 42px;
+      height: 42px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      font-size: 1.3rem;
+      cursor: pointer;
+      z-index: 1010;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.15s;
+    }
+
+    .close-btn:hover {
+      background: rgba(248, 81, 73, 0.9);
+      transform: scale(1.08);
+    }
+
+    .modal-title {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      font-size: 0.85rem;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 12px;
+      border-radius: 6px;
+      z-index: 1010;
+      max-width: calc(100% - 100px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1005;
+      color: #e1e4e8;
+      font-size: 0.95rem;
+    }
+
+    .loading-overlay.hidden { display: none; }
+
+    @media (max-width: 600px) {
+      .top-bar { padding: 8px 14px; }
+      .level-bar { padding: 8px 14px; }
+      .project-headline { font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="project-headline" id="projectHeadline">Map Viewer</div>
+    <a href="/">&larr; Projects</a>
+  </div>
+
+  <div class="map-area" id="mapArea">
+    <div class="placeholder" id="mapPlaceholder">
+      <div class="placeholder-icon">&#128506;</div>
+      <p>Loading map...</p>
+    </div>
+    <div class="map-container" id="mapContainer" style="display:none;">
+      <img id="floorPlanImg" alt="Floor plan">
+    </div>
+  </div>
+
+  <div class="level-bar">
+    <label for="levelSelect">Level:</label>
+    <select id="levelSelect">
+      <option value="">Loading...</option>
+    </select>
+  </div>
+
+  <div class="viewer-modal" id="viewerModal">
+    <div class="modal-title" id="modalTitle"></div>
+    <button class="close-btn" id="closeBtn" title="Close">&times;</button>
+    <div id="pano360"></div>
+    <div class="loading-overlay" id="modalLoading">Loading 360 view...</div>
+  </div>
+
+  <script>
+    // Extract project from URL: /map-viewer/<project-name> OR fallback to ?project=
+    let project = null;
+    const pathMatch = window.location.pathname.match(/^\/map-viewer\/(.+?)\/?$/);
+    if (pathMatch) {
+      project = decodeURIComponent(pathMatch[1]);
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      project = params.get("project");
+    }
+
+    const projectHeadline = document.getElementById("projectHeadline");
+    const mapPlaceholder = document.getElementById("mapPlaceholder");
+    const mapContainer = document.getElementById("mapContainer");
+    const floorPlanImg = document.getElementById("floorPlanImg");
+    const levelSelect = document.getElementById("levelSelect");
+    const viewerModal = document.getElementById("viewerModal");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalLoading = document.getElementById("modalLoading");
+    const closeBtn = document.getElementById("closeBtn");
+
+    let mappings = { floorPlanImage: null, pins: [] };
+    let currentLevel = "level 1";
+    let viewer = null;
+
+    if (!project) {
+      mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128679;</div><p>No project specified</p>';
+    } else {
+      projectHeadline.textContent = project;
+      init();
+    }
+
+    async function init() {
+      await Promise.all([loadLevels(), loadMappings()]);
+
+      if (mappings.floorPlanImage) {
+        showFloorPlan(mappings.floorPlanImage);
+      } else {
+        mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128506;</div><p>No floor plan has been set for this project.<br><a href="/map-editor.html?project=' + encodeURIComponent(project) + '" style="color:#58a6ff">Open Map Editor</a> to configure.</p>';
+      }
+    }
+
+    async function loadLevels() {
+      try {
+        const res = await fetch(`/api/levels?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        const levels = await res.json();
+        levelSelect.innerHTML = "";
+        if (levels.length === 0) {
+          levelSelect.innerHTML = '<option value="">No levels</option>';
+          return;
+        }
+        levels.forEach((lvl) => {
+          const opt = document.createElement("option");
+          opt.value = lvl;
+          opt.textContent = lvl;
+          levelSelect.appendChild(opt);
+        });
+        // Default to "level 1" if it exists, otherwise first level
+        const defaultLevel = levels.includes("level 1") ? "level 1" : levels[0];
+        currentLevel = defaultLevel;
+        levelSelect.value = defaultLevel;
+      } catch {}
+    }
+
+    async function loadMappings() {
+      try {
+        const res = await fetch(`/api/mappings?project=${encodeURIComponent(project)}`);
+        if (!res.ok) return;
+        mappings = await res.json();
+      } catch {}
+    }
+
+    function showFloorPlan(imagePath) {
+      floorPlanImg.src = `/api/2d/image?file=${encodeURIComponent(imagePath)}`;
+      floorPlanImg.onload = () => {
+        mapPlaceholder.style.display = "none";
+        mapContainer.style.display = "inline-block";
+        renderPins();
+      };
+      floorPlanImg.onerror = () => {
+        mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128247;</div><p style="color:#f85149">Failed to load floor plan</p>';
+      };
+    }
+
+    function renderPins() {
+      mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
+
+      // Filter pins to only those matching the current level
+      const prefix = `${project}/${currentLevel}/`;
+      const visiblePins = mappings.pins.filter((p) => p.image360.startsWith(prefix));
+
+      visiblePins.forEach((pin) => {
+        const el = document.createElement("div");
+        el.className = "pin";
+        el.style.left = (pin.x * 100) + "%";
+        el.style.top = (pin.y * 100) + "%";
+
+        const displayName = pin.image360.split("/").pop();
+        el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openViewer(pin.image360, displayName);
+        });
+
+        mapContainer.appendChild(el);
+      });
+    }
+
+    levelSelect.addEventListener("change", () => {
+      currentLevel = levelSelect.value;
+      renderPins();
+    });
+
+    // Full screen 360 viewer
+    function openViewer(image360, displayName) {
+      modalTitle.textContent = displayName;
+      viewerModal.classList.add("visible");
+      modalLoading.classList.remove("hidden");
+
+      if (viewer) {
+        try { viewer.destroy(); } catch {}
+        viewer = null;
+      }
+
+      viewer = pannellum.viewer("pano360", {
+        type: "equirectangular",
+        panorama: `/api/image?file=${encodeURIComponent(image360)}`,
+        autoLoad: true,
+        compass: true,
+        showControls: true,
+        mouseZoom: true,
+        autoRotate: -2,
+        loadedCallback: () => modalLoading.classList.add("hidden"),
+      });
+
+      setTimeout(() => modalLoading.classList.add("hidden"), 8000);
+    }
+
+    function closeViewer() {
+      viewerModal.classList.remove("visible");
+      if (viewer) {
+        try { viewer.destroy(); } catch {}
+        viewer = null;
+      }
+    }
+
+    closeBtn.addEventListener("click", closeViewer);
+
+    // ESC closes the modal
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && viewerModal.classList.contains("visible")) {
+        closeViewer();
+      }
+    });
+  </script>
+</body>
+</html>

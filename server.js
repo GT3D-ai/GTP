@@ -18,9 +18,14 @@ const imageBucket = storage.bucket(IMAGE_BUCKET_NAME);
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Redirect root to projects page
-app.get("/", (req, res) => {
-  res.redirect("/projects.html");
+// Backward-compat: /projects.html and /projects → / (index is now projects)
+app.get(["/projects", "/projects.html"], (req, res) => {
+  res.redirect("/");
+});
+
+// Pretty URL for map viewer: /map-viewer/<project-name>
+app.get("/map-viewer/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "map-viewer.html"));
 });
 
 // List top-level project folders
@@ -53,6 +58,136 @@ app.get("/api/levels", async (req, res) => {
     res.json(levels);
   } catch (err) {
     console.error("List levels error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new project with default levels + metadata
+const DEFAULT_LEVELS = ["level 0", "level 1", "level 2", "level 3", "attic", "garage", "exterior"];
+
+app.post("/api/create-project", upload.single("coverPhoto"), async (req, res) => {
+  const name = (req.body.name || "").trim();
+  const address = (req.body.address || "").trim();
+  if (!name) {
+    return res.status(400).json({ error: "Project name is required" });
+  }
+
+  try {
+    // Create project folder in 360 bucket
+    await bucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
+
+    // Create default level folders
+    for (const lvl of DEFAULT_LEVELS) {
+      await bucket.file(`${name}/${lvl}/`).save("", { contentType: "application/x-directory" });
+    }
+
+    // Create project folder in 2D image bucket
+    await imageBucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
+
+    // Also create folders in the model bucket (for consistency with new-project.js)
+    try {
+      const modelBucket = storage.bucket("gt-platform-model-storage");
+      await modelBucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
+    } catch (e) { /* non-fatal */ }
+
+    // Upload cover photo if provided
+    let coverPhotoPath = null;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname) || ".jpg";
+      const coverName = `cover${ext}`;
+      coverPhotoPath = `${name}/${coverName}`;
+      const gcsFile = imageBucket.file(coverPhotoPath);
+      await new Promise((resolve, reject) => {
+        fs.createReadStream(req.file.path)
+          .pipe(gcsFile.createWriteStream({
+            resumable: false,
+            metadata: { contentType: req.file.mimetype || "image/jpeg" },
+          }))
+          .on("error", reject)
+          .on("finish", resolve);
+      });
+      fs.unlink(req.file.path, () => {});
+    }
+
+    // Save project metadata as JSON in 360 bucket
+    const metadata = { name, address, coverPhoto: coverPhotoPath, createdAt: new Date().toISOString() };
+    await bucket.file(`${name}/project.json`).save(JSON.stringify(metadata, null, 2), {
+      contentType: "application/json",
+    });
+
+    console.log(`Created project: ${name} (with ${DEFAULT_LEVELS.length} levels)`);
+    res.json({ success: true, project: name, metadata });
+  } catch (err) {
+    console.error("Create project error:", err.message);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update project metadata (address + optional cover photo). Name is immutable.
+app.post("/api/update-project", upload.single("coverPhoto"), async (req, res) => {
+  const name = (req.body.name || "").trim();
+  const address = (req.body.address || "").trim();
+  if (!name) return res.status(400).json({ error: "Project name is required" });
+
+  try {
+    // Verify project exists
+    const metaFile = bucket.file(`${name}/project.json`);
+    const [metaExists] = await metaFile.exists();
+    let existing = { name, address: null, coverPhoto: null };
+    if (metaExists) {
+      const [content] = await metaFile.download();
+      try { existing = JSON.parse(content.toString()); } catch {}
+    }
+
+    // Upload new cover photo if provided
+    let coverPhotoPath = existing.coverPhoto || null;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname) || ".jpg";
+      const coverName = `cover${ext}`;
+      coverPhotoPath = `${name}/${coverName}`;
+      const gcsFile = imageBucket.file(coverPhotoPath);
+      await new Promise((resolve, reject) => {
+        fs.createReadStream(req.file.path)
+          .pipe(gcsFile.createWriteStream({
+            resumable: false,
+            metadata: { contentType: req.file.mimetype || "image/jpeg" },
+          }))
+          .on("error", reject)
+          .on("finish", resolve);
+      });
+      fs.unlink(req.file.path, () => {});
+    }
+
+    const metadata = {
+      name,
+      address,
+      coverPhoto: coverPhotoPath,
+      createdAt: existing.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await metaFile.save(JSON.stringify(metadata, null, 2), { contentType: "application/json" });
+    console.log(`Updated project: ${name}`);
+    res.json({ success: true, project: name, metadata });
+  } catch (err) {
+    console.error("Update project error:", err.message);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get project metadata
+app.get("/api/project-info", async (req, res) => {
+  const project = req.query.project;
+  if (!project) return res.status(400).json({ error: "project is required" });
+  try {
+    const file = bucket.file(`${project}/project.json`);
+    const [exists] = await file.exists();
+    if (!exists) return res.json({ name: project, address: null, coverPhoto: null });
+    const [content] = await file.download();
+    res.json(JSON.parse(content.toString()));
+  } catch (err) {
+    console.error("Get project info error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

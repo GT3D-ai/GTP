@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GCS Uploader</title>
+  <title>Projects</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -12,475 +12,226 @@
       background: #0f1117;
       color: #e1e4e8;
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
 
-    .container {
-      width: 100%;
-      max-width: 560px;
-      padding: 24px;
-    }
-
-    h1 { font-size: 1.5rem; font-weight: 600; color: #f0f3f6; }
-
-    .drop-zone {
-      border: 2px dashed #30363d;
-      border-radius: 12px;
-      padding: 48px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      background: #161b22;
-    }
-
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #58a6ff;
-      background: #1c2333;
-    }
-
-    .drop-zone-icon { font-size: 2.5rem; margin-bottom: 12px; color: #8b949e; }
-    .drop-zone p { color: #8b949e; font-size: 0.95rem; }
-    .drop-zone p strong { color: #58a6ff; }
-
-    #fileInput { display: none; }
-
-    label.rename-label {
-      display: block;
-      font-size: 0.8rem;
-      color: #8b949e;
-      margin-bottom: 6px;
-    }
-
-    .rename-input {
-      width: 100%;
-      padding: 10px 12px;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      color: #e1e4e8;
-      font-size: 0.9rem;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .rename-input:focus { border-color: #58a6ff; }
-
-    .file-list {
-      display: none;
-      margin-top: 20px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .file-list.visible { display: block; }
-
-    .file-list-header {
+    .top-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 16px;
+      padding: 12px 20px;
+      background: #161b22;
       border-bottom: 1px solid #30363d;
-      font-size: 0.8rem;
-      color: #8b949e;
     }
 
-    .clear-all {
-      background: none;
-      border: none;
-      color: #f85149;
+    .top-bar h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f0f3f6;
+    }
+
+    .top-bar a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .top-bar a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .project-grid {
+        grid-template-columns: 1fr;
+      }
+      .container { padding: 20px 16px; }
+      .top-bar { padding: 10px 16px; }
+    }
+
+    .project-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
       cursor: pointer;
-      font-size: 0.8rem;
+      transition: border-color 0.2s, background 0.2s;
+      text-decoration: none;
+      color: #e1e4e8;
+      display: block;
+      overflow: hidden;
     }
 
-    .clear-all:hover { text-decoration: underline; }
-
-    .file-entry {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 16px;
-      border-bottom: 1px solid #21262d;
-    }
-
-    .file-entry:last-child { border-bottom: none; }
-
-    .file-entry-icon {
-      width: 32px; height: 32px;
+    .project-card-cover {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      display: block;
       background: #21262d;
-      border-radius: 6px;
+    }
+
+    .project-card-cover-placeholder {
+      width: 100%;
+      height: 120px;
+      background: #21262d;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1rem;
-      flex-shrink: 0;
+      font-size: 2rem;
+      color: #30363d;
     }
 
-    .file-entry-info { flex: 1; min-width: 0; }
+    .project-card-body {
+      padding: 14px 16px;
+    }
 
-    .file-entry-name {
-      font-size: 0.85rem;
-      font-weight: 500;
+    .project-card-address {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-top: 4px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .file-entry-size { font-size: 0.75rem; color: #8b949e; margin-top: 2px; }
-
-    .file-entry-status {
-      font-size: 0.75rem;
-      flex-shrink: 0;
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    .file-entry-status.pending { color: #8b949e; }
-    .file-entry-status.uploading { color: #58a6ff; }
-    .file-entry-status.done { color: #3fb950; }
-    .file-entry-status.failed { color: #f85149; }
-
-    .file-entry .remove-btn {
-      background: none;
-      border: none;
-      color: #8b949e;
-      cursor: pointer;
-      font-size: 1.1rem;
-      padding: 2px 4px;
-      line-height: 1;
-      border-radius: 4px;
-      flex-shrink: 0;
-    }
-
-    .file-entry .remove-btn:hover { color: #f85149; }
-
-    .upload-btn {
-      display: none;
-      width: 100%;
-      margin-top: 20px;
-      padding: 12px;
+    .new-project-btn {
+      display: inline-block;
+      padding: 8px 16px;
       background: #238636;
       color: #fff;
-      border: none;
-      border-radius: 8px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .new-project-btn:hover { background: #2ea043; text-decoration: none; }
+
+    .project-card:hover {
+      border-color: #58a6ff;
+      background: #1c2333;
+    }
+
+    .project-card-icon {
+      font-size: 1.8rem;
+      margin-bottom: 10px;
+    }
+
+    .project-card-name {
       font-size: 0.95rem;
       font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
+      word-break: break-word;
     }
 
-    .upload-btn.visible { display: block; }
-    .upload-btn:hover { background: #2ea043; }
-    .upload-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
-
-    .progress-container {
-      display: none;
-      margin-top: 16px;
-    }
-
-    .progress-container.visible { display: block; }
-
-    .progress-bar-track {
-      height: 8px;
-      background: #21262d;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: #58a6ff;
-      border-radius: 4px;
-      width: 0%;
-      transition: width 0.3s;
-    }
-
-    .progress-text {
-      font-size: 0.8rem;
-      color: #8b949e;
-      margin-top: 8px;
+    .placeholder {
       text-align: center;
+      color: #484f58;
+      padding: 48px 24px;
     }
 
-    .status-message {
-      display: none;
-      margin-top: 16px;
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 0.9rem;
+    .placeholder-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
     }
 
-    .status-message.visible { display: block; }
-    .status-message.success { background: #0d2818; color: #3fb950; border: 1px solid #238636; }
-    .status-message a { color: #58a6ff; text-decoration: none; }
-    .status-message a:hover { text-decoration: underline; }
-    .status-message.error { background: #2d1117; color: #f85149; border: 1px solid #da3633; }
+    .placeholder p {
+      font-size: 0.95rem;
+    }
+
+    .error-msg {
+      color: #f85149;
+      text-align: center;
+      padding: 20px;
+    }
   </style>
 </head>
 <body>
+  <div class="top-bar">
+    <h1>Projects</h1>
+    <div style="display:flex; gap:16px; align-items:center;">
+      <a href="/new-project.html" class="new-project-btn">+ New Project</a>
+    </div>
+  </div>
+
   <div class="container">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
-      <h1 style="margin-bottom:0">Upload to GCS</h1>
-      <div style="display:flex; gap:16px;">
-        <a href="/projects.html" style="color:#58a6ff; text-decoration:none; font-size:0.85rem;">Projects</a>
-        <a id="viewerLink" href="/viewer.html" style="color:#58a6ff; text-decoration:none; font-size:0.85rem;">360 Viewer</a>
+    <div id="projectList">
+      <div class="placeholder">
+        <p>Loading projects...</p>
       </div>
     </div>
-
-    <label class="rename-label" for="projectName">Project Name <span style="color:#f85149">*</span></label>
-    <input class="rename-input" type="text" id="projectName" placeholder="Enter project name" style="margin-bottom: 12px;">
-
-    <div id="levelField" style="display:none; margin-bottom: 20px;">
-      <label class="rename-label" for="levelName">Level</label>
-      <input class="rename-input" type="text" id="levelName" readonly style="opacity:0.7;">
-    </div>
-
-    <div class="drop-zone" id="dropZone">
-      <div class="drop-zone-icon">&#128193;</div>
-      <p>Drag & drop files here, or <strong>browse</strong></p>
-    </div>
-    <input type="file" id="fileInput" multiple>
-
-    <div class="file-list" id="fileList">
-      <div class="file-list-header">
-        <span id="fileCount">0 files selected</span>
-        <button class="clear-all" id="clearAll">Clear all</button>
-      </div>
-      <div id="fileEntries"></div>
-    </div>
-
-    <button class="upload-btn" id="uploadBtn">Upload to GCS</button>
-
-    <div class="progress-container" id="progressContainer">
-      <div class="progress-bar-track">
-        <div class="progress-bar-fill" id="progressFill"></div>
-      </div>
-      <div class="progress-text" id="progressText">0%</div>
-    </div>
-
-    <div class="status-message" id="statusMessage"></div>
   </div>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const projectFromUrl = params.get("project");
-    const levelFromUrl = params.get("level");
+    const projectList = document.getElementById("projectList");
 
-    const projectNameEl = document.getElementById("projectName");
-    const viewerLink = document.getElementById("viewerLink");
+    async function loadProjects() {
+      try {
+        const res = await fetch("/api/projects");
+        if (!res.ok) throw new Error("Failed to load projects");
+        const projects = await res.json();
 
-    if (projectFromUrl) {
-      projectNameEl.value = projectFromUrl;
-      projectNameEl.readOnly = true;
-      projectNameEl.style.opacity = "0.7";
-      let vLink = `/viewer.html?project=${encodeURIComponent(projectFromUrl)}`;
-      if (levelFromUrl) vLink += `&level=${encodeURIComponent(levelFromUrl)}`;
-      viewerLink.href = vLink;
-    }
-
-    if (levelFromUrl) {
-      document.getElementById("levelField").style.display = "block";
-      document.getElementById("levelName").value = levelFromUrl;
-    }
-
-    const dropZone = document.getElementById("dropZone");
-    const fileInput = document.getElementById("fileInput");
-    const fileListEl = document.getElementById("fileList");
-    const fileEntries = document.getElementById("fileEntries");
-    const fileCount = document.getElementById("fileCount");
-    const clearAll = document.getElementById("clearAll");
-    const uploadBtn = document.getElementById("uploadBtn");
-    const progressContainer = document.getElementById("progressContainer");
-    const progressFill = document.getElementById("progressFill");
-    const progressText = document.getElementById("progressText");
-    const statusMessage = document.getElementById("statusMessage");
-
-    let selectedFiles = [];
-
-    function formatSize(bytes) {
-      if (bytes < 1024) return bytes + " B";
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-    }
-
-    function renderFileList() {
-      fileEntries.innerHTML = "";
-      selectedFiles.forEach((file, i) => {
-        const entry = document.createElement("div");
-        entry.className = "file-entry";
-        entry.id = `file-entry-${i}`;
-        entry.innerHTML = `
-          <div class="file-entry-icon">&#128196;</div>
-          <div class="file-entry-info">
-            <div class="file-entry-name" title="${file.name}">${file.name}</div>
-            <div class="file-entry-size">${formatSize(file.size)}</div>
-          </div>
-          <span class="file-entry-status pending" id="file-status-${i}">Pending</span>
-          <button class="remove-btn" data-index="${i}" title="Remove">&times;</button>
-        `;
-        fileEntries.appendChild(entry);
-      });
-
-      fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`;
-      fileListEl.classList.toggle("visible", selectedFiles.length > 0);
-      uploadBtn.classList.toggle("visible", selectedFiles.length > 0);
-    }
-
-    function addFiles(files) {
-      const existing = new Set(selectedFiles.map((f) => f.name + f.size));
-      for (const file of files) {
-        if (!existing.has(file.name + file.size)) {
-          selectedFiles.push(file);
+        if (projects.length === 0) {
+          projectList.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128194;</div><p>No projects yet. Click <a href="/new-project.html" style="color:#58a6ff">+ New Project</a> to create one.</p></div>';
+          return;
         }
-      }
-      statusMessage.classList.remove("visible");
-      progressContainer.classList.remove("visible");
-      renderFileList();
-    }
 
-    function clearFiles() {
-      selectedFiles = [];
-      fileInput.value = "";
-      fileListEl.classList.remove("visible");
-      uploadBtn.classList.remove("visible");
-      statusMessage.classList.remove("visible");
-      progressContainer.classList.remove("visible");
-    }
+        const grid = document.createElement("div");
+        grid.className = "project-grid";
 
-    // Drag and drop
-    dropZone.addEventListener("click", () => fileInput.click());
-
-    dropZone.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      dropZone.classList.add("drag-over");
-    });
-
-    dropZone.addEventListener("dragleave", () => {
-      dropZone.classList.remove("drag-over");
-    });
-
-    dropZone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dropZone.classList.remove("drag-over");
-      if (e.dataTransfer.files.length > 0) {
-        addFiles(e.dataTransfer.files);
-      }
-    });
-
-    fileInput.addEventListener("change", () => {
-      if (fileInput.files.length > 0) {
-        addFiles(fileInput.files);
-        fileInput.value = "";
-      }
-    });
-
-    fileEntries.addEventListener("click", (e) => {
-      const btn = e.target.closest(".remove-btn");
-      if (btn) {
-        const idx = parseInt(btn.dataset.index);
-        selectedFiles.splice(idx, 1);
-        renderFileList();
-      }
-    });
-
-    clearAll.addEventListener("click", clearFiles);
-
-    // Upload all files
-    uploadBtn.addEventListener("click", async () => {
-      if (selectedFiles.length === 0) return;
-
-      if (!projectNameEl.value.trim()) {
-        projectNameEl.style.borderColor = "#f85149";
-        projectNameEl.focus();
-        statusMessage.textContent = "Please enter a Project Name before uploading.";
-        statusMessage.className = "status-message visible error";
-        return;
-      }
-      projectNameEl.style.borderColor = "#30363d";
-
-      uploadBtn.disabled = true;
-      uploadBtn.textContent = "Uploading...";
-      statusMessage.classList.remove("visible");
-      progressContainer.classList.add("visible");
-
-      const project = projectNameEl.value.trim();
-      const total = selectedFiles.length;
-      let completed = 0;
-      let failed = 0;
-      const results = [];
-
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        const statusEl = document.getElementById(`file-status-${i}`);
-
-        statusEl.textContent = "Uploading...";
-        statusEl.className = "file-entry-status uploading";
-
-        const pct = ((i / total) * 100).toFixed(0);
-        progressFill.style.width = pct + "%";
-        progressText.textContent = `Uploading ${i + 1} of ${total}...`;
-
-        try {
-          const result = await uploadSingleFile(file, project);
-          if (result.success) {
-            statusEl.textContent = "Done";
-            statusEl.className = "file-entry-status done";
-            completed++;
-            results.push(result);
-          } else {
-            statusEl.textContent = "Failed";
-            statusEl.className = "file-entry-status failed";
-            failed++;
-          }
-        } catch {
-          statusEl.textContent = "Failed";
-          statusEl.className = "file-entry-status failed";
-          failed++;
-        }
-      }
-
-      progressFill.style.width = "100%";
-      progressText.textContent = "Complete";
-
-      if (failed === 0) {
-        statusMessage.innerHTML = `<strong>${completed}</strong> file${completed !== 1 ? "s" : ""} successfully uploaded to Project <strong>${project}</strong>.`;
-        statusMessage.className = "status-message visible success";
-      } else {
-        statusMessage.textContent = `${completed} uploaded, ${failed} failed.`;
-        statusMessage.className = "status-message visible error";
-      }
-
-      uploadBtn.disabled = false;
-      uploadBtn.textContent = "Upload to GCS";
-    });
-
-    function uploadSingleFile(file, project) {
-      return new Promise((resolve, reject) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("destName", file.name);
-        if (project) formData.append("project", project);
-        if (levelFromUrl) formData.append("level", levelFromUrl);
-
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/upload");
-
-        xhr.addEventListener("load", () => {
+        // Fetch metadata for each project in parallel
+        const infos = await Promise.all(projects.map(async (name) => {
           try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data);
-          } catch {
-            reject(new Error("Invalid response"));
-          }
+            const r = await fetch(`/api/project-info?project=${encodeURIComponent(name)}`);
+            if (r.ok) return await r.json();
+          } catch {}
+          return { name, address: null, coverPhoto: null };
+        }));
+
+        infos.forEach((info) => {
+          const name = info.name;
+          const coverHtml = info.coverPhoto
+            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${name}" loading="lazy">`
+            : `<div class="project-card-cover-placeholder">&#128194;</div>`;
+
+          const addressHtml = info.address
+            ? `<div class="project-card-address" title="${info.address}">${info.address}</div>`
+            : "";
+
+          const card = document.createElement("div");
+          card.className = "project-card";
+          card.innerHTML = `
+            ${coverHtml}
+            <div class="project-card-body">
+              <div class="project-card-name">${name}</div>
+              ${addressHtml}
+              <div style="display:flex; gap:12px; margin-top:10px; font-size:0.8rem; flex-wrap:wrap;">
+                <a href="/viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">360 Photos</a>
+                <a href="/image-viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">2D Images</a>
+                <a href="/map-viewer/${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">View Map</a>
+                <a href="/map-editor.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">Edit Map</a>
+                <a href="/edit-project.html?project=${encodeURIComponent(name)}" style="color:#8b949e; text-decoration:none; margin-left:auto;">Edit</a>
+              </div>
+            </div>
+          `;
+          card.style.cursor = "default";
+          grid.appendChild(card);
         });
 
-        xhr.addEventListener("error", () => reject(new Error("Network error")));
-        xhr.send(formData);
-      });
+        projectList.innerHTML = "";
+        projectList.appendChild(grid);
+      } catch (err) {
+        projectList.innerHTML = `<div class="error-msg">${err.message}</div>`;
+      }
     }
+
+    loadProjects();
   </script>
 </body>
 </html>
