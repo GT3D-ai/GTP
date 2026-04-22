@@ -7,7 +7,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 # Copy the rest of the app
-COPY server.js new-project.js upload.js ./
+COPY *.js ./
 COPY public ./public
 
 # Create tmp dir for multer (ephemeral, fine on Cloud Run)
