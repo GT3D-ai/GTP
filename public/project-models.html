@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Models — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    .project-headline {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    @media (max-width: 640px) {
+      .header-inner { flex-wrap: wrap; row-gap: 4px; }
+      .project-headline {
+        order: 3; flex-basis: 100%;
+        font-size: 0.85rem; color: var(--ink-muted);
+        padding-top: 4px; border-top: 1px solid var(--line);
+      }
+    }
+
+    .page-head { margin-bottom: var(--space-md); display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+    .page-head h1 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .models-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+    }
+    @media (min-width: 640px) { .models-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 980px) { .models-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .model-card {
+      background: var(--bg-elevated);
+      display: flex;
+      flex-direction: column;
+      transition: background var(--transition);
+    }
+
+    /* Placeholder thumbnail — subtle tinted panel with a 3D-ish model icon */
+    .model-card-thumb {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.5rem;
+      color: var(--ink-muted);
+      border-bottom: 1px solid var(--line);
+      position: relative;
+    }
+    .model-card-thumb::after {
+      /* Subtle wireframe overlay to hint "3D model" */
+      content: "";
+      position: absolute;
+      inset: 12%;
+      border: 1px solid rgba(13, 13, 13, 0.12);
+      transform: rotate(3deg);
+    }
+    .model-card-thumb::before {
+      content: "";
+      position: absolute;
+      inset: 18%;
+      border: 1px solid rgba(13, 13, 13, 0.08);
+      transform: rotate(-4deg);
+    }
+    .model-card-thumb .glyph {
+      position: relative;
+      z-index: 1;
+    }
+
+    .model-card-body {
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+    .model-card-name {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .model-card-meta {
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .model-card-meta span:first-child { color: var(--ink); font-weight: 500; }
+
+    .model-card-actions { margin-top: auto; padding-top: 8px; }
+
+    .placeholder {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-md);
+      color: var(--ink-subtle);
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
+    }
+    .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <span class="project-headline" id="projectHeadline">Models</span>
+      <nav class="nav-primary" aria-label="Primary">
+        <a id="mapViewerLink" href="#">Map</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Models</h1>
+      <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload model</a>
+    </div>
+
+    <div id="modelsWrap">
+      <div class="placeholder">
+        <p>Loading…</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Extract project from URL: /models/<project-name>
+    let project = null;
+    const pathMatch = window.location.pathname.match(/^\/models\/(.+?)\/?$/);
+    if (pathMatch) project = decodeURIComponent(pathMatch[1]);
+
+    const wrap = document.getElementById("modelsWrap");
+    const projectHeadline = document.getElementById("projectHeadline");
+
+    if (!project) {
+      wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /models/&lt;project-name&gt;.</div>';
+    } else {
+      projectHeadline.textContent = project;
+      document.getElementById("mapViewerLink").href = `/map-viewer/${encodeURIComponent(project)}`;
+
+      // Admin "+ Upload model" shortcut when applicable
+      (async () => {
+        if (window.me && await window.me.isAdmin()) {
+          const a = document.getElementById("adminUploadLink");
+          a.href = `/model-upload.html?project=${encodeURIComponent(project)}`;
+          a.style.display = "";
+        }
+      })();
+
+      loadModels(project);
+    }
+
+    function formatSize(bytes) {
+      if (!bytes && bytes !== 0) return "";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    function formatDate(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    async function loadModels(project) {
+      try {
+        const res = await fetch(`/api/model/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const files = await res.json();
+
+        if (files.length === 0) {
+          wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#127744;</div><p>No models uploaded for this project yet.</p></div>';
+          return;
+        }
+
+        // Sort newest first
+        files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+
+        const grid = document.createElement("div");
+        grid.className = "models-grid";
+
+        files.forEach((f) => {
+          const card = document.createElement("div");
+          card.className = "model-card";
+          card.innerHTML = `
+            <div class="model-card-thumb"><span class="glyph">&#127744;</span></div>
+            <div class="model-card-body">
+              <div class="model-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
+              <div class="model-card-meta">
+                <span>${formatDate(f.updated)}</span>
+                <span>${formatSize(f.size)}</span>
+              </div>
+              <div class="model-card-actions">
+                <button class="btn btn-outline btn-sm download-btn" data-file="${escapeAttr(f.name)}">Download</button>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+
+        wrap.innerHTML = "";
+        wrap.appendChild(grid);
+
+        grid.querySelectorAll(".download-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = "Preparing…";
+            try {
+              const r = await fetch(`/api/model/download-url?file=${encodeURIComponent(btn.dataset.file)}`);
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const { downloadUrl } = await r.json();
+              window.location.href = downloadUrl;
+              setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
+            } catch (err) {
+              alert("Download failed: " + err.message);
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
+          });
+        });
+      } catch (err) {
+        wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+  </script>
+</body>
+</html>

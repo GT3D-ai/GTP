@@ -49,6 +49,16 @@ app.get("/map-viewer/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "map-viewer.html"));
 });
 
+// Public, per-project models showcase: /models/<project-name>
+app.get("/models/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "project-models.html"));
+});
+
+// Legacy /models(.html) → admin uploader
+app.get(["/models", "/models.html"], (req, res) => {
+  res.redirect(301, "/model-upload.html");
+});
+
 // ---- Auth: identify the current user via IAP, enforce roster membership ----
 // IAP sets X-Goog-Authenticated-User-Email to "accounts.google.com:<email>".
 // Local dev falls back to DEV_USER_EMAIL when the header is missing.
@@ -789,10 +799,10 @@ app.get("/api/2d/image", async (req, res) => {
   }
 });
 
-// ---- Model file endpoints (gt_platform_model_storage, admin-only) ----
+// ---- Model file endpoints (gt_platform_model_storage) ----
 
-// List models in a project
-app.get("/api/model/files", requireAdmin, async (req, res) => {
+// List models in a project — PUBLIC (anyone with the project name can see)
+app.get("/api/model/files", async (req, res) => {
   try {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
@@ -814,8 +824,8 @@ app.get("/api/model/files", requireAdmin, async (req, res) => {
   }
 });
 
-// Generate a signed download URL for a model (admin-only, 15-min expiry)
-app.get("/api/model/download-url", requireAdmin, async (req, res) => {
+// Generate a signed download URL for a model — PUBLIC (15-min expiry)
+app.get("/api/model/download-url", async (req, res) => {
   try {
     const filePath = req.query.file;
     if (!filePath) return res.status(400).json({ error: "file is required" });
