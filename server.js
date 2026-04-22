@@ -16,6 +16,18 @@ const bucket = storage.bucket(BUCKET_NAME);
 const IMAGE_BUCKET_NAME = "gt_platform_image_storage";
 const imageBucket = storage.bucket(IMAGE_BUCKET_NAME);
 
+// Tell search engines not to index this app. The header applies to every response
+// (HTML, API JSON, images) and is the only reliable way to stay out of the index
+// if someone links to a URL. robots.txt (below) is an extra polite signal.
+app.use((req, res, next) => {
+  res.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
+  next();
+});
+
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // Backward-compat: /projects.html and /projects → / (index is now projects)
