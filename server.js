@@ -17,6 +17,9 @@ const bucket = storage.bucket(BUCKET_NAME);
 const IMAGE_BUCKET_NAME = "gt_platform_image_storage";
 const imageBucket = storage.bucket(IMAGE_BUCKET_NAME);
 
+const MODEL_BUCKET_NAME = "gt_platform_model_storage";
+const modelBucket = storage.bucket(MODEL_BUCKET_NAME);
+
 const userService = createUserService({ bucket });
 
 // Body parsing (JSON only; multer handles multipart routes)
@@ -403,15 +406,31 @@ app.get("/api/files", async (req, res) => {
 });
 
 // Generate a V4 signed URL for direct browser-to-GCS upload.
-// Client sends { bucket: "360"|"2d", project, fileName, contentType, level? }
+// Client sends { bucket: "360"|"2d"|"model", project, fileName, contentType, level? }
 // Returns { uploadUrl, gcsPath }. The browser then PUTs the file bytes directly
 // to uploadUrl with the matching Content-Type, bypassing the Cloud Run 32 MiB cap.
-app.post("/api/upload-url", requireProjectRole("editor"), async (req, res) => {
+// Auth: "360" and "2d" require editor on the project; "model" requires admin.
+app.post("/api/upload-url", async (req, res) => {
   const { bucket: bucketKind, project, fileName, contentType, level } = req.body || {};
   if (!bucketKind || !fileName || !contentType) {
     return res.status(400).json({ error: "bucket, fileName, and contentType are required" });
   }
-  const target = bucketKind === "2d" ? imageBucket : bucket;
+  if (!project) return res.status(400).json({ error: "project is required" });
+
+  // Authorization: admin-only for model uploads, editor for others
+  if (bucketKind === "model") {
+    if (!req.user?.isAdmin) return res.status(403).json({ error: "Admin required for model uploads" });
+  } else {
+    if (!req.user?.isAdmin) {
+      const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
+      if (!ok) return res.status(403).json({ error: `editor access to ${project} required` });
+    }
+  }
+
+  let target, bucketName;
+  if (bucketKind === "2d") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
+  else if (bucketKind === "model") { target = modelBucket; bucketName = MODEL_BUCKET_NAME; }
+  else { target = bucket; bucketName = BUCKET_NAME; }
 
   let dest = fileName;
   if (project && level) dest = `${project}/${level}/${fileName}`;
@@ -421,14 +440,10 @@ app.post("/api/upload-url", requireProjectRole("editor"), async (req, res) => {
     const [url] = await target.file(dest).getSignedUrl({
       version: "v4",
       action: "write",
-      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+      expires: Date.now() + 60 * 60 * 1000, // 60 minutes (large models take time)
       contentType,
     });
-    res.json({
-      uploadUrl: url,
-      gcsPath: dest,
-      bucket: bucketKind === "2d" ? IMAGE_BUCKET_NAME : BUCKET_NAME,
-    });
+    res.json({ uploadUrl: url, gcsPath: dest, bucket: bucketName });
   } catch (err) {
     console.error("Signed URL error:", err.message);
     res.status(500).json({ error: err.message });
@@ -771,6 +786,66 @@ app.get("/api/2d/image", async (req, res) => {
   } catch (err) {
     console.error("2D image proxy error:", err.message);
     res.status(500).send(err.message);
+  }
+});
+
+// ---- Model file endpoints (gt_platform_model_storage, admin-only) ----
+
+// List models in a project
+app.get("/api/model/files", requireAdmin, async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = project + "/";
+    const [files] = await modelBucket.getFiles({ prefix });
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+      }));
+    res.json(list);
+  } catch (err) {
+    console.error("List models error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate a signed download URL for a model (admin-only, 15-min expiry)
+app.get("/api/model/download-url", requireAdmin, async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    const [url] = await modelBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Model download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a model
+app.post("/api/model/delete", requireAdmin, async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const f = modelBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await f.delete();
+    console.log(`Deleted model: gs://${MODEL_BUCKET_NAME}/${filePath}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Model delete error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

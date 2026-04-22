@@ -212,6 +212,7 @@
                 <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
                 <a href="/map-viewer/${encodeURIComponent(name)}">View Map</a>
                 <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
+                <a href="/models.html?project=${encodeURIComponent(name)}" class="admin-only-link" style="display:none;">Models</a>
                 <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
             </div>
@@ -232,11 +233,19 @@
 
     loadProjects();
 
-    // Show "New Project" controls only to admins
+    // Show "New Project" controls and admin-only per-project links only to admins
     (async () => {
       if (window.me && await window.me.isAdmin()) {
         document.getElementById("newProjectBtn").style.display = "";
         document.getElementById("newProjectNav").style.display = "";
+        // Reveal admin-only per-project links after cards render.
+        const reveal = () => {
+          document.querySelectorAll(".admin-only-link").forEach((a) => a.style.display = "");
+        };
+        // loadProjects may still be in flight; observe the list for changes.
+        const obs = new MutationObserver(reveal);
+        obs.observe(document.getElementById("projectList"), { childList: true, subtree: true });
+        reveal();
       }
     })();
   </script>
