@@ -3,170 +3,154 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Projects</title>
+  <title>Projects — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
-      min-height: 100vh;
-    }
-
-    .top-bar {
+    .page-actions {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-md);
+      flex-wrap: wrap;
     }
-
-    .top-bar h1 {
-      font-size: 1.1rem;
+    .page-actions h1 {
+      font-family: var(--font-display);
       font-weight: 600;
-      color: #f0f3f6;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
     }
 
-    .top-bar a {
-      color: #58a6ff;
-      text-decoration: none;
-      font-size: 0.85rem;
-    }
-
-    .top-bar a:hover { text-decoration: underline; }
-
-    .container {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 32px 24px;
-    }
-
-    .project-grid {
+    .projects-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 16px;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
     }
-
-    @media (max-width: 600px) {
-      .project-grid {
-        grid-template-columns: 1fr;
-      }
-      .container { padding: 20px 16px; }
-      .top-bar { padding: 10px 16px; }
-    }
+    @media (min-width: 640px) { .projects-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 980px) { .projects-grid { grid-template-columns: repeat(3, 1fr); } }
 
     .project-card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
+      background: var(--bg-elevated);
       cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
       text-decoration: none;
-      color: #e1e4e8;
-      display: block;
-      overflow: hidden;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      transition: background var(--transition);
     }
+    .project-card:hover { background: var(--bg); color: inherit; text-decoration: none; }
+    .project-card:hover .project-card-name { color: var(--accent); }
 
     .project-card-cover {
       width: 100%;
-      height: 120px;
+      aspect-ratio: 4 / 3;
       object-fit: cover;
       display: block;
-      background: #21262d;
+      background: #efece6;
+      border-bottom: 1px solid var(--line);
     }
-
     .project-card-cover-placeholder {
       width: 100%;
-      height: 120px;
-      background: #21262d;
+      aspect-ratio: 4 / 3;
+      background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 2rem;
-      color: #30363d;
+      color: var(--ink-subtle);
+      border-bottom: 1px solid var(--line);
     }
 
     .project-card-body {
-      padding: 14px 16px;
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
     }
-
+    .project-card-name {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.0625rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      word-break: break-word;
+      transition: color var(--transition);
+    }
     .project-card-address {
-      font-size: 0.75rem;
-      color: #8b949e;
-      margin-top: 4px;
+      font-size: 0.8125rem;
+      color: var(--ink-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .new-project-btn {
-      display: inline-block;
-      padding: 8px 16px;
-      background: #238636;
-      color: #fff;
+    .project-card-actions {
+      display: flex;
+      gap: var(--space-md);
+      flex-wrap: wrap;
+      margin-top: var(--space-sm);
+    }
+    .project-card-actions a {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
       text-decoration: none;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      font-weight: 600;
     }
-
-    .new-project-btn:hover { background: #2ea043; text-decoration: none; }
-
-    .project-card:hover {
-      border-color: #58a6ff;
-      background: #1c2333;
-    }
-
-    .project-card-icon {
-      font-size: 1.8rem;
-      margin-bottom: 10px;
-    }
-
-    .project-card-name {
-      font-size: 0.95rem;
-      font-weight: 600;
-      word-break: break-word;
-    }
+    .project-card-actions a:hover { color: var(--accent); }
+    .project-card-actions .edit-link { margin-left: auto; color: var(--ink-subtle); }
 
     .placeholder {
       text-align: center;
-      color: #484f58;
-      padding: 48px 24px;
+      padding: var(--space-2xl) var(--space-md);
+      color: var(--ink-subtle);
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
     }
+    .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
 
-    .placeholder-icon {
-      font-size: 3rem;
-      margin-bottom: 12px;
-    }
-
-    .placeholder p {
-      font-size: 0.95rem;
-    }
-
-    .error-msg {
-      color: #f85149;
-      text-align: center;
-      padding: 20px;
+    @media (max-width: 600px) {
+      .container { padding: var(--space-md) var(--space-sm); }
+      .page-actions { gap: var(--space-xs); }
     }
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <h1>Projects</h1>
-    <div style="display:flex; gap:16px; align-items:center;">
-      <a href="/new-project.html" class="new-project-btn">+ New Project</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/" class="is-active">Projects</a>
+        <a href="/new-project.html">New Project</a>
+      </nav>
     </div>
-  </div>
+  </header>
 
-  <div class="container">
+  <main class="container">
+    <div class="page-actions">
+      <h1>Projects</h1>
+      <a href="/new-project.html" class="btn btn-primary">+ New Project</a>
+    </div>
+
     <div id="projectList">
       <div class="placeholder">
-        <p>Loading projects...</p>
+        <p>Loading projects…</p>
       </div>
     </div>
-  </div>
+  </main>
 
   <script>
     const projectList = document.getElementById("projectList");
@@ -178,12 +162,9 @@
         const projects = await res.json();
 
         if (projects.length === 0) {
-          projectList.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128194;</div><p>No projects yet. Click <a href="/new-project.html" style="color:#58a6ff">+ New Project</a> to create one.</p></div>';
+          projectList.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128194;</div><p>No projects yet. <a href="/new-project.html" style="color:var(--accent)">Create your first project</a>.</p></div>';
           return;
         }
-
-        const grid = document.createElement("div");
-        grid.className = "project-grid";
 
         // Fetch metadata + optional fallback cover for each project in parallel
         const infos = await Promise.all(projects.map(async (name) => {
@@ -192,8 +173,6 @@
             const r = await fetch(`/api/project-info?project=${encodeURIComponent(name)}`);
             if (r.ok) info = await r.json();
           } catch {}
-
-          // Fallback: if no explicit cover photo, use the first 2D image in the project
           if (!info.coverPhoto) {
             try {
               const r2 = await fetch(`/api/2d/files?project=${encodeURIComponent(name)}`);
@@ -206,6 +185,9 @@
           }
           return info;
         }));
+
+        const grid = document.createElement("div");
+        grid.className = "projects-grid";
 
         infos.forEach((info) => {
           const name = info.name;
@@ -224,19 +206,16 @@
             <div class="project-card-body">
               <div class="project-card-name">${name}</div>
               ${addressHtml}
-              <div style="display:flex; gap:12px; margin-top:10px; font-size:0.8rem; flex-wrap:wrap;">
-                <a href="/viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">360 Photos</a>
-                <a href="/image-viewer.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">2D Images</a>
-                <a href="/map-viewer/${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">View Map</a>
-                <a href="/map-editor.html?project=${encodeURIComponent(name)}" style="color:#58a6ff; text-decoration:none;">Edit Map</a>
-                <a href="/edit-project.html?project=${encodeURIComponent(name)}" style="color:#8b949e; text-decoration:none; margin-left:auto;">Edit</a>
+              <div class="project-card-actions">
+                <a href="/viewer.html?project=${encodeURIComponent(name)}">360 Photos</a>
+                <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
+                <a href="/map-viewer/${encodeURIComponent(name)}">View Map</a>
+                <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
+                <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
             </div>
           `;
-          card.style.cursor = "pointer";
-          card.title = "Open map";
           card.addEventListener("click", (e) => {
-            // If the user clicked an existing link or a child of one, let it handle navigation
             if (e.target.closest("a[href]")) return;
             window.location.href = `/map-viewer/${encodeURIComponent(name)}`;
           });

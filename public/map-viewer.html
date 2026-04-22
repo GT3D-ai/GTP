@@ -3,47 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Map Viewer</title>
+  <title>Map Viewer — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .top-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      flex-shrink: 0;
-    }
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
     .project-headline {
-      font-size: 0.95rem;
+      font-family: var(--font-display);
       font-weight: 600;
-      color: #f0f3f6;
-      letter-spacing: 0.2px;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
     }
 
-    .top-bar a {
-      color: #58a6ff;
-      text-decoration: none;
-      font-size: 0.82rem;
-    }
-
-    .top-bar a:hover { text-decoration: underline; }
-
+    /* Map area */
     .map-area {
       flex: 1;
       display: flex;
@@ -51,8 +30,10 @@
       justify-content: center;
       position: relative;
       overflow: hidden;
-      background: #0a0c10;
+      background: var(--secondary-block);
     }
+    .map-area.zoomed { cursor: grab; }
+    .map-area.panning { cursor: grabbing; }
 
     .map-container {
       position: relative;
@@ -62,152 +43,134 @@
       transform-origin: 0 0;
       will-change: transform;
     }
-
-    .map-area { cursor: default; }
-    .map-area.zoomed { cursor: grab; }
-    .map-area.panning { cursor: grabbing; }
-
-    .zoom-indicator {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(22, 27, 34, 0.85);
-      color: #8b949e;
-      font-size: 0.72rem;
-      padding: 4px 10px;
-      border-radius: 4px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-      z-index: 50;
-    }
-
-    .zoom-indicator.visible { opacity: 1; }
-
     .map-container img {
       max-width: 100%;
-      max-height: calc(100vh - 120px);
+      max-height: calc(100vh - 140px);
       display: block;
       object-fit: contain;
       user-select: none;
       -webkit-user-drag: none;
     }
 
-    .placeholder {
-      text-align: center;
-      color: #484f58;
-    }
+    .placeholder { text-align: center; color: rgba(255,255,255,0.5); padding: var(--space-md); }
+    .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .placeholder p { font-size: 0.9rem; margin: 0; }
+    .placeholder a { color: var(--accent); }
 
-    .placeholder-icon { font-size: 3rem; margin-bottom: 12px; }
-    .placeholder p { font-size: 0.95rem; }
-
+    /* Pins */
     .pin {
       position: absolute;
       width: 16px;
       height: 16px;
       background: #ffffff;
-      border: 2px solid #0f1117;
+      border: 2px solid var(--ink);
       border-radius: 50%;
       transform: translate(-50%, -50%);
       cursor: pointer;
       z-index: 5;
-      box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.4), 0 2px 8px rgba(0,0,0,0.4);
       transition: transform 0.15s, box-shadow 0.15s;
     }
-
     .pin:hover {
-      transform: translate(-50%, -50%) scale(1.35);
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.9);
+      transform: translate(-50%, -50%) scale(1.3);
+      box-shadow: 0 0 0 3px var(--accent), 0 2px 12px rgba(0,0,0,0.5);
     }
-
     .pin-tooltip {
       position: absolute;
       bottom: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%);
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
+      background: var(--ink);
+      color: #fff;
       padding: 4px 8px;
-      font-size: 0.72rem;
-      color: #e1e4e8;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
       white-space: nowrap;
       pointer-events: none;
       display: none;
       z-index: 10;
     }
-
     .pin:hover .pin-tooltip { display: block; }
 
+    /* Bottom level bar */
     .level-bar {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      padding: 10px 20px;
-      background: #161b22;
-      border-top: 1px solid #30363d;
+      gap: 0.75rem;
+      padding: 0.75rem var(--space-md);
+      background: var(--bg-elevated);
+      border-top: 1px solid var(--line);
       flex-shrink: 0;
     }
-
     .level-bar label {
-      font-size: 0.75rem;
-      color: #8b949e;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      color: var(--ink-muted);
     }
-
     .level-bar select {
-      padding: 5px 10px;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e1e4e8;
-      font-size: 0.85rem;
+      padding: 0.4rem 0.65rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
       outline: none;
-      min-width: 140px;
+      min-width: 160px;
+      transition: border-color var(--transition);
     }
+    .level-bar select:focus { border-color: var(--ink); }
 
-    .level-bar select:focus { border-color: #58a6ff; }
+    /* Zoom indicator */
+    .zoom-indicator {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(13, 13, 13, 0.75);
+      color: #fff;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 50;
+    }
+    .zoom-indicator.visible { opacity: 1; }
 
     /* Fullscreen 360 modal */
     .viewer-modal {
       position: fixed;
       inset: 0;
-      background: #000;
+      background: var(--ink);
       z-index: 1000;
       display: none;
     }
-
     .viewer-modal.visible { display: block; }
-
-    #pano360 {
-      width: 100%;
-      height: 100%;
-    }
+    #pano360 { width: 100%; height: 100%; }
 
     .close-btn {
       position: absolute;
       top: 16px;
       right: 16px;
-      width: 42px;
-      height: 42px;
-      background: rgba(0, 0, 0, 0.7);
+      width: 44px;
+      height: 44px;
+      background: rgba(255,255,255,0.1);
       color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      font-size: 1.3rem;
+      border: 1px solid rgba(255,255,255,0.25);
+      font-size: 1.25rem;
       cursor: pointer;
       z-index: 1010;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.15s, transform 0.15s;
+      transition: all var(--transition);
     }
-
     .close-btn:hover {
-      background: rgba(248, 81, 73, 0.9);
-      transform: scale(1.08);
+      background: var(--accent);
+      border-color: var(--accent);
     }
 
     .modal-title {
@@ -215,10 +178,10 @@
       top: 20px;
       left: 20px;
       color: #fff;
-      font-size: 0.85rem;
+      font-size: 0.8125rem;
+      letter-spacing: 0.04em;
       background: rgba(0, 0, 0, 0.6);
       padding: 6px 12px;
-      border-radius: 6px;
       z-index: 1010;
       max-width: calc(100% - 100px);
       white-space: nowrap;
@@ -229,108 +192,52 @@
     .loading-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(13,13,13,0.85);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 1005;
-      color: #e1e4e8;
-      font-size: 0.95rem;
+      color: rgba(255,255,255,0.8);
+      font-size: 0.85rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
-
     .loading-overlay.hidden { display: none; }
 
-    .menu-container {
-      position: relative;
-    }
-
-    .menu-btn {
-      background: none;
-      border: 1px solid #30363d;
-      color: #e1e4e8;
-      width: 36px;
-      height: 32px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .menu-btn:hover {
-      background: #21262d;
-      border-color: #58a6ff;
-    }
-
-    .menu-btn svg {
-      width: 18px;
-      height: 18px;
-      display: block;
-    }
-
-    .menu-dropdown {
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 4px 0;
-      min-width: 160px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      display: none;
-      z-index: 500;
-    }
-
-    .menu-dropdown.visible { display: block; }
-
-    .menu-dropdown a {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 14px;
-      font-size: 0.85rem;
-      color: #e1e4e8;
-      text-decoration: none;
-      transition: background 0.1s;
-    }
-
-    .menu-dropdown a:hover {
-      background: #21262d;
-      text-decoration: none;
-    }
-
     @media (max-width: 600px) {
-      .top-bar { padding: 8px 14px; }
-      .level-bar { padding: 8px 14px; }
-      .project-headline { font-size: 0.85rem; }
+      .level-bar { padding: 0.5rem var(--space-sm); }
+      .project-headline { font-size: 0.9rem; }
     }
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <div class="project-headline" id="projectHeadline">Map Viewer</div>
-    <div class="menu-container">
-      <button class="menu-btn" id="menuBtn" title="Menu" aria-label="Menu">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <line x1="2" y1="4" x2="14" y2="4"/>
-          <line x1="2" y1="8" x2="14" y2="8"/>
-          <line x1="2" y1="12" x2="14" y2="12"/>
-        </svg>
-      </button>
-      <div class="menu-dropdown" id="menuDropdown">
-        <a href="/">&#128194; Projects</a>
-        <a id="editMapMenuItem" href="/map-editor.html">&#9998; Edit Map</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <span class="project-headline" id="projectHeadline">Map Viewer</span>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:var(--space-sm);">
+        <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false">
+          <span class="bar"></span>
+        </button>
       </div>
     </div>
-  </div>
+    <div class="dropdown-panel" id="menuDropdown">
+      <div class="dropdown-inner">
+        <a href="/">Projects</a>
+        <a id="editMapMenuItem" href="/map-editor.html">Edit Map</a>
+        <a id="viewerMenuItem" href="/viewer.html">360 Viewer</a>
+        <a id="imageViewerMenuItem" href="/image-viewer.html">2D Viewer</a>
+      </div>
+    </div>
+  </header>
 
   <div class="map-area" id="mapArea">
     <div class="placeholder" id="mapPlaceholder">
       <div class="placeholder-icon">&#128506;</div>
-      <p>Loading map...</p>
+      <p>Loading map…</p>
     </div>
     <div class="map-container" id="mapContainer" style="display:none;">
       <img id="floorPlanImg" alt="Floor plan">
@@ -339,9 +246,9 @@
   </div>
 
   <div class="level-bar">
-    <label for="levelSelect">Level:</label>
+    <label for="levelSelect">Level</label>
     <select id="levelSelect">
-      <option value="">Loading...</option>
+      <option value="">Loading…</option>
     </select>
   </div>
 
@@ -349,19 +256,14 @@
     <div class="modal-title" id="modalTitle"></div>
     <button class="close-btn" id="closeBtn" title="Close">&times;</button>
     <div id="pano360"></div>
-    <div class="loading-overlay" id="modalLoading">Loading 360 view...</div>
+    <div class="loading-overlay" id="modalLoading">Loading 360…</div>
   </div>
 
   <script>
-    // Extract project from URL: /map-viewer/<project-name> OR fallback to ?project=
     let project = null;
     const pathMatch = window.location.pathname.match(/^\/map-viewer\/(.+?)\/?$/);
-    if (pathMatch) {
-      project = decodeURIComponent(pathMatch[1]);
-    } else {
-      const params = new URLSearchParams(window.location.search);
-      project = params.get("project");
-    }
+    if (pathMatch) project = decodeURIComponent(pathMatch[1]);
+    else project = new URLSearchParams(window.location.search).get("project");
 
     const projectHeadline = document.getElementById("projectHeadline");
     const mapPlaceholder = document.getElementById("mapPlaceholder");
@@ -374,11 +276,8 @@
     const closeBtn = document.getElementById("closeBtn");
 
     let mappings = { floorPlanImage: null, floorPlans: {}, pins: [] };
-
     function getFloorPlanForLevel(level) {
-      if (level && mappings.floorPlans && mappings.floorPlans[level]) {
-        return mappings.floorPlans[level];
-      }
+      if (level && mappings.floorPlans && mappings.floorPlans[level]) return mappings.floorPlans[level];
       return mappings.floorPlanImage || null;
     }
     let currentLevel = "level 1";
@@ -388,27 +287,32 @@
       mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128679;</div><p>No project specified</p>';
     } else {
       projectHeadline.textContent = project;
-      document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
+      const enc = encodeURIComponent(project);
+      document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${enc}`;
+      document.getElementById("viewerMenuItem").href = `/viewer.html?project=${enc}`;
+      document.getElementById("imageViewerMenuItem").href = `/image-viewer.html?project=${enc}`;
       init();
     }
 
-    // Hamburger menu toggle
+    // Menu toggle
     const menuBtn = document.getElementById("menuBtn");
     const menuDropdown = document.getElementById("menuDropdown");
-
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      menuDropdown.classList.toggle("visible");
+      const open = menuDropdown.classList.toggle("is-open");
+      menuBtn.setAttribute("aria-expanded", open);
     });
-
     document.addEventListener("click", (e) => {
-      if (!e.target.closest(".menu-container")) {
-        menuDropdown.classList.remove("visible");
+      if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+        menuDropdown.classList.remove("is-open");
+        menuBtn.setAttribute("aria-expanded", "false");
       }
     });
-
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") menuDropdown.classList.remove("visible");
+      if (e.key === "Escape") {
+        menuDropdown.classList.remove("is-open");
+        menuBtn.setAttribute("aria-expanded", "false");
+      }
     });
 
     async function init() {
@@ -418,12 +322,11 @@
 
     function refreshFloorPlanDisplay() {
       const path = getFloorPlanForLevel(currentLevel);
-      if (path) {
-        showFloorPlan(path);
-      } else {
+      if (path) { showFloorPlan(path); }
+      else {
         mapContainer.style.display = "none";
         mapPlaceholder.style.display = "";
-        mapPlaceholder.innerHTML = `<div class="placeholder-icon">&#128506;</div><p>No floor plan set for <strong>${currentLevel || "this level"}</strong>.<br><a href="/map-editor.html?project=${encodeURIComponent(project)}" style="color:#58a6ff">Open Map Editor</a> to configure.</p>`;
+        mapPlaceholder.innerHTML = `<div class="placeholder-icon">&#128506;</div><p>No floor plan set for <strong>${currentLevel || "this level"}</strong>.<br><a href="/map-editor.html?project=${encodeURIComponent(project)}">Open Map Editor</a> to configure.</p>`;
       }
     }
 
@@ -433,17 +336,10 @@
         if (!res.ok) return;
         const levels = await res.json();
         levelSelect.innerHTML = "";
-        if (levels.length === 0) {
-          levelSelect.innerHTML = '<option value="">No levels</option>';
-          return;
-        }
+        if (levels.length === 0) { levelSelect.innerHTML = '<option value="">No levels</option>'; return; }
         levels.forEach((lvl) => {
-          const opt = document.createElement("option");
-          opt.value = lvl;
-          opt.textContent = lvl;
-          levelSelect.appendChild(opt);
+          const opt = document.createElement("option"); opt.value = lvl; opt.textContent = lvl; levelSelect.appendChild(opt);
         });
-        // Default to "level 1" if it exists, otherwise first level
         const defaultLevel = levels.includes("level 1") ? "level 1" : levels[0];
         currentLevel = defaultLevel;
         levelSelect.value = defaultLevel;
@@ -466,31 +362,22 @@
         renderPins();
       };
       floorPlanImg.onerror = () => {
-        mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128247;</div><p style="color:#f85149">Failed to load floor plan</p>';
+        mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128247;</div><p style="color:#ff8a7a">Failed to load floor plan</p>';
       };
     }
 
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
-
-      // Filter pins to only those matching the current level
       const prefix = `${project}/${currentLevel}/`;
       const visiblePins = mappings.pins.filter((p) => p.image360.startsWith(prefix));
-
       visiblePins.forEach((pin) => {
         const el = document.createElement("div");
         el.className = "pin";
         el.style.left = (pin.x * 100) + "%";
         el.style.top = (pin.y * 100) + "%";
-
         const displayName = pin.image360.split("/").pop();
         el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
-
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          openViewer(pin.image360, displayName);
-        });
-
+        el.addEventListener("click", (e) => { e.stopPropagation(); openViewer(pin.image360, displayName); });
         mapContainer.appendChild(el);
       });
     }
@@ -504,24 +391,15 @@
     // ---- Zoom + pan ----
     const mapArea = document.getElementById("mapArea");
     const zoomIndicator = document.getElementById("zoomIndicator");
-    let scale = 1;
-    let tx = 0, ty = 0;
-    const MIN_SCALE = 1;
-    const MAX_SCALE = 8;
+    let scale = 1, tx = 0, ty = 0;
+    const MIN_SCALE = 1, MAX_SCALE = 8;
     let zoomIndicatorTimer = null;
 
     function applyTransform() {
       mapContainer.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
       mapArea.classList.toggle("zoomed", scale > 1);
     }
-
-    function resetZoom() {
-      scale = 1;
-      tx = 0;
-      ty = 0;
-      applyTransform();
-    }
-
+    function resetZoom() { scale = 1; tx = 0; ty = 0; applyTransform(); }
     function showZoomIndicator() {
       zoomIndicator.textContent = Math.round(scale * 100) + "%";
       zoomIndicator.classList.add("visible");
@@ -532,15 +410,11 @@
     mapArea.addEventListener("wheel", (e) => {
       if (mapContainer.style.display === "none") return;
       e.preventDefault();
-      // Compute cursor position relative to the UNtransformed mapContainer origin.
-      // getBoundingClientRect returns the VISUAL (post-transform) box; its top-left
-      // corresponds to the current (tx, ty) offset of transform-origin 0,0 element.
       const rect = mapContainer.getBoundingClientRect();
       const px = (e.clientX - rect.left) / scale;
       const py = (e.clientY - rect.top) / scale;
       const factor = Math.exp(-e.deltaY * 0.0015);
       const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
-      // Shift tx/ty so the point under the cursor stays under the cursor
       tx += px * (scale - newScale);
       ty += py * (scale - newScale);
       scale = newScale;
@@ -549,82 +423,42 @@
       showZoomIndicator();
     }, { passive: false });
 
-    // Pan when zoomed
-    let panning = false;
-    let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
-
+    let panning = false, panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
     mapArea.addEventListener("mousedown", (e) => {
       if (scale <= 1) return;
-      if (e.target.closest(".pin") || e.target.closest(".menu-container")) return;
-      panning = true;
-      panStartX = e.clientX;
-      panStartY = e.clientY;
-      panStartTx = tx;
-      panStartTy = ty;
-      mapArea.classList.add("panning");
-      e.preventDefault();
+      if (e.target.closest(".pin") || e.target.closest(".site-header")) return;
+      panning = true; panStartX = e.clientX; panStartY = e.clientY; panStartTx = tx; panStartTy = ty;
+      mapArea.classList.add("panning"); e.preventDefault();
     });
-
     document.addEventListener("mousemove", (e) => {
       if (!panning) return;
       tx = panStartTx + (e.clientX - panStartX);
       ty = panStartTy + (e.clientY - panStartY);
       applyTransform();
     });
+    document.addEventListener("mouseup", () => { if (!panning) return; panning = false; mapArea.classList.remove("panning"); });
+    mapArea.addEventListener("dblclick", (e) => { if (e.target.closest(".pin")) return; resetZoom(); showZoomIndicator(); });
 
-    document.addEventListener("mouseup", () => {
-      if (!panning) return;
-      panning = false;
-      mapArea.classList.remove("panning");
-    });
-
-    // Double-click to reset zoom
-    mapArea.addEventListener("dblclick", (e) => {
-      if (e.target.closest(".pin")) return;
-      resetZoom();
-      showZoomIndicator();
-    });
-
-    // Full screen 360 viewer
     function openViewer(image360, displayName) {
       modalTitle.textContent = displayName;
       viewerModal.classList.add("visible");
       modalLoading.classList.remove("hidden");
-
-      if (viewer) {
-        try { viewer.destroy(); } catch {}
-        viewer = null;
-      }
-
+      if (viewer) { try { viewer.destroy(); } catch {} viewer = null; }
       viewer = pannellum.viewer("pano360", {
         type: "equirectangular",
         panorama: `/api/image?file=${encodeURIComponent(image360)}`,
-        autoLoad: true,
-        compass: true,
-        showControls: true,
-        mouseZoom: true,
-        autoRotate: -2,
+        autoLoad: true, compass: true, showControls: true, mouseZoom: true, autoRotate: -2,
         loadedCallback: () => modalLoading.classList.add("hidden"),
       });
-
       setTimeout(() => modalLoading.classList.add("hidden"), 8000);
     }
-
     function closeViewer() {
       viewerModal.classList.remove("visible");
-      if (viewer) {
-        try { viewer.destroy(); } catch {}
-        viewer = null;
-      }
+      if (viewer) { try { viewer.destroy(); } catch {} viewer = null; }
     }
-
     closeBtn.addEventListener("click", closeViewer);
-
-    // ESC closes the modal
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && viewerModal.classList.contains("visible")) {
-        closeViewer();
-      }
+      if (e.key === "Escape" && viewerModal.classList.contains("visible")) closeViewer();
     });
   </script>
 </body>

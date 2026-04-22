@@ -3,64 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Map Editor</title>
+  <title>Map Editor — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
       height: 100vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
 
-    .top-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      flex-shrink: 0;
+    .project-headline {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
     }
-
-    .top-bar h1 { font-size: 1.1rem; font-weight: 600; color: #f0f3f6; }
-    .top-bar a { color: #58a6ff; text-decoration: none; font-size: 0.85rem; }
-    .top-bar a:hover { text-decoration: underline; }
 
     .toolbar {
       display: flex;
       align-items: center;
       gap: 12px;
       padding: 8px 20px;
-      background: #0d1117;
-      border-bottom: 1px solid #30363d;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
       flex-shrink: 0;
     }
 
-    .toolbar label { font-size: 0.8rem; color: #8b949e; flex-shrink: 0; }
+    .toolbar label { font-size: 0.8rem; color: var(--ink-muted); flex-shrink: 0; }
 
     .toolbar select {
       padding: 6px 10px;
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
       border-radius: 6px;
-      color: #e1e4e8;
+      color: var(--ink);
       font-size: 0.85rem;
       outline: none;
       min-width: 200px;
     }
 
-    .toolbar select:focus { border-color: #58a6ff; }
+    .toolbar select:focus { border-color: var(--accent); }
 
     .save-status {
       font-size: 0.75rem;
-      color: #3fb950;
+      color: var(--success);
       margin-left: auto;
     }
 
@@ -72,8 +66,8 @@
 
     .sidebar {
       width: 260px;
-      background: #161b22;
-      border-right: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--line);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
@@ -82,17 +76,17 @@
     .sidebar-header {
       padding: 12px 16px;
       font-size: 0.8rem;
-      color: #8b949e;
+      color: var(--ink-muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      border-bottom: 1px solid #30363d;
+      border-bottom: 1px solid var(--line);
     }
 
     .sidebar-hint {
       padding: 8px 16px;
       font-size: 0.7rem;
-      color: #484f58;
-      border-bottom: 1px solid #21262d;
+      color: var(--ink-subtle);
+      border-bottom: 1px solid var(--line);
     }
 
     .file-list {
@@ -113,12 +107,12 @@
       font-size: 0.8rem;
     }
 
-    .drag-item:hover { background: #21262d; }
+    .drag-item:hover { background: var(--bg); }
     .drag-item:active { cursor: grabbing; }
 
     .drag-item-icon {
       width: 28px; height: 28px;
-      background: #21262d;
+      background: var(--bg);
       border-radius: 6px;
       display: flex;
       align-items: center;
@@ -146,22 +140,22 @@
 
     .drag-item-actions select {
       padding: 2px 4px;
-      background: #21262d;
-      border: 1px solid #30363d;
+      background: var(--bg);
+      border: 1px solid var(--line);
       border-radius: 4px;
-      color: #e1e4e8;
+      color: var(--ink);
       font-size: 0.65rem;
       outline: none;
       max-width: 80px;
       cursor: pointer;
     }
 
-    .drag-item-actions select:focus { border-color: #58a6ff; }
+    .drag-item-actions select:focus { border-color: var(--accent); }
 
     .drag-item-actions .delete-btn {
       background: none;
       border: 1px solid transparent;
-      color: #8b949e;
+      color: var(--ink-muted);
       padding: 2px 5px;
       border-radius: 4px;
       font-size: 0.75rem;
@@ -169,7 +163,7 @@
       line-height: 1;
     }
 
-    .drag-item-actions .delete-btn:hover { color: #f85149; border-color: #f8514966; background: #f851490d; }
+    .drag-item-actions .delete-btn:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
 
     .map-area {
       flex: 1;
@@ -178,7 +172,7 @@
       justify-content: center;
       position: relative;
       overflow: hidden;
-      background: #0a0c10;
+      background: var(--secondary-block);
     }
 
     .map-container {
@@ -197,8 +191,8 @@
       position: absolute;
       top: 10px;
       right: 10px;
-      background: rgba(22, 27, 34, 0.85);
-      color: #8b949e;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--ink-muted);
       font-size: 0.72rem;
       padding: 4px 10px;
       border-radius: 4px;
@@ -220,13 +214,13 @@
     }
 
     .map-container.drop-active img {
-      outline: 2px solid #58a6ff;
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
     .placeholder {
       text-align: center;
-      color: #484f58;
+      color: var(--ink-subtle);
     }
 
     .placeholder-icon { font-size: 3rem; margin-bottom: 12px; }
@@ -237,7 +231,7 @@
       width: 14px;
       height: 14px;
       background: #ffffff;
-      border: 2px solid #0f1117;
+      border: 2px solid var(--ink);
       border-radius: 50%;
       transform: translate(-50%, -50%);
       cursor: pointer;
@@ -276,12 +270,12 @@
       bottom: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%);
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
       border-radius: 6px;
       padding: 4px 8px;
       font-size: 0.7rem;
-      color: #e1e4e8;
+      color: var(--ink);
       white-space: nowrap;
       pointer-events: none;
       display: none;
@@ -292,13 +286,13 @@
 
     .pin-context-menu {
       position: fixed;
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
       border-radius: 8px;
       padding: 4px 0;
       z-index: 100;
       min-width: 140px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 8px 24px rgba(13, 13, 13, 0.35);
       display: none;
     }
 
@@ -307,8 +301,8 @@
     .pin-context-menu-header {
       padding: 6px 12px;
       font-size: 0.7rem;
-      color: #484f58;
-      border-bottom: 1px solid #21262d;
+      color: var(--ink-subtle);
+      border-bottom: 1px solid var(--line);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -325,24 +319,24 @@
       transition: background 0.1s;
     }
 
-    .pin-context-menu-item:hover { background: #21262d; }
+    .pin-context-menu-item:hover { background: var(--bg); }
 
     .pin-context-menu-item.move { color: #ffd700; }
-    .pin-context-menu-item.remove { color: #f85149; }
-    .pin-context-menu-item.view { color: #58a6ff; }
+    .pin-context-menu-item.remove { color: var(--danger); }
+    .pin-context-menu-item.view { color: var(--accent); }
 
     .file-list::-webkit-scrollbar { width: 6px; }
     .file-list::-webkit-scrollbar-track { background: transparent; }
-    .file-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    .file-list::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
     .thumb-popover {
       position: fixed;
       z-index: 200;
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
       border-radius: 8px;
       padding: 6px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 8px 24px rgba(13, 13, 13, 0.55);
       display: none;
     }
 
@@ -360,19 +354,19 @@
 
     .thumb-popover img:hover {
       transform: scale(1.03);
-      box-shadow: 0 0 0 2px #58a6ff;
+      box-shadow: 0 0 0 2px var(--accent);
     }
 
     .thumb-popover .thumb-hint {
       font-size: 0.6rem;
-      color: #58a6ff;
+      color: var(--accent);
       text-align: center;
       margin-top: 2px;
     }
 
     .thumb-popover .thumb-label {
       font-size: 0.65rem;
-      color: #8b949e;
+      color: var(--ink-muted);
       text-align: center;
       margin-top: 4px;
       max-width: 120px;
@@ -382,7 +376,7 @@
     }
 
     .drag-item-name { cursor: pointer; }
-    .drag-item-name:hover { color: #58a6ff; }
+    .drag-item-name:hover { color: var(--accent); }
 
     .pano-modal-overlay {
       position: fixed;
@@ -399,8 +393,8 @@
     .pano-modal {
       width: 80vw;
       height: 70vh;
-      background: #0f1117;
-      border: 1px solid #30363d;
+      background: var(--bg);
+      border: 1px solid var(--line);
       border-radius: 12px;
       overflow: hidden;
       position: relative;
@@ -413,15 +407,15 @@
       align-items: center;
       justify-content: space-between;
       padding: 10px 16px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--line);
       flex-shrink: 0;
     }
 
     .pano-modal-title {
       font-size: 0.85rem;
       font-weight: 500;
-      color: #e1e4e8;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -430,7 +424,7 @@
     .pano-modal-close {
       background: none;
       border: none;
-      color: #8b949e;
+      color: var(--ink-muted);
       font-size: 1.2rem;
       cursor: pointer;
       padding: 2px 8px;
@@ -438,56 +432,62 @@
       line-height: 1;
     }
 
-    .pano-modal-close:hover { color: #e1e4e8; background: #21262d; }
+    .pano-modal-close:hover { color: var(--ink); background: var(--bg); }
 
     .fp-option {
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
     }
 
-    .fp-option:hover { border-color: #58a6ff; background: #1c2333; }
-    .fp-option.current { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff; }
+    .fp-option:hover { border-color: var(--accent); background: var(--warning-bg); }
+    .fp-option.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
     .fp-option img {
       width: 100%;
       height: 110px;
       object-fit: cover;
       display: block;
-      background: #21262d;
+      background: var(--bg);
     }
 
     .fp-option-name {
       padding: 6px 10px;
       font-size: 0.75rem;
-      color: #e1e4e8;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .fp-empty { color: #8b949e; font-size: 0.9rem; text-align: center; padding: 30px; grid-column: 1 / -1; }
+    .fp-empty { color: var(--ink-muted); font-size: 0.9rem; text-align: center; padding: 30px; grid-column: 1 / -1; }
 
     .pano-modal-viewer {
       flex: 1;
       min-height: 0;
     }
 
-    .error-msg { color: #f85149; text-align: center; padding: 20px; }
+    .error-msg { color: var(--danger); text-align: center; padding: 20px; }
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <h1 id="pageTitle">Map Editor</h1>
-    <div style="display:flex; gap:16px;">
-      <a href="/">Projects</a>
-      <a id="viewerLink" href="/viewer.html">360 Viewer</a>
-      <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <span class="project-headline" id="pageTitle">Map Editor</span>
+      <nav class="nav-primary" aria-label="Primary" style="margin-left:auto;">
+        <a href="/">Projects</a>
+        <a id="viewerLink" href="/viewer.html">360 Viewer</a>
+        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+      </nav>
     </div>
-  </div>
+  </header>
 
   <div class="toolbar">
     <label for="levelFilter">Level:</label>
@@ -496,7 +496,7 @@
     </select>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
-      <a href="#" id="editMapLink" style="color:#58a6ff; text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
+      <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
     </span>
   </div>
 
@@ -687,7 +687,7 @@
     });
 
     if (project) {
-      document.getElementById("pageTitle").textContent = `Map Editor — ${project}`;
+      document.getElementById("pageTitle").textContent = `Map Editor · ${project}`;
       document.getElementById("viewerLink").href = `/viewer.html?project=${encodeURIComponent(project)}`;
       document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
       init();
@@ -857,8 +857,8 @@
         setTimeout(() => { saveStatus.textContent = ""; }, 2000);
       } catch {
         saveStatus.textContent = "Save failed";
-        saveStatus.style.color = "#f85149";
-        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = "#3fb950"; }, 3000);
+        saveStatus.style.color = "var(--danger)";
+        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = "var(--success)"; }, 3000);
       }
     }
 

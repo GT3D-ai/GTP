@@ -3,247 +3,87 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>2D Image Uploader</title>
+  <title>Upload 2D Images — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
-      min-height: 100vh;
-    }
-
-    .top-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-    }
-
-    .top-bar h1 { font-size: 1.1rem; font-weight: 600; color: #f0f3f6; }
-    .top-bar a { color: #58a6ff; text-decoration: none; font-size: 0.85rem; }
-    .top-bar a:hover { text-decoration: underline; }
-
-    .container { max-width: 720px; margin: 0 auto; padding: 24px; }
-
-    label.field-label {
-      display: block;
-      font-size: 0.8rem;
-      color: #8b949e;
-      margin-bottom: 6px;
-    }
-
-    .field-input {
-      width: 100%;
-      padding: 10px 12px;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      color: #e1e4e8;
-      font-size: 0.9rem;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .field-input:focus { border-color: #58a6ff; }
-
-    .drop-zone {
-      border: 2px dashed #30363d;
-      border-radius: 12px;
-      padding: 40px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      background: #161b22;
-      margin-top: 20px;
-    }
-
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #58a6ff;
-      background: #1c2333;
-    }
-
-    .drop-zone-icon { font-size: 2.5rem; margin-bottom: 12px; color: #8b949e; }
-    .drop-zone p { color: #8b949e; font-size: 0.95rem; }
-    .drop-zone p strong { color: #58a6ff; }
-
     #fileInput { display: none; }
-
-    .file-list {
-      display: none;
-      margin-top: 16px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .file-list.visible { display: block; }
-
-    .file-list-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 16px;
-      border-bottom: 1px solid #30363d;
-      font-size: 0.8rem;
-      color: #8b949e;
-    }
-
-    .clear-all {
-      background: none; border: none; color: #f85149;
-      cursor: pointer; font-size: 0.8rem;
-    }
-
-    .clear-all:hover { text-decoration: underline; }
-
-    .file-entry {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 16px;
-      border-bottom: 1px solid #21262d;
-    }
-
-    .file-entry:last-child { border-bottom: none; }
-
-    .file-entry-icon {
-      width: 32px; height: 32px;
-      background: #21262d; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1rem; flex-shrink: 0;
-    }
-
+    .file-entry-icon { color: var(--ink-subtle); font-size: 1rem; flex-shrink: 0; }
     .file-entry-info { flex: 1; min-width: 0; }
-
-    .file-entry-name {
-      font-size: 0.85rem; font-weight: 500;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-
-    .file-entry-size { font-size: 0.75rem; color: #8b949e; margin-top: 2px; }
-
-    .file-entry-status { font-size: 0.75rem; flex-shrink: 0; padding: 2px 8px; border-radius: 4px; }
-    .file-entry-status.pending { color: #8b949e; }
-    .file-entry-status.uploading { color: #58a6ff; }
-    .file-entry-status.done { color: #3fb950; }
-    .file-entry-status.failed { color: #f85149; }
-
-    .file-entry .remove-btn {
-      background: none; border: none; color: #8b949e;
-      cursor: pointer; font-size: 1.1rem; padding: 2px 4px;
-      line-height: 1; border-radius: 4px; flex-shrink: 0;
-    }
-
-    .file-entry .remove-btn:hover { color: #f85149; }
-
-    .upload-btn {
-      display: none;
-      width: 100%;
-      margin-top: 16px;
-      padding: 12px;
-      background: #238636;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .upload-btn.visible { display: block; }
-    .upload-btn:hover { background: #2ea043; }
-    .upload-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
-
-    .progress-container { display: none; margin-top: 16px; }
+    .file-list-wrap { display: none; margin-top: var(--space-sm); }
+    .file-list-wrap.visible { display: block; }
+    .clear-all { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+    .clear-all:hover { text-decoration: underline; }
+    .progress-container { display: none; margin-top: var(--space-sm); }
     .progress-container.visible { display: block; }
+    .upload-btn-wrap { display: none; margin-top: var(--space-md); }
+    .upload-btn-wrap.visible { display: block; }
+    .form-head h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.375rem, 2.5vw, 1.75rem); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+    .form-head p.lede { margin-bottom: var(--space-lg); }
 
-    .progress-bar-track {
-      height: 8px; background: #21262d; border-radius: 4px; overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%; background: #58a6ff; border-radius: 4px; width: 0%; transition: width 0.3s;
-    }
-
-    .progress-text { font-size: 0.8rem; color: #8b949e; margin-top: 8px; text-align: center; }
-
-    .status-message { display: none; margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; }
-    .status-message.visible { display: block; }
-    .status-message.success { background: #0d2818; color: #3fb950; border: 1px solid #238636; }
-    .status-message.error { background: #2d1117; color: #f85149; border: 1px solid #da3633; }
-
-    .gallery-section { margin-top: 32px; }
-
+    .gallery-section { margin-top: var(--space-xl); }
     .gallery-header {
-      font-size: 0.85rem;
-      color: #8b949e;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: var(--space-sm);
     }
-
     .gallery-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
     }
-
     .gallery-item {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
+      background: var(--bg-elevated);
       overflow: hidden;
-      transition: border-color 0.2s;
+      transition: background var(--transition);
     }
-
-    .gallery-item:hover { border-color: #58a6ff; }
-
-    .gallery-item img {
-      width: 100%;
-      height: 120px;
-      object-fit: cover;
-      display: block;
-    }
-
+    .gallery-item:hover { background: var(--bg); }
+    .gallery-item img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
     .gallery-item-name {
-      padding: 6px 8px;
-      font-size: 0.7rem;
-      color: #8b949e;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      padding: 6px 10px; font-size: 0.75rem; color: var(--ink-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-
     .gallery-empty {
-      text-align: center;
-      color: #484f58;
-      padding: 24px;
-      font-size: 0.9rem;
+      text-align: center; padding: var(--space-xl) var(--space-md);
+      color: var(--ink-subtle); font-size: 0.9rem;
+      background: var(--bg-elevated); border: 1px solid var(--line);
     }
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <h1 id="pageTitle">2D Image Uploader</h1>
-    <div style="display:flex; gap:16px;">
-      <a href="/">Projects</a>
-      <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
-      <a id="viewerLink" href="/viewer.html">360 Viewer</a>
-      <a id="uploaderLink" href="/upload.html">360 Uploader</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+        <a id="viewerLink" href="/viewer.html">360 Viewer</a>
+      </nav>
     </div>
-  </div>
+  </header>
 
-  <div class="container">
-    <label class="field-label" for="projectSelect">Project <span style="color:#f85149">*</span></label>
-    <select class="field-input" id="projectSelect" style="cursor:pointer;">
-      <option value="">Select a project...</option>
-    </select>
-    <input class="field-input" type="text" id="newProjectName" placeholder="Enter new project name" style="display:none; margin-top:8px;">
+  <main class="container-sm">
+    <div class="form-head">
+      <p class="eyebrow">Upload</p>
+      <h2>Upload 2D images</h2>
+      <p class="lede">Floor plans, photos, sketches. Stored in the project's 2D image bucket.</p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="projectSelect">Project <span class="required-mark">*</span></label>
+      <select class="field-select" id="projectSelect">
+        <option value="">Select a project…</option>
+      </select>
+      <input class="field-input" type="text" id="newProjectName" placeholder="Enter new project name" style="display:none; margin-top:8px;">
+    </div>
 
     <div class="drop-zone" id="dropZone">
       <div class="drop-zone-icon">&#128444;</div>
@@ -251,7 +91,7 @@
     </div>
     <input type="file" id="fileInput" multiple accept="image/*">
 
-    <div class="file-list" id="fileList">
+    <div class="file-list-wrap" id="fileList">
       <div class="file-list-header">
         <span id="fileCount">0 files selected</span>
         <button class="clear-all" id="clearAll">Clear all</button>
@@ -259,7 +99,9 @@
       <div id="fileEntries"></div>
     </div>
 
-    <button class="upload-btn" id="uploadBtn">Upload Images</button>
+    <div class="upload-btn-wrap" id="uploadBtnWrap">
+      <button class="btn btn-primary btn-block" id="uploadBtn">Upload Images</button>
+    </div>
 
     <div class="progress-container" id="progressContainer">
       <div class="progress-bar-track">
@@ -274,7 +116,7 @@
       <div class="gallery-header">Project Images</div>
       <div id="galleryContent"></div>
     </div>
-  </div>
+  </main>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -283,31 +125,26 @@
     const projectSelect = document.getElementById("projectSelect");
     const newProjectName = document.getElementById("newProjectName");
     const viewerLink = document.getElementById("viewerLink");
-    const uploaderLink = document.getElementById("uploaderLink");
 
     async function loadProjectDropdown() {
       try {
         const res = await fetch("/api/projects");
         if (!res.ok) return;
         const projects = await res.json();
-        projectSelect.innerHTML = '<option value="">Select a project...</option>';
+        projectSelect.innerHTML = '<option value="">Select a project…</option>';
         projects.forEach((name) => {
           const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = name;
+          opt.value = name; opt.textContent = name;
           projectSelect.appendChild(opt);
         });
         const newOpt = document.createElement("option");
-        newOpt.value = "__new__";
-        newOpt.textContent = "+ Add New Project";
+        newOpt.value = "__new__"; newOpt.textContent = "+ Add New Project";
         projectSelect.appendChild(newOpt);
 
         if (projectFromUrl) {
           projectSelect.value = projectFromUrl;
           projectSelect.disabled = true;
-          projectSelect.style.opacity = "0.7";
           updateProjectLinks(projectFromUrl);
-          document.getElementById("pageTitle").textContent = `2D Images — ${projectFromUrl}`;
           loadGallery(projectFromUrl);
         }
       } catch {}
@@ -315,14 +152,11 @@
 
     function updateProjectLinks(project) {
       viewerLink.href = `/viewer.html?project=${encodeURIComponent(project)}`;
-      uploaderLink.href = `/index.html?project=${encodeURIComponent(project)}`;
       document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
     }
 
     function getSelectedProject() {
-      if (projectSelect.value === "__new__") {
-        return newProjectName.value.trim();
-      }
+      if (projectSelect.value === "__new__") return newProjectName.value.trim();
       return projectSelect.value;
     }
 
@@ -352,6 +186,7 @@
     const fileCount = document.getElementById("fileCount");
     const clearAllBtn = document.getElementById("clearAll");
     const uploadBtn = document.getElementById("uploadBtn");
+    const uploadBtnWrap = document.getElementById("uploadBtnWrap");
     const progressContainer = document.getElementById("progressContainer");
     const progressFill = document.getElementById("progressFill");
     const progressText = document.getElementById("progressText");
@@ -371,27 +206,25 @@
         const entry = document.createElement("div");
         entry.className = "file-entry";
         entry.innerHTML = `
-          <div class="file-entry-icon">&#128444;</div>
+          <span class="file-entry-icon">&#128444;</span>
           <div class="file-entry-info">
             <div class="file-entry-name" title="${file.name}">${file.name}</div>
             <div class="file-entry-size">${formatSize(file.size)}</div>
           </div>
           <span class="file-entry-status pending" id="file-status-${i}">Pending</span>
-          <button class="remove-btn" data-index="${i}" title="Remove">&times;</button>
+          <button class="icon-btn" data-index="${i}" title="Remove">&times;</button>
         `;
         fileEntries.appendChild(entry);
       });
       fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`;
       fileListEl.classList.toggle("visible", selectedFiles.length > 0);
-      uploadBtn.classList.toggle("visible", selectedFiles.length > 0);
+      uploadBtnWrap.classList.toggle("visible", selectedFiles.length > 0);
     }
 
     function addFiles(files) {
       const existing = new Set(selectedFiles.map((f) => f.name + f.size));
       for (const file of files) {
-        if (!existing.has(file.name + file.size)) {
-          selectedFiles.push(file);
-        }
+        if (!existing.has(file.name + file.size)) selectedFiles.push(file);
       }
       statusMessage.classList.remove("visible");
       progressContainer.classList.remove("visible");
@@ -402,7 +235,7 @@
       selectedFiles = [];
       fileInput.value = "";
       fileListEl.classList.remove("visible");
-      uploadBtn.classList.remove("visible");
+      uploadBtnWrap.classList.remove("visible");
       statusMessage.classList.remove("visible");
       progressContainer.classList.remove("visible");
     }
@@ -415,39 +248,28 @@
       dropZone.classList.remove("drag-over");
       if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
     });
-
     fileInput.addEventListener("change", () => {
       if (fileInput.files.length > 0) { addFiles(fileInput.files); fileInput.value = ""; }
     });
-
     fileEntries.addEventListener("click", (e) => {
-      const btn = e.target.closest(".remove-btn");
+      const btn = e.target.closest("[data-index]");
       if (btn) { selectedFiles.splice(parseInt(btn.dataset.index), 1); renderFileList(); }
     });
-
     clearAllBtn.addEventListener("click", clearFiles);
 
     uploadBtn.addEventListener("click", async () => {
       if (selectedFiles.length === 0) return;
-
       const project = getSelectedProject();
       if (!project) {
-        if (projectSelect.value === "__new__") {
-          newProjectName.style.borderColor = "#f85149";
-          newProjectName.focus();
-        } else {
-          projectSelect.style.borderColor = "#f85149";
-          projectSelect.focus();
-        }
+        if (projectSelect.value === "__new__") newProjectName.focus();
+        else projectSelect.focus();
         statusMessage.textContent = "Please select or enter a Project Name before uploading.";
         statusMessage.className = "status-message visible error";
         return;
       }
-      projectSelect.style.borderColor = "#30363d";
-      newProjectName.style.borderColor = "#30363d";
 
       uploadBtn.disabled = true;
-      uploadBtn.textContent = "Uploading...";
+      uploadBtn.textContent = "Uploading…";
       statusMessage.classList.remove("visible");
       progressContainer.classList.add("visible");
 
@@ -457,26 +279,17 @@
       for (let i = 0; i < total; i++) {
         const file = selectedFiles[i];
         const statusEl = document.getElementById(`file-status-${i}`);
-        statusEl.textContent = "Uploading...";
+        statusEl.textContent = "Uploading";
         statusEl.className = "file-entry-status uploading";
         progressFill.style.width = ((i / total) * 100).toFixed(0) + "%";
-        progressText.textContent = `Uploading ${i + 1} of ${total}...`;
+        progressText.textContent = `Uploading ${i + 1} of ${total}…`;
 
         try {
           const result = await uploadFile(file, project);
-          if (result.success) {
-            statusEl.textContent = "Done";
-            statusEl.className = "file-entry-status done";
-            completed++;
-          } else {
-            statusEl.textContent = "Failed";
-            statusEl.className = "file-entry-status failed";
-            failed++;
-          }
+          if (result.success) { statusEl.textContent = "Done"; statusEl.className = "file-entry-status done"; completed++; }
+          else { statusEl.textContent = "Failed"; statusEl.className = "file-entry-status failed"; failed++; }
         } catch {
-          statusEl.textContent = "Failed";
-          statusEl.className = "file-entry-status failed";
-          failed++;
+          statusEl.textContent = "Failed"; statusEl.className = "file-entry-status failed"; failed++;
         }
       }
 
@@ -484,7 +297,7 @@
       progressText.textContent = "Complete";
 
       if (failed === 0) {
-        statusMessage.innerHTML = `<strong>${completed}</strong> image${completed !== 1 ? "s" : ""} successfully uploaded to Project <strong>${project}</strong>.`;
+        statusMessage.innerHTML = `<strong>${completed}</strong> image${completed !== 1 ? "s" : ""} uploaded to project <strong>${project}</strong>.`;
         statusMessage.className = "status-message visible success";
       } else {
         statusMessage.textContent = `${completed} uploaded, ${failed} failed.`;
@@ -497,7 +310,6 @@
     });
 
     async function uploadFile(file, project) {
-      // 1. Request a signed URL (bypasses Cloud Run 32 MiB cap)
       const res = await fetch("/api/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -514,17 +326,13 @@
       }
       const { uploadUrl, gcsPath } = await res.json();
 
-      // 2. PUT the bytes directly to GCS
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve({ success: true, destName: gcsPath, fileName: file.name });
-          } else {
-            reject(new Error(`GCS upload failed (HTTP ${xhr.status})`));
-          }
+          if (xhr.status >= 200 && xhr.status < 300) resolve({ success: true, destName: gcsPath, fileName: file.name });
+          else reject(new Error(`GCS upload failed (HTTP ${xhr.status})`));
         });
         xhr.addEventListener("error", () => reject(new Error("Network error")));
         xhr.send(file);
@@ -539,16 +347,14 @@
         if (!res.ok) throw new Error("Failed to load");
         const files = await res.json();
 
+        section.style.display = "block";
         if (files.length === 0) {
-          section.style.display = "block";
           content.innerHTML = '<div class="gallery-empty">No images uploaded yet</div>';
           return;
         }
 
-        section.style.display = "block";
         const grid = document.createElement("div");
         grid.className = "gallery-grid";
-
         files.forEach((file) => {
           const item = document.createElement("div");
           item.className = "gallery-item";
@@ -558,12 +364,11 @@
           `;
           grid.appendChild(item);
         });
-
         content.innerHTML = "";
         content.appendChild(grid);
       } catch {
         section.style.display = "block";
-        content.innerHTML = '<div class="gallery-empty" style="color:#f85149">Failed to load gallery</div>';
+        content.innerHTML = '<div class="gallery-empty" style="color:var(--danger)">Failed to load gallery</div>';
       }
     }
   </script>

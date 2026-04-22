@@ -3,86 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>360 Photo Viewer</title>
+  <title>360 Photo Viewer — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css"/>
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e1e4e8;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .top-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      flex-shrink: 0;
-    }
-
-    .top-bar h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #f0f3f6;
-    }
-
-    .top-bar a {
-      color: #58a6ff;
-      text-decoration: none;
-      font-size: 0.85rem;
-    }
-
-    .top-bar a:hover { text-decoration: underline; }
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
     .level-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 8px 20px;
-      background: #0d1117;
-      border-bottom: 1px solid #30363d;
+      gap: var(--space-sm);
+      padding: 0.5rem var(--space-md);
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--line);
       flex-shrink: 0;
     }
-
     .level-bar label {
-      font-size: 0.8rem;
-      color: #8b949e;
-      flex-shrink: 0;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
     }
-
-    .level-select {
-      padding: 6px 10px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e1e4e8;
-      font-size: 0.85rem;
+    .level-bar select {
+      padding: 0.4rem 0.65rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
       outline: none;
       min-width: 160px;
+      transition: border-color var(--transition);
     }
-
-    .level-select:focus { border-color: #58a6ff; }
-
-    .create-level-btn {
-      background: none;
-      border: 1px solid #30363d;
-      color: #58a6ff;
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    .create-level-btn:hover { background: #161b22; border-color: #58a6ff; }
+    .level-bar select:focus { border-color: var(--ink); }
+    .level-bar .btn-sm { padding: 0.4rem 0.75rem; border: 1px solid var(--line-strong); background: transparent; }
 
     .main {
       display: flex;
@@ -91,110 +51,80 @@
     }
 
     .sidebar {
-      width: 280px;
-      background: #161b22;
-      border-right: 1px solid #30363d;
+      width: 300px;
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--line);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
     }
-
     .sidebar-header {
-      padding: 14px 16px;
-      font-size: 0.8rem;
-      color: #8b949e;
+      padding: 0.875rem var(--space-sm);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--ink-muted);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid #30363d;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--line);
     }
 
     .file-list {
       flex: 1;
       overflow-y: auto;
-      padding: 8px;
     }
 
     .file-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
+      gap: 0.5rem;
+      padding: 0.75rem var(--space-sm);
       cursor: pointer;
-      transition: background 0.15s;
-      margin-bottom: 2px;
+      transition: background var(--transition);
+      border-bottom: 1px solid var(--line);
     }
-
-    .file-item:hover { background: #21262d; }
-    .file-item.active { background: #1c2333; border: 1px solid #58a6ff; }
+    .file-item:hover { background: var(--bg); }
+    .file-item.active {
+      background: var(--warning-bg);
+      border-left: 2px solid var(--accent);
+      padding-left: calc(var(--space-sm) - 2px);
+    }
 
     .file-item-icon {
-      width: 32px;
-      height: 32px;
-      background: #21262d;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       font-size: 1rem;
+      color: var(--ink-subtle);
       flex-shrink: 0;
+      width: 20px;
+      text-align: center;
     }
+    .file-item-info { flex: 1; min-width: 0; }
+    .file-item-name { font-size: 0.8125rem; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-item-meta { font-size: 0.7rem; color: var(--ink-subtle); margin-top: 2px; }
 
-    .file-item.active .file-item-icon { background: #1a3a5c; }
-
-    .file-item-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .file-item-name {
-      font-size: 0.85rem;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .file-item-meta {
-      font-size: 0.75rem;
-      color: #8b949e;
-      margin-top: 2px;
-    }
-
-    .file-item-actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
-    }
-
+    .file-item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
     .assign-select {
-      padding: 3px 6px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      color: #e1e4e8;
-      font-size: 0.7rem;
+      padding: 2px 6px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.68rem;
       outline: none;
-      flex-shrink: 0;
-      max-width: 100px;
+      max-width: 110px;
+      cursor: pointer;
     }
-
-    .assign-select:focus { border-color: #58a6ff; }
+    .assign-select:focus { border-color: var(--ink); }
 
     .delete-btn {
       background: none;
       border: 1px solid transparent;
-      color: #8b949e;
+      color: var(--ink-subtle);
       padding: 3px 6px;
-      border-radius: 4px;
-      font-size: 0.8rem;
       cursor: pointer;
-      flex-shrink: 0;
+      font-size: 0.8rem;
       line-height: 1;
+      transition: all var(--transition);
     }
-
-    .delete-btn:hover { color: #f85149; border-color: #f8514966; background: #f851490d; }
+    .delete-btn:hover { color: var(--danger); border-color: var(--danger); }
 
     .viewer-area {
       flex: 1;
@@ -202,81 +132,68 @@
       align-items: center;
       justify-content: center;
       position: relative;
+      background: var(--secondary-block);
     }
+    #panorama { width: 100%; height: 100%; }
 
-    #panorama {
-      width: 100%;
-      height: 100%;
-    }
-
-    .placeholder {
-      text-align: center;
-      color: #484f58;
-    }
-
-    .placeholder-icon {
-      font-size: 3rem;
-      margin-bottom: 12px;
-    }
-
-    .placeholder p {
-      font-size: 0.95rem;
-    }
+    .placeholder { text-align: center; color: rgba(255,255,255,0.45); padding: var(--space-md); }
+    .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .placeholder p { font-size: 0.9rem; margin: 0; }
 
     .loading-overlay {
-      position: absolute;
-      inset: 0;
-      background: rgba(15, 17, 23, 0.85);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: absolute; inset: 0;
+      background: rgba(42, 47, 54, 0.85);
+      display: flex; align-items: center; justify-content: center;
       z-index: 10;
-      color: #8b949e;
-      font-size: 0.95rem;
+      color: rgba(255,255,255,0.8);
+      font-size: 0.875rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
-
     .loading-overlay.hidden { display: none; }
 
-    .error-msg {
-      color: #f85149;
-      text-align: center;
-      padding: 20px;
-    }
+    .error-msg { color: var(--danger); text-align: center; padding: var(--space-md); }
 
-    .file-list::-webkit-scrollbar { width: 6px; }
-    .file-list::-webkit-scrollbar-track { background: transparent; }
-    .file-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    @media (max-width: 720px) {
+      .sidebar { width: 240px; }
+    }
   </style>
 </head>
 <body>
-  <div class="top-bar">
-    <h1 id="pageTitle">360 Photo Viewer</h1>
-    <div style="display:flex; gap:16px;">
-      <a href="/">Projects</a>
-      <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
-      <a id="mapEditorLink" href="/map-editor.html">Map</a>
-      <a id="imagesLink" href="/images.html">Upload 2D</a>
-      <a id="uploadLink" href="/upload.html">Upload 360</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+        <a id="mapEditorLink" href="/map-editor.html">Map</a>
+        <a id="imagesLink" href="/images.html">Upload 2D</a>
+        <a id="uploadLink" href="/upload.html">Upload 360</a>
+      </nav>
     </div>
-  </div>
+  </header>
 
   <div class="level-bar" id="levelBar" style="display:none;">
-    <label for="levelSelect">Level:</label>
-    <select class="level-select" id="levelSelect">
+    <label for="levelSelect">Level</label>
+    <select id="levelSelect">
       <option value="">All Levels</option>
     </select>
-    <button class="create-level-btn" id="createLevelBtn">+ Create Level</button>
+    <button class="btn btn-sm btn-outline" id="createLevelBtn">+ Level</button>
+    <span id="projectLabel" style="margin-left:auto; font-size:0.8125rem; color:var(--ink-muted);"></span>
   </div>
 
   <div class="main">
-    <div class="sidebar">
-      <div class="sidebar-header">Images in Bucket</div>
+    <aside class="sidebar">
+      <div class="sidebar-header">Images</div>
       <div class="file-list" id="fileList">
-        <div class="placeholder" style="padding: 24px;">
-          <p>Loading...</p>
+        <div class="placeholder" style="color:var(--ink-subtle); padding: var(--space-md);">
+          <p>Loading…</p>
         </div>
       </div>
-    </div>
+    </aside>
 
     <div class="viewer-area">
       <div id="panorama">
@@ -285,7 +202,7 @@
           <p>Select an image to view</p>
         </div>
       </div>
-      <div class="loading-overlay hidden" id="loadingOverlay">Loading panorama...</div>
+      <div class="loading-overlay hidden" id="loadingOverlay">Loading panorama…</div>
     </div>
   </div>
 
@@ -308,20 +225,21 @@
     const levelSelect = document.getElementById("levelSelect");
     const levelBar = document.getElementById("levelBar");
     const createLevelBtn = document.getElementById("createLevelBtn");
+    const projectLabel = document.getElementById("projectLabel");
     let currentLevel = "";
     let cachedLevels = [];
 
     if (project) {
-      document.getElementById("pageTitle").textContent = `360 Viewer — ${project}`;
-      updateUploadLink();
+      projectLabel.textContent = project;
+      updateLinks();
       levelBar.style.display = "flex";
       loadLevels();
     }
 
-    function updateUploadLink() {
-      let href = `/index.html?project=${encodeURIComponent(project)}`;
-      if (currentLevel) href += `&level=${encodeURIComponent(currentLevel)}`;
-      document.getElementById("uploadLink").href = href;
+    function updateLinks() {
+      let upload = `/upload.html?project=${encodeURIComponent(project)}`;
+      if (currentLevel) upload += `&level=${encodeURIComponent(currentLevel)}`;
+      document.getElementById("uploadLink").href = upload;
       document.getElementById("imagesLink").href = `/images.html?project=${encodeURIComponent(project)}`;
       document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
       document.getElementById("mapEditorLink").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
@@ -346,7 +264,7 @@
 
     levelSelect.addEventListener("change", () => {
       currentLevel = levelSelect.value;
-      updateUploadLink();
+      updateLinks();
       loadFiles();
     });
 
@@ -363,7 +281,7 @@
         await loadLevels();
         levelSelect.value = name.trim();
         currentLevel = name.trim();
-        updateUploadLink();
+        updateLinks();
         loadFiles();
       } catch (err) {
         alert("Error creating level: " + err.message);
@@ -381,7 +299,6 @@
         if (!res.ok) throw new Error("Failed to load files");
         const files = await res.json();
 
-        // Also fetch unassigned files when showing all levels
         let unassignedNames = new Set();
         if (project && !currentLevel) {
           const uRes = await fetch(`/api/files?project=${encodeURIComponent(project)}&unassigned=true`);
@@ -392,27 +309,22 @@
         }
 
         if (files.length === 0) {
-          fileList.innerHTML = '<div class="placeholder" style="padding:24px"><p>No photos in this project</p></div>';
+          fileList.innerHTML = '<div class="placeholder" style="padding:var(--space-md); color:var(--ink-subtle);"><p>No photos in this project</p></div>';
           return;
         }
 
         fileList.innerHTML = "";
         files.forEach((file) => {
-          const isUnassigned = unassignedNames.has(file.name);
           const item = document.createElement("div");
           item.className = "file-item";
 
-          // Determine the file's current level from its path
           let fileCurrentLevel = "";
           if (project) {
             const relPath = file.name.replace(project + "/", "");
             const parts = relPath.split("/");
-            if (parts.length > 1) {
-              fileCurrentLevel = parts[0];
-            }
+            if (parts.length > 1) fileCurrentLevel = parts[0];
           }
 
-          // Build level select: always show when project has levels
           let assignHtml = "";
           if (project && cachedLevels.length > 0) {
             const options = cachedLevels
@@ -420,7 +332,7 @@
               .map((l) => `<option value="${l}">${l}</option>`)
               .join("");
             const unassignOpt = fileCurrentLevel ? `<option value="__unassign__">Unassigned</option>` : "";
-            const label = fileCurrentLevel ? "Move..." : "Assign...";
+            const label = fileCurrentLevel ? "Move…" : "Assign…";
             assignHtml = `<select class="assign-select" data-file="${file.name}" title="Change level">
               <option value="">${label}</option>
               ${options}
@@ -429,24 +341,22 @@
           }
 
           item.innerHTML = `
-            <div class="file-item-icon">&#127758;</div>
+            <span class="file-item-icon">&#127758;</span>
             <div class="file-item-info">
               <div class="file-item-name" title="${file.displayName}">${file.displayName}</div>
               <div class="file-item-meta">${formatSize(file.size)}</div>
             </div>
             <div class="file-item-actions">
               ${assignHtml}
-              <button class="delete-btn" title="Delete photo">&#128465;</button>
+              <button class="delete-btn" title="Delete">&#128465;</button>
             </div>
           `;
 
-          // Click on the item (not the actions) to load panorama
           item.addEventListener("click", (e) => {
             if (e.target.closest(".file-item-actions")) return;
             loadPanorama(file.name, item);
           });
 
-          // Handle assign dropdown change
           const sel = item.querySelector(".assign-select");
           if (sel) {
             sel.addEventListener("change", async (e) => {
@@ -471,7 +381,6 @@
             });
           }
 
-          // Handle delete button
           const delBtn = item.querySelector(".delete-btn");
           delBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
@@ -484,7 +393,6 @@
                 body: JSON.stringify({ file: file.name }),
               });
               if (!r.ok) throw new Error("Failed to delete");
-              // If the deleted file is currently being viewed, clear the viewer
               if (item.classList.contains("active")) {
                 if (viewer) { viewer.destroy(); viewer = null; }
                 panoramaEl.innerHTML = `<div class="placeholder" id="viewerPlaceholder"><div class="placeholder-icon">&#127758;</div><p>Select an image to view</p></div>`;
@@ -506,21 +414,15 @@
     function isPanoramic(url) {
       return new Promise((resolve) => {
         const img = new Image();
-        img.onload = () => {
-          const ratio = img.width / img.height;
-          resolve(ratio >= 1.8 && ratio <= 2.2);
-        };
+        img.onload = () => { const ratio = img.width / img.height; resolve(ratio >= 1.8 && ratio <= 2.2); };
         img.onerror = () => resolve(false);
         img.src = url;
       });
     }
 
     function showViewerError(msg) {
-      if (viewer) {
-        viewer.destroy();
-        viewer = null;
-      }
-      panoramaEl.innerHTML = `<div class="placeholder"><div class="placeholder-icon">&#128247;</div><p style="color:#f85149">${msg}</p></div>`;
+      if (viewer) { viewer.destroy(); viewer = null; }
+      panoramaEl.innerHTML = `<div class="placeholder"><div class="placeholder-icon">&#128247;</div><p style="color:#ff8a7a">${msg}</p></div>`;
       loadingOverlay.classList.add("hidden");
       setTimeout(() => {
         panoramaEl.innerHTML = `<div class="placeholder" id="viewerPlaceholder"><div class="placeholder-icon">&#127758;</div><p>Select an image to view</p></div>`;
@@ -529,28 +431,17 @@
     }
 
     async function loadPanorama(fileName, itemEl) {
-      // Update active state
       document.querySelectorAll(".file-item.active").forEach((el) => el.classList.remove("active"));
       itemEl.classList.add("active");
-
-      // Show loading
       viewerPlaceholder.style.display = "none";
       loadingOverlay.classList.remove("hidden");
 
       try {
         const url = `/api/image?file=${encodeURIComponent(fileName)}`;
-
         const panoramic = await isPanoramic(url);
-        if (!panoramic) {
-          showViewerError("The selected file is not a panoramic image");
-          return;
-        }
+        if (!panoramic) { showViewerError("The selected file is not a panoramic image"); return; }
 
-        // Destroy previous viewer
-        if (viewer) {
-          viewer.destroy();
-          viewer = null;
-        }
+        if (viewer) { viewer.destroy(); viewer = null; }
 
         viewer = pannellum.viewer("panorama", {
           type: "equirectangular",
@@ -560,12 +451,9 @@
           showControls: true,
           mouseZoom: true,
           autoRotate: -2,
-          loadedCallback: () => {
-            loadingOverlay.classList.add("hidden");
-          },
+          loadedCallback: () => loadingOverlay.classList.add("hidden"),
         });
 
-        // Also hide loading after a timeout in case callback doesn't fire
         setTimeout(() => loadingOverlay.classList.add("hidden"), 8000);
       } catch (err) {
         loadingOverlay.classList.add("hidden");

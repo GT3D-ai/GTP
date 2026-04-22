@@ -1,0 +1,48 @@
+/* Design tokens — matches gt3d.com */
+:root {
+  /* Surfaces */
+  --bg: #fafafa;
+  --bg-elevated: #ffffff;
+  --secondary-block: #2a2f36;
+
+  /* Text */
+  --ink: #0d0d0d;
+  --ink-muted: #4a4a4a;
+  --ink-subtle: #6b6b6b;
+
+  /* Borders */
+  --line: #e0e0e0;
+  --line-strong: #c8c8c8;
+
+  /* Accent */
+  --accent: #b85c38;
+  --accent-hover: #9d4d2e;
+
+  /* Status colors (GT3D-adjacent, muted) */
+  --success: #2f7a3a;
+  --success-bg: #e8f2e9;
+  --danger: #a6372f;
+  --danger-bg: #f7e7e5;
+  --info: #2f5c7a;
+  --info-bg: #e5edf2;
+  --warning-bg: rgba(184, 92, 56, 0.12);
+
+  /* Spacing */
+  --space-xs: 0.5rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2.5rem;
+  --space-xl: 4rem;
+  --space-2xl: 6rem;
+
+  /* Layout */
+  --max: 1200px;
+  --header-h: 57px;
+
+  /* Type */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", var(--font-sans);
+
+  /* Motion */
+  --transition: 180ms ease;
+}
