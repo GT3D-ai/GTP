@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const http2 = require("http2");
 const { Storage } = require("@google-cloud/storage");
 const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 
@@ -636,6 +637,19 @@ app.get("/api/2d/image", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`GCS Uploader running at http://localhost:${PORT}`);
-});
+// On Cloud Run with --use-http2, the container receives HTTP/2 cleartext (h2c),
+// which lifts the 32 MiB per-request cap. Node's http2 module only supports
+// h2c on unencrypted sockets — allowHTTP1 requires TLS/ALPN, so we can't mix
+// HTTP/1 + h2c on a single socket. We pick the mode at startup:
+//   - USE_HTTP2=true  → h2c server (for Cloud Run)
+//   - otherwise       → HTTP/1 server (for local dev, curl, browsers hitting localhost)
+if (process.env.USE_HTTP2 === "true") {
+  const server = http2.createServer(app);
+  server.listen(PORT, () => {
+    console.log(`GCS Uploader running on port ${PORT} (HTTP/2 cleartext)`);
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`GCS Uploader running on port ${PORT} (HTTP/1.1)`);
+  });
+}
