@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
   <style>
     .page-actions {
       display: flex;
@@ -134,7 +135,7 @@
       </a>
       <nav class="nav-primary" aria-label="Primary">
         <a href="/" class="is-active">Projects</a>
-        <a href="/new-project.html">New Project</a>
+        <a href="/new-project.html" id="newProjectNav" style="display:none;">New Project</a>
       </nav>
     </div>
   </header>
@@ -142,7 +143,7 @@
   <main class="container">
     <div class="page-actions">
       <h1>Projects</h1>
-      <a href="/new-project.html" class="btn btn-primary">+ New Project</a>
+      <a href="/new-project.html" class="btn btn-primary" id="newProjectBtn" style="display:none;">+ New Project</a>
     </div>
 
     <div id="projectList">
@@ -230,6 +231,14 @@
     }
 
     loadProjects();
+
+    // Show "New Project" controls only to admins
+    (async () => {
+      if (window.me && await window.me.isAdmin()) {
+        document.getElementById("newProjectBtn").style.display = "";
+        document.getElementById("newProjectNav").style.display = "";
+      }
+    })();
   </script>
 </body>
 </html>

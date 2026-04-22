@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    .page-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-md);
+      flex-wrap: wrap;
+    }
+    .page-actions h1 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+        <a href="/users.html" class="is-active">Users</a>
+      </nav>
+      <div id="userChip"></div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-actions">
+      <h1>Users</h1>
+      <button class="btn btn-primary" id="addBtn">+ Add User</button>
+    </div>
+
+    <div id="usersWrap">
+      <div class="not-authorized" id="notAuthMsg" style="display:none;">Loading…</div>
+      <table class="users-table" id="usersTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Admin</th>
+            <th>Projects</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="usersTbody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <div class="overlay" id="editOverlay">
+    <div class="modal">
+      <h3 id="modalTitle">Add User</h3>
+      <form id="userForm">
+        <div class="field">
+          <label class="field-label" for="f-email">Email <span class="required-mark">*</span></label>
+          <input class="field-input" type="email" id="f-email" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-name">Full Name</label>
+          <input class="field-input" type="text" id="f-name">
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-address">Address</label>
+          <input class="field-input" type="text" id="f-address">
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-phone">Phone Number</label>
+          <input class="field-input" type="text" id="f-phone">
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="f-admin">
+          <label for="f-admin">Platform admin (can manage users and projects)</label>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Project Access</label>
+          <div id="projectRows"></div>
+          <button type="button" class="btn btn-outline btn-sm" id="addProjectBtn" style="margin-top:6px;">+ Add project access</button>
+        </div>
+
+        <div style="display:flex; gap:var(--space-sm); margin-top:var(--space-md); align-items:center;">
+          <button type="button" class="btn btn-outline" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
+          <button type="button" class="btn btn-danger btn-sm" id="deleteBtn" style="margin-left:auto; display:none;">Delete</button>
+        </div>
+        <div class="status-message" id="formStatus"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const notAuthMsg = document.getElementById("notAuthMsg");
+    const usersTable = document.getElementById("usersTable");
+    const tbody = document.getElementById("usersTbody");
+    const overlay = document.getElementById("editOverlay");
+    const form = document.getElementById("userForm");
+    const modalTitle = document.getElementById("modalTitle");
+    const emailEl = document.getElementById("f-email");
+    const nameEl = document.getElementById("f-name");
+    const addressEl = document.getElementById("f-address");
+    const phoneEl = document.getElementById("f-phone");
+    const adminEl = document.getElementById("f-admin");
+    const projectRows = document.getElementById("projectRows");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const formStatus = document.getElementById("formStatus");
+
+    let allProjects = [];
+    let editingEmail = null; // null = new user
+
+    (async () => {
+      me.renderUserChip(document.getElementById("userChip"));
+      const myInfo = await me.getMe();
+      if (!myInfo.isAdmin) {
+        notAuthMsg.style.display = "block";
+        notAuthMsg.textContent = myInfo.authorized
+          ? "You need admin privileges to view this page."
+          : "You are not authorized. Ask an admin to add you to the platform.";
+        return;
+      }
+
+      try {
+        const pRes = await fetch("/api/projects");
+        if (pRes.ok) allProjects = await pRes.json();
+      } catch {}
+
+      await refreshUsers();
+      usersTable.style.display = "";
+    })();
+
+    async function refreshUsers() {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error(await res.text());
+        const users = await res.json();
+        users.sort((a, b) => a.email.localeCompare(b.email));
+        tbody.innerHTML = "";
+        if (users.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="color:var(--ink-subtle); text-align:center;">No users yet.</td></tr>`;
+          return;
+        }
+        for (const u of users) {
+          const tr = document.createElement("tr");
+          const chips = Object.entries(u.projects || {})
+            .map(([p, role]) => `<span class="project-chip">${p}<span class="role">${role}</span></span>`)
+            .join("") || '<span style="color:var(--ink-subtle); font-size:0.75rem;">—</span>';
+          tr.innerHTML = `
+            <td>${u.email}</td>
+            <td>${u.name || '<span style="color:var(--ink-subtle)">—</span>'}</td>
+            <td>${u.isAdmin ? '<span class="admin-pill">Admin</span>' : '<span style="color:var(--ink-subtle); font-size:0.75rem;">—</span>'}</td>
+            <td>${chips}</td>
+            <td><button class="btn btn-outline btn-sm edit-btn" data-email="${u.email}">Edit</button></td>
+          `;
+          tbody.appendChild(tr);
+        }
+        tbody.querySelectorAll(".edit-btn").forEach((btn) => {
+          btn.addEventListener("click", () => openEdit(btn.dataset.email, users));
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    function projectRow(project = "", role = "viewer") {
+      const row = document.createElement("div");
+      row.className = "project-access-row";
+      const opts = allProjects.map((p) => `<option value="${p}"${p === project ? " selected" : ""}>${p}</option>`).join("");
+      row.innerHTML = `
+        <select class="field-select proj-name"><option value="">Select project…</option>${opts}</select>
+        <select class="field-select proj-role">
+          <option value="viewer"${role === "viewer" ? " selected" : ""}>viewer</option>
+          <option value="editor"${role === "editor" ? " selected" : ""}>editor</option>
+        </select>
+        <button type="button" class="icon-btn remove-proj" title="Remove">&times;</button>
+      `;
+      row.querySelector(".remove-proj").addEventListener("click", () => row.remove());
+      return row;
+    }
+
+    document.getElementById("addProjectBtn").addEventListener("click", () => {
+      projectRows.appendChild(projectRow());
+    });
+
+    document.getElementById("addBtn").addEventListener("click", () => openEdit(null, []));
+    document.getElementById("cancelBtn").addEventListener("click", closeEdit);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeEdit(); });
+
+    function openEdit(email, users) {
+      editingEmail = email;
+      formStatus.className = "status-message";
+      formStatus.textContent = "";
+      projectRows.innerHTML = "";
+
+      if (email) {
+        modalTitle.textContent = "Edit User";
+        const u = users.find((x) => x.email === email);
+        emailEl.value = u.email;
+        emailEl.readOnly = true;
+        nameEl.value = u.name || "";
+        addressEl.value = u.address || "";
+        phoneEl.value = u.phone || "";
+        adminEl.checked = !!u.isAdmin;
+        for (const [p, role] of Object.entries(u.projects || {})) {
+          projectRows.appendChild(projectRow(p, role));
+        }
+        deleteBtn.style.display = "";
+      } else {
+        modalTitle.textContent = "Add User";
+        emailEl.readOnly = false;
+        form.reset();
+        deleteBtn.style.display = "none";
+      }
+      overlay.classList.add("visible");
+    }
+
+    function closeEdit() {
+      overlay.classList.remove("visible");
+      editingEmail = null;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = emailEl.value.trim().toLowerCase();
+      if (!email) return;
+
+      // Gather project rows
+      const projects = {};
+      for (const row of projectRows.children) {
+        const p = row.querySelector(".proj-name").value;
+        const r = row.querySelector(".proj-role").value;
+        if (p) projects[p] = r;
+      }
+
+      const body = {
+        email,
+        name: nameEl.value.trim(),
+        address: addressEl.value.trim(),
+        phone: phoneEl.value.trim(),
+        isAdmin: adminEl.checked,
+        projects,
+      };
+
+      try {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || "Save failed");
+        closeEdit();
+        refreshUsers();
+      } catch (err) {
+        formStatus.textContent = "Error: " + err.message;
+        formStatus.className = "status-message visible error";
+      }
+    });
+
+    deleteBtn.addEventListener("click", async () => {
+      if (!editingEmail) return;
+      if (!confirm(`Delete user ${editingEmail}? This removes all their access.`)) return;
+      try {
+        const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, { method: "DELETE" });
+        if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
+        closeEdit();
+        refreshUsers();
+      } catch (err) {
+        formStatus.textContent = "Error: " + err.message;
+        formStatus.className = "status-message visible error";
+      }
+    });
+  </script>
+</body>
+</html>

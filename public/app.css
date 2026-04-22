@@ -381,3 +381,136 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb { background: var(--line-strong); }
 *::-webkit-scrollbar-thumb:hover { background: var(--ink-subtle); }
+
+/* ----- User chip (site-header) ----- */
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  max-width: 240px;
+}
+.user-chip-avatar {
+  width: 28px; height: 28px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.user-chip-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.user-chip-email {
+  font-size: 0.75rem;
+  color: var(--ink);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-pill {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0 4px;
+  line-height: 1.3;
+  width: fit-content;
+}
+@media (max-width: 600px) {
+  .user-chip-email { max-width: 100px; }
+}
+
+/* ----- Users table (admin /users.html) ----- */
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+.users-table th, .users-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.users-table th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: var(--bg);
+}
+.users-table tbody tr:hover { background: var(--bg); }
+.users-table tbody tr:last-child td { border-bottom: none; }
+
+.project-chip {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  margin: 2px 4px 2px 0;
+  color: var(--ink-muted);
+}
+.project-chip .role { color: var(--accent); font-weight: 600; margin-left: 4px; }
+
+/* Modal overlay + panel */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(13, 13, 13, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--space-md);
+}
+.overlay.visible { display: flex; }
+.modal {
+  background: var(--bg-elevated);
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  padding: var(--space-lg);
+}
+.modal h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-md);
+}
+
+.project-access-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 32px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.project-access-row select { padding: 0.5rem 0.625rem; }
+
+/* Checkbox + label combo */
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-md); }
+.checkbox-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.checkbox-row label { font-size: 0.875rem; color: var(--ink); }
+
+.not-authorized {
+  background: var(--warning-bg);
+  border: 1px solid var(--accent);
+  color: var(--ink);
+  padding: var(--space-md);
+  font-size: 0.9rem;
+}
