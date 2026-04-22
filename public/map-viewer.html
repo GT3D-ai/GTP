@@ -59,12 +59,15 @@
     }
     .map-container img {
       max-width: 100%;
-      max-height: calc(100vh - 140px);
+      max-height: 100%;
       display: block;
       object-fit: contain;
       user-select: none;
       -webkit-user-drag: none;
+      -webkit-touch-callout: none;
+      touch-action: none;
     }
+    .map-area, .map-container { touch-action: none; }
 
     .placeholder { text-align: center; color: rgba(255,255,255,0.5); padding: var(--space-md); }
     .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
@@ -454,6 +457,88 @@
     });
     document.addEventListener("mouseup", () => { if (!panning) return; panning = false; mapArea.classList.remove("panning"); });
     mapArea.addEventListener("dblclick", (e) => { if (e.target.closest(".pin")) return; resetZoom(); showZoomIndicator(); });
+
+    // ---- Touch: pinch-zoom + one-finger pan + tap-to-open-pin ----
+    let touchMode = null; // 'pan' | 'pinch' | null
+    let touchStartX = 0, touchStartY = 0, touchStartTx = 0, touchStartTy = 0;
+    let pinchStartDist = 0, pinchStartScale = 1, pinchAnchorPx = 0, pinchAnchorPy = 0;
+    let lastTapAt = 0, tapTarget = null;
+
+    function touchDistance(t1, t2) {
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      return Math.hypot(dx, dy);
+    }
+    function touchMidpoint(t1, t2) {
+      return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+    }
+
+    mapArea.addEventListener("touchstart", (e) => {
+      if (mapContainer.style.display === "none") return;
+      // Pins use a tap fallback because tapping a pin triggers this listener first
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        if (e.target.closest(".pin")) {
+          tapTarget = e.target.closest(".pin");
+          return; // don't treat as pan — let click/touchend open the viewer
+        }
+        if (scale <= 1) return; // nothing to pan if not zoomed
+        touchMode = "pan";
+        touchStartX = t.clientX; touchStartY = t.clientY;
+        touchStartTx = tx; touchStartTy = ty;
+        e.preventDefault();
+      } else if (e.touches.length === 2) {
+        touchMode = "pinch";
+        const [a, b] = e.touches;
+        pinchStartDist = touchDistance(a, b);
+        pinchStartScale = scale;
+        const mid = touchMidpoint(a, b);
+        const rect = mapContainer.getBoundingClientRect();
+        // Anchor point in the untransformed map coords
+        pinchAnchorPx = (mid.x - rect.left) / scale;
+        pinchAnchorPy = (mid.y - rect.top) / scale;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    mapArea.addEventListener("touchmove", (e) => {
+      if (touchMode === "pan" && e.touches.length === 1) {
+        const t = e.touches[0];
+        tx = touchStartTx + (t.clientX - touchStartX);
+        ty = touchStartTy + (t.clientY - touchStartY);
+        applyTransform();
+        e.preventDefault();
+      } else if (touchMode === "pinch" && e.touches.length === 2) {
+        const [a, b] = e.touches;
+        const dist = touchDistance(a, b);
+        const rawScale = pinchStartScale * (dist / pinchStartDist);
+        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, rawScale));
+        const mid = touchMidpoint(a, b);
+        const rect = mapArea.getBoundingClientRect();
+        // Keep the pinch midpoint stationary relative to the content
+        tx = mid.x - rect.left - pinchAnchorPx * newScale;
+        ty = mid.y - rect.top - pinchAnchorPy * newScale;
+        scale = newScale;
+        if (scale === 1) { tx = 0; ty = 0; }
+        applyTransform();
+        showZoomIndicator();
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    mapArea.addEventListener("touchend", (e) => {
+      // Tap on a pin → open viewer (touchstart stashed it in tapTarget)
+      if (tapTarget && e.changedTouches.length === 1 && e.touches.length === 0) {
+        const pinId = tapTarget;
+        tapTarget = null;
+        // Synthesize a click so the existing handler fires
+        const clickEvt = new MouseEvent("click", { bubbles: true, cancelable: true });
+        pinId.dispatchEvent(clickEvt);
+      }
+      if (e.touches.length === 0) touchMode = null;
+      // When dropping from 2 to 1 finger, end pinch but keep single-touch still idle
+      else if (e.touches.length === 1 && touchMode === "pinch") touchMode = null;
+    }, { passive: true });
 
     function openViewer(image360, displayName) {
       modalTitle.textContent = displayName;
