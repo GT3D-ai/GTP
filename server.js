@@ -297,6 +297,39 @@ app.get("/api/files", async (req, res) => {
   }
 });
 
+// Generate a V4 signed URL for direct browser-to-GCS upload.
+// Client sends { bucket: "360"|"2d", project, fileName, contentType, level? }
+// Returns { uploadUrl, gcsPath }. The browser then PUTs the file bytes directly
+// to uploadUrl with the matching Content-Type, bypassing the Cloud Run 32 MiB cap.
+app.post("/api/upload-url", async (req, res) => {
+  const { bucket: bucketKind, project, fileName, contentType, level } = req.body || {};
+  if (!bucketKind || !fileName || !contentType) {
+    return res.status(400).json({ error: "bucket, fileName, and contentType are required" });
+  }
+  const target = bucketKind === "2d" ? imageBucket : bucket;
+
+  let dest = fileName;
+  if (project && level) dest = `${project}/${level}/${fileName}`;
+  else if (project) dest = `${project}/${fileName}`;
+
+  try {
+    const [url] = await target.file(dest).getSignedUrl({
+      version: "v4",
+      action: "write",
+      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+      contentType,
+    });
+    res.json({
+      uploadUrl: url,
+      gcsPath: dest,
+      bucket: bucketKind === "2d" ? IMAGE_BUCKET_NAME : BUCKET_NAME,
+    });
+  } catch (err) {
+    console.error("Signed URL error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Upload file, optionally into a project folder
 // Single file upload
 app.post("/api/upload", upload.single("file"), async (req, res) => {

@@ -496,19 +496,38 @@
       loadGallery(project);
     });
 
-    function uploadFile(file, project) {
+    async function uploadFile(file, project) {
+      // 1. Request a signed URL (bypasses Cloud Run 32 MiB cap)
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "2d",
+          project,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+      }
+      const { uploadUrl, gcsPath } = await res.json();
+
+      // 2. PUT the bytes directly to GCS
       return new Promise((resolve, reject) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("destName", file.name);
-        if (project) formData.append("project", project);
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/2d/upload");
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.addEventListener("load", () => {
-          try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error("Invalid response")); }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ success: true, destName: gcsPath, fileName: file.name });
+          } else {
+            reject(new Error(`GCS upload failed (HTTP ${xhr.status})`));
+          }
         });
         xhr.addEventListener("error", () => reject(new Error("Network error")));
-        xhr.send(formData);
+        xhr.send(file);
       });
     }
 
