@@ -185,19 +185,32 @@
         const grid = document.createElement("div");
         grid.className = "project-grid";
 
-        // Fetch metadata for each project in parallel
+        // Fetch metadata + optional fallback cover for each project in parallel
         const infos = await Promise.all(projects.map(async (name) => {
+          let info = { name, address: null, coverPhoto: null };
           try {
             const r = await fetch(`/api/project-info?project=${encodeURIComponent(name)}`);
-            if (r.ok) return await r.json();
+            if (r.ok) info = await r.json();
           } catch {}
-          return { name, address: null, coverPhoto: null };
+
+          // Fallback: if no explicit cover photo, use the first 2D image in the project
+          if (!info.coverPhoto) {
+            try {
+              const r2 = await fetch(`/api/2d/files?project=${encodeURIComponent(name)}`);
+              if (r2.ok) {
+                const files = await r2.json();
+                const firstImage = files.find((f) => (f.contentType || "").startsWith("image/"));
+                if (firstImage) info.coverPhoto = firstImage.name;
+              }
+            } catch {}
+          }
+          return info;
         }));
 
         infos.forEach((info) => {
           const name = info.name;
           const coverHtml = info.coverPhoto
-            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${name}" loading="lazy">`
+            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${name}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;project-card-cover-placeholder&quot;&gt;&amp;#128194;&lt;/div&gt;'">`
             : `<div class="project-card-cover-placeholder">&#128194;</div>`;
 
           const addressHtml = info.address
@@ -220,7 +233,13 @@
               </div>
             </div>
           `;
-          card.style.cursor = "default";
+          card.style.cursor = "pointer";
+          card.title = "Open map";
+          card.addEventListener("click", (e) => {
+            // If the user clicked an existing link or a child of one, let it handle navigation
+            if (e.target.closest("a[href]")) return;
+            window.location.href = `/map-viewer/${encodeURIComponent(name)}`;
+          });
           grid.appendChild(card);
         });
 

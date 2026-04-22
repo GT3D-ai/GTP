@@ -186,7 +186,29 @@
       display: inline-block;
       max-width: 100%;
       max-height: 100%;
+      transform-origin: 0 0;
+      will-change: transform;
     }
+
+    .map-area.zoomed { cursor: grab; }
+    .map-area.panning { cursor: grabbing; }
+
+    .zoom-indicator {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(22, 27, 34, 0.85);
+      color: #8b949e;
+      font-size: 0.72rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 50;
+    }
+
+    .zoom-indicator.visible { opacity: 1; }
 
     .map-container img {
       max-width: 100%;
@@ -332,6 +354,20 @@
       border-radius: 4px;
       display: block;
       object-fit: cover;
+      cursor: zoom-in;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .thumb-popover img:hover {
+      transform: scale(1.03);
+      box-shadow: 0 0 0 2px #58a6ff;
+    }
+
+    .thumb-popover .thumb-hint {
+      font-size: 0.6rem;
+      color: #58a6ff;
+      text-align: center;
+      margin-top: 2px;
     }
 
     .thumb-popover .thumb-label {
@@ -404,6 +440,37 @@
 
     .pano-modal-close:hover { color: #e1e4e8; background: #21262d; }
 
+    .fp-option {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .fp-option:hover { border-color: #58a6ff; background: #1c2333; }
+    .fp-option.current { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff; }
+
+    .fp-option img {
+      width: 100%;
+      height: 110px;
+      object-fit: cover;
+      display: block;
+      background: #21262d;
+    }
+
+    .fp-option-name {
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      color: #e1e4e8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .fp-empty { color: #8b949e; font-size: 0.9rem; text-align: center; padding: 30px; grid-column: 1 / -1; }
+
     .pano-modal-viewer {
       flex: 1;
       min-height: 0;
@@ -423,15 +490,14 @@
   </div>
 
   <div class="toolbar">
-    <label for="floorPlanSelect">Floor Plan:</label>
-    <select id="floorPlanSelect">
-      <option value="">Select a 2D image...</option>
-    </select>
     <label for="levelFilter">Level:</label>
     <select id="levelFilter">
       <option value="">All Levels</option>
     </select>
     <span class="save-status" id="saveStatus"></span>
+    <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
+      <a href="#" id="editMapLink" style="color:#58a6ff; text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
+    </span>
   </div>
 
   <div class="main">
@@ -451,6 +517,7 @@
       <div class="map-container" id="mapContainer" style="display:none;">
         <img id="floorPlanImg" alt="Floor plan">
       </div>
+      <div class="zoom-indicator" id="zoomIndicator">100%</div>
     </div>
   </div>
 
@@ -465,8 +532,19 @@
   </div>
 
   <div class="thumb-popover" id="thumbPopover">
-    <img id="thumbPopoverImg" alt="Thumbnail">
+    <img id="thumbPopoverImg" alt="Thumbnail" title="Click to open 360 viewer">
     <div class="thumb-label" id="thumbPopoverLabel"></div>
+    <div class="thumb-hint">Click to open 360</div>
+  </div>
+
+  <div class="pano-modal-overlay" id="floorPlanPickerOverlay">
+    <div class="pano-modal" style="max-width:640px; max-height:80vh;">
+      <div class="pano-modal-header">
+        <span class="pano-modal-title">Select a Floor Plan</span>
+        <button class="pano-modal-close" id="floorPlanPickerClose">&times;</button>
+      </div>
+      <div class="pano-modal-viewer" id="floorPlanPickerGrid" style="padding:16px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; align-content:start;"></div>
+    </div>
   </div>
 
   <div class="pin-context-menu" id="pinContextMenu">
@@ -480,7 +558,11 @@
     const params = new URLSearchParams(window.location.search);
     const project = params.get("project");
 
-    const floorPlanSelect = document.getElementById("floorPlanSelect");
+    const editMapLink = document.getElementById("editMapLink");
+    const floorPlanPickerOverlay = document.getElementById("floorPlanPickerOverlay");
+    const floorPlanPickerClose = document.getElementById("floorPlanPickerClose");
+    const floorPlanPickerGrid = document.getElementById("floorPlanPickerGrid");
+    let availableFloorPlans = [];
     const levelFilter = document.getElementById("levelFilter");
     const mapPlaceholder = document.getElementById("mapPlaceholder");
     const mapContainer = document.getElementById("mapContainer");
@@ -489,7 +571,25 @@
     const fileList = document.getElementById("fileList");
     const saveStatus = document.getElementById("saveStatus");
 
-    let mappings = { floorPlanImage: null, pins: [] };
+    let mappings = { floorPlanImage: null, floorPlans: {}, pins: [] };
+
+    function getFloorPlanForLevel(level) {
+      if (level && mappings.floorPlans && mappings.floorPlans[level]) {
+        return mappings.floorPlans[level];
+      }
+      // Fallback to legacy single floor plan
+      return mappings.floorPlanImage || null;
+    }
+
+    function setFloorPlanForLevel(level, path) {
+      if (!mappings.floorPlans) mappings.floorPlans = {};
+      if (level) {
+        mappings.floorPlans[level] = path;
+      } else {
+        // No level selected — also set the legacy field so we have a default
+        mappings.floorPlanImage = path;
+      }
+    }
     let allFiles360 = [];
     let cachedLevels = [];
     let currentLevelFilter = "";
@@ -570,6 +670,16 @@
       activeThumbFile = null;
     }
 
+    // Click the thumbnail image to open the full 360 viewer
+    thumbPopoverImg.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (activeThumbFile) {
+        const file = activeThumbFile;
+        hideThumbPopover();
+        openPanoModal(file);
+      }
+    });
+
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".drag-item-name") && !e.target.closest(".thumb-popover")) {
         hideThumbPopover();
@@ -585,9 +695,21 @@
 
     async function init() {
       await Promise.all([loadFloorPlans(), load360Files(), loadMappings(), loadLevels()]);
-      if (mappings.floorPlanImage) {
-        floorPlanSelect.value = mappings.floorPlanImage;
-        showFloorPlan(mappings.floorPlanImage);
+      if (!mappings.floorPlans) mappings.floorPlans = {};
+      refreshFloorPlanDisplay();
+    }
+
+    function refreshFloorPlanDisplay() {
+      const path = getFloorPlanForLevel(currentLevelFilter);
+      if (path) {
+        showFloorPlan(path);
+      } else {
+        // No floor plan for this level — show placeholder
+        mapContainer.style.display = "none";
+        mapPlaceholder.style.display = "";
+        mapPlaceholder.innerHTML = currentLevelFilter
+          ? `<div class="placeholder-icon">&#128506;</div><p>No floor plan set for <strong>${currentLevelFilter}</strong>.<br>Click <em>Edit Map</em> to select one.</p>`
+          : '<div class="placeholder-icon">&#128506;</div><p>Select a level, then click <em>Edit Map</em> to choose a floor plan.</p>';
       }
     }
 
@@ -609,21 +731,99 @@
 
     levelFilter.addEventListener("change", () => {
       currentLevelFilter = levelFilter.value;
+      resetZoom();
+      refreshFloorPlanDisplay();
       render360List();
+      renderPins();
+    });
+
+    // ---- Zoom + pan ----
+    const zoomIndicator = document.getElementById("zoomIndicator");
+    let scale = 1;
+    let tx = 0, ty = 0;
+    const MIN_SCALE = 1;
+    const MAX_SCALE = 8;
+    let zoomIndicatorTimer = null;
+
+    function applyTransform() {
+      mapContainer.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+      mapArea.classList.toggle("zoomed", scale > 1);
+    }
+
+    function resetZoom() {
+      scale = 1; tx = 0; ty = 0;
+      applyTransform();
+    }
+
+    function showZoomIndicator() {
+      zoomIndicator.textContent = Math.round(scale * 100) + "%";
+      zoomIndicator.classList.add("visible");
+      clearTimeout(zoomIndicatorTimer);
+      zoomIndicatorTimer = setTimeout(() => zoomIndicator.classList.remove("visible"), 1000);
+    }
+
+    mapArea.addEventListener("wheel", (e) => {
+      if (mapContainer.style.display === "none") return;
+      e.preventDefault();
+      const rect = mapContainer.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / scale;
+      const py = (e.clientY - rect.top) / scale;
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+      tx += px * (scale - newScale);
+      ty += py * (scale - newScale);
+      scale = newScale;
+      if (scale === 1) { tx = 0; ty = 0; }
+      applyTransform();
+      showZoomIndicator();
+    }, { passive: false });
+
+    // Pan when zoomed — only on empty areas of the map, not on pins or during pin-drag/drop
+    let panning = false;
+    let panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
+
+    mapArea.addEventListener("mousedown", (e) => {
+      if (scale <= 1) return;
+      // Skip if clicking a pin (reserved for pin interactions) or if a pin is being moved/dragged
+      if (e.target.closest(".pin")) return;
+      if (typeof moveModePin !== "undefined" && moveModePin) return;
+      if (typeof activeDrag !== "undefined" && activeDrag) return;
+      // Only left button for pan
+      if (e.button !== 0) return;
+      panning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panStartTx = tx;
+      panStartTy = ty;
+      mapArea.classList.add("panning");
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!panning) return;
+      tx = panStartTx + (e.clientX - panStartX);
+      ty = panStartTy + (e.clientY - panStartY);
+      applyTransform();
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!panning) return;
+      panning = false;
+      mapArea.classList.remove("panning");
+    });
+
+    // Double-click to reset zoom (but not on pins)
+    mapArea.addEventListener("dblclick", (e) => {
+      if (e.target.closest(".pin")) return;
+      resetZoom();
+      showZoomIndicator();
     });
 
     async function loadFloorPlans() {
       try {
         const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
         if (!res.ok) return;
-        const files = await res.json();
-        floorPlanSelect.innerHTML = '<option value="">Select a 2D image...</option>';
-        files.forEach((f) => {
-          const opt = document.createElement("option");
-          opt.value = f.name;
-          opt.textContent = f.displayName;
-          floorPlanSelect.appendChild(opt);
-        });
+        availableFloorPlans = await res.json();
       } catch {}
     }
 
@@ -783,14 +983,55 @@
       }
     }
 
-    floorPlanSelect.addEventListener("change", () => {
-      if (floorPlanSelect.value) {
-        mappings.floorPlanImage = floorPlanSelect.value;
-        showFloorPlan(floorPlanSelect.value);
-        saveMappings();
+    function openFloorPlanPicker() {
+      floorPlanPickerGrid.innerHTML = "";
+      if (!currentLevelFilter) {
+        floorPlanPickerGrid.innerHTML = '<div class="fp-empty">Select a specific level from the dropdown first, then click Edit Map to assign a floor plan to that level.</div>';
+        floorPlanPickerOverlay.classList.add("visible");
+        return;
+      }
+      // Update the modal title to include the level
+      const modalTitle = floorPlanPickerOverlay.querySelector(".pano-modal-title");
+      if (modalTitle) modalTitle.textContent = `Select Floor Plan for "${currentLevelFilter}"`;
+
+      if (!availableFloorPlans || availableFloorPlans.length === 0) {
+        floorPlanPickerGrid.innerHTML = '<div class="fp-empty">No 2D images uploaded for this project yet. Upload some on the 2D Images page first.</div>';
       } else {
-        mapContainer.style.display = "none";
-        mapPlaceholder.style.display = "";
+        const currentPath = getFloorPlanForLevel(currentLevelFilter);
+        availableFloorPlans.forEach((f) => {
+          const opt = document.createElement("div");
+          opt.className = "fp-option" + (f.name === currentPath ? " current" : "");
+          opt.innerHTML = `
+            <img src="/api/2d/image?file=${encodeURIComponent(f.name)}" alt="${f.displayName}" loading="lazy">
+            <div class="fp-option-name" title="${f.displayName}">${f.displayName}</div>
+          `;
+          opt.addEventListener("click", () => {
+            setFloorPlanForLevel(currentLevelFilter, f.name);
+            showFloorPlan(f.name);
+            saveMappings();
+            closeFloorPlanPicker();
+          });
+          floorPlanPickerGrid.appendChild(opt);
+        });
+      }
+      floorPlanPickerOverlay.classList.add("visible");
+    }
+
+    function closeFloorPlanPicker() {
+      floorPlanPickerOverlay.classList.remove("visible");
+    }
+
+    editMapLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      openFloorPlanPicker();
+    });
+    floorPlanPickerClose.addEventListener("click", closeFloorPlanPicker);
+    floorPlanPickerOverlay.addEventListener("click", (e) => {
+      if (e.target === floorPlanPickerOverlay) closeFloorPlanPicker();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && floorPlanPickerOverlay.classList.contains("visible")) {
+        closeFloorPlanPicker();
       }
     });
 
@@ -924,7 +1165,12 @@
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
 
-      mappings.pins.forEach((pin) => {
+      // Filter pins by the currently selected level (show all when "All Levels")
+      const visiblePins = currentLevelFilter && project
+        ? mappings.pins.filter((p) => p.image360.startsWith(`${project}/${currentLevelFilter}/`))
+        : mappings.pins;
+
+      visiblePins.forEach((pin) => {
         const el = document.createElement("div");
         el.className = "pin";
         el.style.left = (pin.x * 100) + "%";

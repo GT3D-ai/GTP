@@ -6,7 +6,7 @@ const { Storage } = require("@google-cloud/storage");
 const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 
 const BUCKET_NAME = "gt-platform-360-photos-bucket";
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 const app = express();
 const upload = multer({ dest: path.join(__dirname, "tmp") });
