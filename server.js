@@ -801,26 +801,55 @@ app.get("/api/2d/image", async (req, res) => {
 
 // ---- Model file endpoints (gt_platform_model_storage) ----
 
-// List models in a project — PUBLIC (anyone with the project name can see)
+// List models in a project — PUBLIC (anyone with the project name can see).
+// Convention: a model at project/foo.glb may have a sibling thumbnail at
+// project/foo.glb.thumb.jpg (any image type, but we always store with the
+// .thumb.jpg suffix on the model's filename). Thumbnails are hidden from the
+// main list and surfaced as the `thumbnail` field on the associated model.
 app.get("/api/model/files", async (req, res) => {
   try {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
     const [files] = await modelBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
     const list = files
       .filter((f) => !f.name.endsWith("/"))
-      .map((f) => ({
-        name: f.name,
-        displayName: f.name.replace(prefix, ""),
-        size: Number(f.metadata.size),
-        updated: f.metadata.updated,
-        contentType: f.metadata.contentType,
-      }));
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+        };
+      });
     res.json(list);
   } catch (err) {
     console.error("List models error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxy a model thumbnail — PUBLIC
+app.get("/api/model/thumbnail", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).send("file is required");
+    if (!filePath.endsWith(".thumb.jpg")) return res.status(400).send("invalid thumbnail path");
+    const file = modelBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).send("Not found");
+    const [metadata] = await file.getMetadata();
+    res.set("Content-Type", metadata.contentType || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=300");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    console.error("Model thumbnail error:", err.message);
+    res.status(500).send(err.message);
   }
 });
 

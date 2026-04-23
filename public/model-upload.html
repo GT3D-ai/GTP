@@ -55,12 +55,51 @@
     }
     .model-item:first-child { border-top: 1px solid var(--line); }
     .model-item-icon {
-      width: 36px; height: 36px;
+      width: 44px; height: 44px;
       background: var(--bg);
       border: 1px solid var(--line);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.1rem;
+      font-size: 1.2rem;
       flex-shrink: 0;
+      overflow: hidden;
+    }
+    .model-item-icon img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+
+    /* Edit Thumbnail modal */
+    .modal-dropzone {
+      border: 1px dashed var(--line-strong);
+      background: var(--bg);
+      padding: var(--space-md);
+      text-align: center;
+      cursor: pointer;
+      min-height: 180px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .modal-dropzone:hover, .modal-dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--warning-bg);
+    }
+    .modal-dropzone p { margin: 0; font-size: 0.9rem; color: var(--ink-muted); }
+    .modal-dropzone strong { color: var(--accent); font-weight: 600; }
+    .modal-dropzone img {
+      max-width: 100%; max-height: 220px; object-fit: contain;
+      display: none;
+    }
+    .modal-dropzone img.visible { display: block; }
+    .modal-current-thumb {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.75rem;
+      background: var(--bg); border: 1px solid var(--line);
+      margin-bottom: var(--space-sm);
+      font-size: 0.8125rem; color: var(--ink-muted);
+    }
+    .modal-current-thumb img {
+      width: 56px; height: 56px; object-fit: cover;
+      border: 1px solid var(--line);
     }
     .model-item-info { flex: 1; min-width: 0; }
     .model-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -145,6 +184,32 @@
       </div>
     </div>
   </main>
+
+  <!-- Edit Thumbnail modal -->
+  <div class="overlay" id="thumbOverlay">
+    <div class="modal">
+      <h3 id="thumbModalTitle">Edit Thumbnail</h3>
+      <div id="thumbCurrent" class="modal-current-thumb" style="display:none;">
+        <img id="thumbCurrentImg" alt="Current thumbnail">
+        <div>Current thumbnail — drop a new image to replace.</div>
+      </div>
+      <div class="modal-dropzone" id="thumbDropzone">
+        <div id="thumbPrompt">
+          <p>Drag & drop an image here, or <strong>browse</strong></p>
+          <p style="font-size: 0.72rem; color: var(--ink-subtle); margin-top: 6px;">
+            Stored alongside the model as <code>.thumb.jpg</code>. Any image type accepted.
+          </p>
+        </div>
+        <img id="thumbPreview" alt="">
+      </div>
+      <input type="file" id="thumbFileInput" accept="image/*" style="display:none;">
+      <div style="display:flex; gap: var(--space-sm); margin-top: var(--space-md);">
+        <button type="button" class="btn btn-outline" id="thumbCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="thumbSaveBtn" style="flex:1;" disabled>Save Thumbnail</button>
+      </div>
+      <div class="status-message" id="thumbStatus"></div>
+    </div>
+  </div>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -386,16 +451,34 @@
         files.forEach((f) => {
           const row = document.createElement("div");
           row.className = "model-item";
+          // Cache-bust so the thumbnail refreshes after re-upload
+          const thumbBust = `&t=${Date.now()}`;
+          const iconHtml = f.thumbnail
+            ? `<div class="model-item-icon"><img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust}" alt=""></div>`
+            : `<div class="model-item-icon">&#127744;</div>`;
           row.innerHTML = `
-            <div class="model-item-icon">&#127744;</div>
+            ${iconHtml}
             <div class="model-item-info">
               <div class="model-item-name" title="${f.displayName}">${f.displayName}</div>
               <div class="model-item-meta">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}</div>
             </div>
+            <a href="#" class="link-action edit-thumb-link" data-file="${f.name}" data-display="${f.displayName}" data-thumb="${f.thumbnail || ''}">Edit thumbnail</a>
             <button class="btn btn-outline btn-sm download-btn" data-file="${f.name}">Download</button>
             <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${f.name}" data-display="${f.displayName}">Delete</button>
           `;
           list.appendChild(row);
+        });
+
+        // Edit thumbnail links
+        list.querySelectorAll(".edit-thumb-link").forEach((link) => {
+          link.addEventListener("click", (e) => {
+            e.preventDefault();
+            openThumbModal({
+              modelPath: link.dataset.file,
+              displayName: link.dataset.display,
+              existingThumb: link.dataset.thumb || null,
+            });
+          });
         });
 
         list.querySelectorAll("[data-file]").forEach((btn) => {
@@ -437,6 +520,139 @@
         list.innerHTML = `<div class="model-item" style="color:var(--danger);">${err.message}</div>`;
       }
     }
+
+    // ---- Edit Thumbnail modal ----
+    const thumbOverlay = document.getElementById("thumbOverlay");
+    const thumbModalTitle = document.getElementById("thumbModalTitle");
+    const thumbCurrent = document.getElementById("thumbCurrent");
+    const thumbCurrentImg = document.getElementById("thumbCurrentImg");
+    const thumbDropzone = document.getElementById("thumbDropzone");
+    const thumbPrompt = document.getElementById("thumbPrompt");
+    const thumbPreview = document.getElementById("thumbPreview");
+    const thumbFileInput = document.getElementById("thumbFileInput");
+    const thumbSaveBtn = document.getElementById("thumbSaveBtn");
+    const thumbCancelBtn = document.getElementById("thumbCancelBtn");
+    const thumbStatus = document.getElementById("thumbStatus");
+
+    let thumbCtx = null; // { modelPath, displayName, existingThumb, file }
+
+    function openThumbModal(ctx) {
+      thumbCtx = { ...ctx, file: null };
+      thumbModalTitle.textContent = `Thumbnail — ${ctx.displayName}`;
+      thumbStatus.className = "status-message";
+      thumbStatus.textContent = "";
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Save Thumbnail";
+      thumbPreview.classList.remove("visible");
+      thumbPreview.src = "";
+      thumbPrompt.style.display = "";
+      if (ctx.existingThumb) {
+        thumbCurrent.style.display = "flex";
+        thumbCurrentImg.src = `/api/model/thumbnail?file=${encodeURIComponent(ctx.existingThumb)}&t=${Date.now()}`;
+      } else {
+        thumbCurrent.style.display = "none";
+      }
+      thumbOverlay.classList.add("visible");
+    }
+
+    function closeThumbModal() {
+      thumbOverlay.classList.remove("visible");
+      thumbCtx = null;
+      thumbFileInput.value = "";
+    }
+
+    function setThumbFile(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      thumbCtx.file = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        thumbPreview.src = e.target.result;
+        thumbPreview.classList.add("visible");
+        thumbPrompt.style.display = "none";
+      };
+      reader.readAsDataURL(file);
+      thumbSaveBtn.disabled = false;
+    }
+
+    thumbDropzone.addEventListener("click", () => thumbFileInput.click());
+    thumbDropzone.addEventListener("dragover", (e) => { e.preventDefault(); thumbDropzone.classList.add("drag-over"); });
+    thumbDropzone.addEventListener("dragleave", () => thumbDropzone.classList.remove("drag-over"));
+    thumbDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      thumbDropzone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) setThumbFile(e.dataTransfer.files[0]);
+    });
+    thumbFileInput.addEventListener("change", () => {
+      if (thumbFileInput.files.length > 0) setThumbFile(thumbFileInput.files[0]);
+    });
+    thumbCancelBtn.addEventListener("click", closeThumbModal);
+    thumbOverlay.addEventListener("click", (e) => {
+      if (e.target === thumbOverlay) closeThumbModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && thumbOverlay.classList.contains("visible")) closeThumbModal();
+    });
+
+    thumbSaveBtn.addEventListener("click", async () => {
+      if (!thumbCtx?.file) return;
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Uploading…";
+      thumbStatus.textContent = "";
+      thumbStatus.className = "status-message";
+
+      // modelPath looks like "project/modelname.glb". Derive:
+      //   project = first segment
+      //   relativeFileName = rest (modelname.glb.thumb.jpg)
+      const parts = thumbCtx.modelPath.split("/");
+      const project = parts.shift();
+      const rel = parts.join("/");           // e.g. "modelname.glb"
+      const thumbFileName = rel + ".thumb.jpg";
+
+      try {
+        // 1. Ask for a signed URL (admin-only)
+        const res = await fetch("/api/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: "model",
+            project,
+            fileName: thumbFileName,
+            contentType: "image/jpeg", // stored as .thumb.jpg regardless of source type
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+        }
+        const { uploadUrl } = await res.json();
+
+        // 2. PUT the image bytes directly to GCS (Content-Type must match the signed URL)
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", "image/jpeg");
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+          });
+          xhr.addEventListener("error", () => reject(new Error("Network error")));
+          xhr.send(thumbCtx.file);
+        });
+
+        thumbStatus.textContent = "Thumbnail saved.";
+        thumbStatus.className = "status-message visible success";
+        setTimeout(() => {
+          closeThumbModal();
+          const project = projectSelect.value;
+          if (project) loadModels(project);
+        }, 600);
+      } catch (err) {
+        thumbStatus.textContent = "Error: " + err.message;
+        thumbStatus.className = "status-message visible error";
+        thumbSaveBtn.disabled = false;
+        thumbSaveBtn.textContent = "Save Thumbnail";
+      }
+    });
   </script>
 </body>
 </html>
