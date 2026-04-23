@@ -481,7 +481,7 @@
           });
         });
 
-        list.querySelectorAll("[data-file]").forEach((btn) => {
+        list.querySelectorAll(".download-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             btn.disabled = true; btn.textContent = "…";
             try {
