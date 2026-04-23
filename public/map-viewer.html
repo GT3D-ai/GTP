@@ -249,10 +249,16 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <a href="/">Projects</a>
-        <a id="editMapMenuItem" href="/map-editor.html">Edit Map</a>
-        <a id="viewerMenuItem" href="/viewer.html">360 Viewer</a>
-        <a id="imageViewerMenuItem" href="/image-viewer.html">2D Viewer</a>
+        <!-- Viewer items (public, always visible) -->
+        <a id="modelsMenuItem" href="/models/">Models</a>
+        <a id="photosMenuItem" href="/viewer.html">Photos</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+
+        <!-- Editor-only items, revealed by JS when the current user can edit -->
+        <a href="/" class="editor-only" style="display:none;">Projects</a>
+        <a id="editMapMenuItem" href="/map-editor.html" class="editor-only" style="display:none;">Edit Map</a>
+        <a id="viewerMenuItem" href="/viewer.html" class="editor-only" style="display:none;">360 Viewer</a>
+        <a id="imageViewerMenuItem" href="/image-viewer.html" class="editor-only" style="display:none;">2D Viewer</a>
       </div>
     </div>
   </header>
@@ -311,9 +317,21 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
+      // Public viewer links — shown to everyone
+      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
+      document.getElementById("photosMenuItem").href = `/viewer.html?project=${enc}`;
+      // Editor-only links — href filled in now, visibility set after /api/me resolves
       document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${enc}`;
       document.getElementById("viewerMenuItem").href = `/viewer.html?project=${enc}`;
       document.getElementById("imageViewerMenuItem").href = `/image-viewer.html?project=${enc}`;
+
+      // Reveal editor items if this user can edit the current project
+      (async () => {
+        if (window.me && await window.me.canEdit(project)) {
+          document.querySelectorAll(".editor-only").forEach((el) => el.style.display = "");
+        }
+      })();
+
       init();
     }
 
