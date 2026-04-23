@@ -208,12 +208,11 @@
               <div class="project-card-name">${name}</div>
               ${addressHtml}
               <div class="project-card-actions">
+                <a href="/map-viewer/${encodeURIComponent(name)}">Map</a>
                 <a href="/viewer.html?project=${encodeURIComponent(name)}">360 Photos</a>
                 <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
-                <a href="/map-viewer/${encodeURIComponent(name)}">View Map</a>
                 <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
                 <a href="/models/${encodeURIComponent(name)}">Models</a>
-                <a href="/model-upload.html?project=${encodeURIComponent(name)}" class="admin-only-link" style="display:none;">Upload Model</a>
                 <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
             </div>
@@ -234,19 +233,11 @@
 
     loadProjects();
 
-    // Show "New Project" controls and admin-only per-project links only to admins
+    // Show admin-only "New Project" controls
     (async () => {
       if (window.me && await window.me.isAdmin()) {
         document.getElementById("newProjectBtn").style.display = "";
         document.getElementById("newProjectNav").style.display = "";
-        // Reveal admin-only per-project links after cards render.
-        const reveal = () => {
-          document.querySelectorAll(".admin-only-link").forEach((a) => a.style.display = "");
-        };
-        // loadProjects may still be in flight; observe the list for changes.
-        const obs = new MutationObserver(reveal);
-        obs.observe(document.getElementById("projectList"), { childList: true, subtree: true });
-        reveal();
       }
     })();
   </script>
