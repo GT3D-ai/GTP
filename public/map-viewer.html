@@ -39,17 +39,19 @@
     /* Map area — grows to natural image height so long maps scroll with the
        page. The level bar stays pinned below the header while you scroll. */
     .map-area {
-      flex: 1 0 auto;          /* take at least the remaining viewport height */
+      flex: 1 1 auto;
+      min-height: 0;
       display: flex;
       align-items: flex-start;
       justify-content: center;
       position: relative;
-      overflow: hidden;        /* clips zoomed-past-edges content; doesn't stop page scroll */
+      overflow: auto;          /* scroll both axes when content (or zoom) exceeds viewport */
       background: var(--secondary-block);
       /* touch-action: pan-y lets the page scroll vertically with one finger,
          while our JS handlers take over pinch-zoom and drag-to-pan when the
          map is zoomed in. */
       touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
     }
     .map-area.zoomed { cursor: grab; }
     .map-area.panning { cursor: grabbing; }
@@ -57,12 +59,19 @@
     .map-container {
       position: relative;
       display: inline-block;
-      max-width: 100%;
       transform-origin: 0 0;
       will-change: transform;
     }
     .map-container img {
+      /* Fit the floor plan inside the available viewport (minus header + level bar)
+         by default so it is never larger than the screen on load. Users can then
+         wheel/pinch to zoom in, and scrollbars appear if the zoomed image exceeds
+         the viewport. */
       max-width: 100%;
+      max-height: calc(100vh - var(--header-h) - 64px);
+      width: auto;
+      height: auto;
+      object-fit: contain;
       display: block;
       user-select: none;
       -webkit-user-drag: none;
