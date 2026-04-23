@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
   <style>
-    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    body { min-height: 100vh; display: flex; flex-direction: column; }
 
     .project-headline {
       font-family: var(--font-display);
@@ -36,15 +36,20 @@
       }
     }
 
-    /* Map area */
+    /* Map area — grows to natural image height so long maps scroll with the
+       page. The level bar stays pinned below the header while you scroll. */
     .map-area {
-      flex: 1;
+      flex: 1 0 auto;          /* take at least the remaining viewport height */
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       position: relative;
-      overflow: hidden;
+      overflow: hidden;        /* clips zoomed-past-edges content; doesn't stop page scroll */
       background: var(--secondary-block);
+      /* touch-action: pan-y lets the page scroll vertically with one finger,
+         while our JS handlers take over pinch-zoom and drag-to-pan when the
+         map is zoomed in. */
+      touch-action: pan-y;
     }
     .map-area.zoomed { cursor: grab; }
     .map-area.panning { cursor: grabbing; }
@@ -53,21 +58,16 @@
       position: relative;
       display: inline-block;
       max-width: 100%;
-      max-height: 100%;
       transform-origin: 0 0;
       will-change: transform;
     }
     .map-container img {
       max-width: 100%;
-      max-height: 100%;
       display: block;
-      object-fit: contain;
       user-select: none;
       -webkit-user-drag: none;
       -webkit-touch-callout: none;
-      touch-action: none;
     }
-    .map-area, .map-container { touch-action: none; }
 
     .placeholder { text-align: center; color: rgba(255,255,255,0.5); padding: var(--space-md); }
     .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
@@ -109,7 +109,8 @@
     }
     .pin:hover .pin-tooltip { display: block; }
 
-    /* Level bar — above the map, visually part of the map region */
+    /* Level bar — above the map, visually part of the map region.
+       Sticks below the sticky header while the user scrolls through a tall map. */
     .level-bar {
       display: flex;
       align-items: center;
@@ -119,6 +120,9 @@
       margin-top: 8px; /* small buffer between header and level selector */
       background: var(--secondary-block);
       flex-shrink: 0;
+      position: sticky;
+      top: var(--header-h);
+      z-index: 20;
     }
     .level-bar label {
       font-size: 0.65rem;
