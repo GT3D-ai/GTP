@@ -1114,6 +1114,22 @@ app.delete("/api/users/:email", requireAdmin, async (req, res) => {
   }
 });
 
+// Public per-project home page at /<project-name>. Placed LAST so all static
+// files, pretty URLs (/map-viewer, /models, /plans), and /api/* routes take
+// priority. Anything with a "." in the path is treated as a filename and
+// falls through to 404 (so the static handler already tried it).
+app.get("/:project", (req, res, next) => {
+  const project = req.params.project;
+  if (!project || project.includes(".") || project.startsWith("_")) return next();
+  // Reserved top-level words that are not projects
+  const reserved = new Set([
+    "api", "map-viewer", "models", "plans", "projects", "robots.txt",
+    "tokens.css", "app.css", "me.js",
+  ]);
+  if (reserved.has(project)) return next();
+  res.sendFile(path.join(__dirname, "public", "project-home.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`GCS Uploader running on port ${PORT}`);
 });

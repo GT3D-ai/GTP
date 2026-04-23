@@ -208,6 +208,7 @@
               <div class="project-card-name">${name}</div>
               ${addressHtml}
               <div class="project-card-actions">
+                <a href="/${encodeURIComponent(name)}">Home</a>
                 <a href="/map-viewer/${encodeURIComponent(name)}">Map</a>
                 <a href="/viewer.html?project=${encodeURIComponent(name)}">360 Photos</a>
                 <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
@@ -220,7 +221,7 @@
           `;
           card.addEventListener("click", (e) => {
             if (e.target.closest("a[href]")) return;
-            window.location.href = `/map-viewer/${encodeURIComponent(name)}`;
+            window.location.href = `/${encodeURIComponent(name)}`;
           });
           grid.appendChild(card);
         });
