@@ -882,7 +882,10 @@
     async function saveMappings() {
       saveStatus.textContent = "Saving...";
       try {
-        const res = await fetch("/api/mappings", {
+        // Note: save endpoint is /api/save-mappings (private, IAP-gated). The
+        // GET /api/mappings is public for the map-viewer; writes need auth and
+        // must not share a path with the public read.
+        const res = await fetch("/api/save-mappings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ project, data: mappings }),

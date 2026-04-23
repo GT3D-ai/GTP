@@ -123,7 +123,8 @@ function resolveProjectFromRequest(req) {
 
 function requireProjectRole(minRole) {
   return async (req, res, next) => {
-    if (req.user?.isAdmin) return next();
+    if (!req.user) return res.status(401).json({ error: "Authentication required" });
+    if (req.user.isAdmin) return next();
     const project = resolveProjectFromRequest(req);
     if (!project) return res.status(400).json({ error: "project required" });
     if (project === "_thumbs" || project === "_platform") {
@@ -681,7 +682,11 @@ app.get("/api/mappings", async (req, res) => {
   }
 });
 
-app.post("/api/mappings", requireProjectRole("editor"), async (req, res) => {
+// Save mappings — deliberately NOT at /api/mappings. The LB sends the
+// /api/mappings path to the public (no-IAP) backend so the public map-viewer
+// can read pins anonymously; saves live at a separate path that routes through
+// the private (IAP-protected) backend.
+const saveMappingsHandler = async (req, res) => {
   const { project, data } = req.body;
   if (!project || !data) return res.status(400).json({ error: "project and data are required" });
   try {
@@ -693,7 +698,12 @@ app.post("/api/mappings", requireProjectRole("editor"), async (req, res) => {
     console.error("Save mappings error:", err.message);
     res.status(500).json({ error: err.message });
   }
-});
+};
+app.post("/api/save-mappings", requireProjectRole("editor"), saveMappingsHandler);
+// Keep POST /api/mappings for backward compat, guarded for the (rare) case it
+// arrives through the private backend. If it arrives via the public backend
+// with no auth, requireProjectRole now returns 401 cleanly (see middleware).
+app.post("/api/mappings", requireProjectRole("editor"), saveMappingsHandler);
 
 // ---- 2D Image endpoints (gt_platform_image_storage) ----
 
