@@ -142,6 +142,71 @@
     }
     .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
     .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+
+    /* Thumbnail is clickable for previewable types */
+    .plan-card-thumb.previewable { cursor: zoom-in; }
+    .plan-card-thumb.previewable:hover::after,
+    .plan-card-thumb.previewable:hover::before { opacity: 0.8; }
+
+    /* Full-screen PDF / image viewer modal */
+    .pdf-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .pdf-modal.visible { display: flex; }
+    .pdf-modal-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .pdf-modal-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+    }
+    .pdf-modal-download, .pdf-modal-close {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .pdf-modal-download:hover, .pdf-modal-close:hover {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .pdf-modal-close { width: 36px; padding: 0.4rem; font-size: 1.1rem; }
+    .pdf-modal-body { flex: 1; display: flex; align-items: center; justify-content: center; background: #3b4048; min-height: 0; }
+    .pdf-modal-body iframe {
+      width: 100%; height: 100%; border: 0; background: #fff;
+    }
+    .pdf-modal-body img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+    }
+    .pdf-modal-body .no-preview {
+      text-align: center; color: rgba(255, 255, 255, 0.8);
+      padding: var(--space-lg);
+      font-size: 0.95rem;
+    }
+    .pdf-modal-body .no-preview p { margin: 0 0 var(--space-md); }
+    .pdf-modal-loading {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.85rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
@@ -170,6 +235,16 @@
       </div>
     </div>
   </main>
+
+  <!-- Full-screen PDF / image viewer modal -->
+  <div class="pdf-modal" id="pdfModal" role="dialog" aria-modal="true">
+    <div class="pdf-modal-bar">
+      <span class="pdf-modal-title" id="pdfTitle"></span>
+      <a class="pdf-modal-download" id="pdfDownload" href="#" download>Download</a>
+      <button class="pdf-modal-close" id="pdfClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="pdf-modal-body" id="pdfBody"></div>
+  </div>
 
   <script>
     // Extract project from URL: /plans/<project-name>
@@ -212,6 +287,21 @@
       return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
 
+    function getExt(name) {
+      const i = name.lastIndexOf(".");
+      return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+    }
+    function isPdf(f) {
+      return (f.contentType || "").toLowerCase() === "application/pdf" || getExt(f.name) === "pdf";
+    }
+    function isImage(f) {
+      if ((f.contentType || "").startsWith("image/")) return true;
+      return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(getExt(f.name));
+    }
+    function canPreview(f) {
+      return isPdf(f) || isImage(f);
+    }
+
     async function loadPlans(project) {
       try {
         const res = await fetch(`/api/plan/files?project=${encodeURIComponent(project)}`);
@@ -232,9 +322,11 @@
         files.forEach((f) => {
           const card = document.createElement("div");
           card.className = "plan-card";
+          const previewable = canPreview(f);
+          const thumbClass = "plan-card-thumb" + (previewable ? " previewable" : "");
           const thumbHtml = f.thumbnail
-            ? `<div class="plan-card-thumb"><img src="/api/plan/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.parentElement.classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#127744;&lt;/span&gt;'"></div>`
-            : `<div class="plan-card-thumb placeholder"><span class="glyph">&#128196;</span></div>`;
+            ? `<div class="${thumbClass}" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}"><img src="/api/plan/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.parentElement.classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#128196;&lt;/span&gt;'"></div>`
+            : `<div class="${thumbClass} placeholder" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}"><span class="glyph">&#128196;</span></div>`;
           card.innerHTML = `
             ${thumbHtml}
             <div class="plan-card-body">
@@ -250,6 +342,13 @@
             </div>
           `;
           grid.appendChild(card);
+        });
+
+        // Clicking a previewable thumbnail opens the PDF/image modal
+        grid.querySelectorAll(".plan-card-thumb.previewable").forEach((el) => {
+          el.addEventListener("click", () => {
+            openPreview(el.dataset.file, el.dataset.display);
+          });
         });
 
         wrap.innerHTML = "";
@@ -312,6 +411,66 @@
       }[c]));
     }
     function escapeAttr(s) { return escapeHtml(s); }
+
+    // ---- PDF / image preview modal ----
+    const pdfModal = document.getElementById("pdfModal");
+    const pdfBody = document.getElementById("pdfBody");
+    const pdfTitle = document.getElementById("pdfTitle");
+    const pdfClose = document.getElementById("pdfClose");
+    const pdfDownload = document.getElementById("pdfDownload");
+
+    async function openPreview(filePath, displayName) {
+      pdfTitle.textContent = displayName;
+      pdfBody.innerHTML = '<div class="pdf-modal-loading">Loading…</div>';
+      pdfModal.classList.add("visible");
+      document.body.style.overflow = "hidden";
+
+      try {
+        const res = await fetch(`/api/plan/view-url?file=${encodeURIComponent(filePath)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { viewUrl } = await res.json();
+
+        const ext = filePath.split(".").pop().toLowerCase();
+        const isImg = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
+        if (ext === "pdf") {
+          pdfBody.innerHTML = `<iframe src="${escapeAttr(viewUrl)}#toolbar=1&navpanes=0" title="${escapeAttr(displayName)}"></iframe>`;
+        } else if (isImg) {
+          pdfBody.innerHTML = `<img src="${escapeAttr(viewUrl)}" alt="${escapeAttr(displayName)}">`;
+        } else {
+          pdfBody.innerHTML = `<div class="no-preview"><p>This file type can\u2019t be previewed in the browser.</p><a class="pdf-modal-download" href="${escapeAttr(viewUrl)}" download>Download instead</a></div>`;
+        }
+
+        // Also set the Download button href to a proper attachment URL
+        try {
+          const dl = await fetch(`/api/plan/download-url?file=${encodeURIComponent(filePath)}`);
+          if (dl.ok) {
+            const { downloadUrl } = await dl.json();
+            pdfDownload.href = downloadUrl;
+          } else {
+            pdfDownload.href = viewUrl;
+          }
+        } catch {
+          pdfDownload.href = viewUrl;
+        }
+      } catch (err) {
+        pdfBody.innerHTML = `<div class="no-preview"><p>Failed to load preview: ${escapeHtml(err.message)}</p></div>`;
+      }
+    }
+
+    function closePreview() {
+      pdfModal.classList.remove("visible");
+      pdfBody.innerHTML = "";
+      document.body.style.overflow = "";
+    }
+
+    pdfClose.addEventListener("click", closePreview);
+    pdfModal.addEventListener("click", (e) => {
+      // Click on the modal backdrop (not on bar or body content) closes it
+      if (e.target === pdfModal) closePreview();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && pdfModal.classList.contains("visible")) closePreview();
+    });
   </script>
 </body>
 </html>

@@ -876,6 +876,27 @@ app.get("/api/plan/download-url", async (req, res) => {
   }
 });
 
+// Inline view URL for a plan — PUBLIC (15-min expiry). Same payload as
+// download-url but with Content-Disposition: inline so the browser renders
+// PDFs/images in an <iframe> instead of forcing a download.
+app.get("/api/plan/view-url", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!filePath.includes("/_plans/")) return res.status(400).json({ error: "not a plan path" });
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `inline; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ viewUrl: url });
+  } catch (err) {
+    console.error("Plan view-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Proxy a plan thumbnail — PUBLIC
 app.get("/api/plan/thumbnail", async (req, res) => {
   try {
