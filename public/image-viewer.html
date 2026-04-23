@@ -118,7 +118,98 @@
     .image-info-bar.visible { display: flex; gap: 1.5rem; flex-wrap: wrap; }
     .image-info-bar span:first-child { color: var(--ink); font-weight: 600; }
 
-    @media (max-width: 720px) { .sidebar { width: 240px; } }
+    /* Mobile: drop the right-hand viewer, turn the file list into a card
+       grid, and open a full-screen modal when a card is tapped. */
+    @media (max-width: 720px) {
+      body { overflow: auto; height: auto; min-height: 100vh; }
+      .main { flex-direction: column; flex: 0 0 auto; }
+      .sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+      .sidebar-header { padding: 0.875rem var(--space-md); }
+      .viewer-area, .image-info-bar { display: none !important; }
+
+      .file-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 1px;
+        background: var(--line);
+        border-top: 1px solid var(--line);
+      }
+      .file-item {
+        display: flex;
+        flex-direction: column;
+        padding: 0;
+        border-bottom: none;
+        gap: 0;
+        background: var(--bg-elevated);
+      }
+      .file-item:hover { background: var(--bg); }
+      .file-item.active { background: var(--bg-elevated); border-left: none; padding-left: 0; }
+      .file-item-thumb { width: 100%; height: auto; aspect-ratio: 4/3; border: none; }
+      .file-item-info { padding: 8px 10px; width: 100%; min-width: 0; }
+      .delete-btn {
+        position: absolute;
+        top: 6px; right: 6px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--line);
+      }
+      .file-item { position: relative; }
+    }
+
+    /* Full-screen modal (any viewport) */
+    .fs-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .fs-modal.visible { display: flex; }
+    .fs-modal img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .fs-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 44px;
+      height: 44px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      font-size: 1.4rem;
+      cursor: pointer;
+      z-index: 1010;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+    }
+    .fs-close:hover { background: var(--accent); border-color: var(--accent); }
+    .fs-title {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      font-size: 0.8125rem;
+      letter-spacing: 0.04em;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 12px;
+      z-index: 1010;
+      max-width: calc(100% - 100px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
@@ -161,6 +252,13 @@
     <span id="infoName"></span>
     <span id="infoDimensions"></span>
     <span id="infoSize"></span>
+  </div>
+
+  <!-- Full-screen modal (used on mobile and when opening from the sidebar on narrow screens) -->
+  <div class="fs-modal" id="fsModal" role="dialog" aria-modal="true">
+    <div class="fs-title" id="fsTitle"></div>
+    <button class="fs-close" id="fsClose" aria-label="Close">&times;</button>
+    <img id="fsImg" alt="">
   </div>
 
   <script>
@@ -251,10 +349,17 @@
       }
     }
 
+    const mobileMq = window.matchMedia("(max-width: 720px)");
+
     function showImage(file, itemEl) {
       currentFile = file;
       document.querySelectorAll(".file-item.active").forEach((el) => el.classList.remove("active"));
       itemEl.classList.add("active");
+
+      if (mobileMq.matches) {
+        openFullscreen(file);
+        return;
+      }
 
       viewerPlaceholder.style.display = "none";
       viewerImage.classList.remove("visible");
@@ -277,6 +382,31 @@
       };
       viewerImage.src = url;
     }
+
+    // Full-screen modal
+    const fsModal = document.getElementById("fsModal");
+    const fsImg = document.getElementById("fsImg");
+    const fsTitle = document.getElementById("fsTitle");
+    const fsClose = document.getElementById("fsClose");
+
+    function openFullscreen(file) {
+      fsTitle.textContent = file.displayName;
+      fsImg.src = `/api/2d/image?file=${encodeURIComponent(file.name)}`;
+      fsModal.classList.add("visible");
+      document.body.style.overflow = "hidden"; // lock background scroll while modal open
+    }
+    function closeFullscreen() {
+      fsModal.classList.remove("visible");
+      fsImg.src = "";
+      document.body.style.overflow = "";
+    }
+    fsClose.addEventListener("click", closeFullscreen);
+    fsModal.addEventListener("click", (e) => {
+      if (e.target === fsModal) closeFullscreen();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && fsModal.classList.contains("visible")) closeFullscreen();
+    });
 
     loadFiles();
   </script>
