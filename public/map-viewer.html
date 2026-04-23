@@ -249,16 +249,17 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <!-- Viewer items (public, always visible) -->
-        <a id="modelsMenuItem" href="/models/">Models</a>
-        <a id="photosMenuItem" href="/viewer.html">Photos</a>
-        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+        <!-- Non-editor menu (Models, Photos, GT3D Home) -->
+        <a id="modelsMenuItem" href="/models/" class="non-editor-only">Models</a>
+        <a id="photosMenuItem" href="/viewer.html" class="non-editor-only">Photos</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener" class="non-editor-only">GT3D Home</a>
 
-        <!-- Editor-only items, revealed by JS when the current user can edit -->
-        <a href="/" class="editor-only" style="display:none;">Projects</a>
+        <!-- Editor menu (Edit Map, 360 Photos, 2D Photos, Models, Projects) -->
         <a id="editMapMenuItem" href="/map-editor.html" class="editor-only" style="display:none;">Edit Map</a>
-        <a id="viewerMenuItem" href="/viewer.html" class="editor-only" style="display:none;">360 Viewer</a>
-        <a id="imageViewerMenuItem" href="/image-viewer.html" class="editor-only" style="display:none;">2D Viewer</a>
+        <a id="viewerMenuItem" href="/viewer.html" class="editor-only" style="display:none;">360 Photos</a>
+        <a id="imageViewerMenuItem" href="/image-viewer.html" class="editor-only" style="display:none;">2D Photos</a>
+        <a id="modelsMenuItemEditor" href="/models/" class="editor-only" style="display:none;">Models</a>
+        <a href="/" class="editor-only" style="display:none;">Projects</a>
       </div>
     </div>
   </header>
@@ -317,17 +318,20 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
-      // Public viewer links — shown to everyone
+      // Non-editor menu items
       document.getElementById("modelsMenuItem").href = `/models/${enc}`;
       document.getElementById("photosMenuItem").href = `/viewer.html?project=${enc}`;
-      // Editor-only links — href filled in now, visibility set after /api/me resolves
+      // Editor menu items — href filled in now, visibility set after /api/me resolves
       document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${enc}`;
       document.getElementById("viewerMenuItem").href = `/viewer.html?project=${enc}`;
       document.getElementById("imageViewerMenuItem").href = `/image-viewer.html?project=${enc}`;
+      document.getElementById("modelsMenuItemEditor").href = `/models/${enc}`;
 
-      // Reveal editor items if this user can edit the current project
+      // If the viewer can edit, swap to the editor menu: hide non-editor items,
+      // reveal editor items.
       (async () => {
         if (window.me && await window.me.canEdit(project)) {
+          document.querySelectorAll(".non-editor-only").forEach((el) => el.style.display = "none");
           document.querySelectorAll(".editor-only").forEach((el) => el.style.display = "");
         }
       })();
