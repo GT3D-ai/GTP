@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload Plans — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    #fileInput { display: none; }
+    .file-entry-icon { color: var(--ink-subtle); font-size: 1rem; flex-shrink: 0; }
+    .file-entry-info { flex: 1; min-width: 0; }
+    .file-list-wrap { display: none; margin-top: var(--space-sm); }
+    .file-list-wrap.visible { display: block; }
+    .clear-all { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+    .clear-all:hover { text-decoration: underline; }
+    .progress-container { display: none; margin-top: var(--space-sm); }
+    .progress-container.visible { display: block; }
+    .upload-btn-wrap { display: none; margin-top: var(--space-md); }
+    .upload-btn-wrap.visible { display: block; }
+    .form-head h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.375rem, 2.5vw, 1.75rem); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+    .form-head p.lede { margin-bottom: var(--space-lg); }
+
+    .per-file-progress {
+      height: 2px;
+      background: var(--line);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .per-file-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.2s;
+    }
+
+    /* Existing models list */
+    .models-section { margin-top: var(--space-xl); }
+    .models-header {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: var(--space-sm);
+    }
+    .plan-item {
+      display: flex; align-items: center; gap: var(--space-sm);
+      padding: 0.75rem 1rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+      border-top: none;
+      font-size: 0.875rem;
+    }
+    .plan-item:first-child { border-top: 1px solid var(--line); }
+    .plan-item-icon {
+      width: 44px; height: 44px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .plan-item-icon img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+
+    /* Edit Thumbnail modal */
+    .modal-dropzone {
+      border: 1px dashed var(--line-strong);
+      background: var(--bg);
+      padding: var(--space-md);
+      text-align: center;
+      cursor: pointer;
+      min-height: 180px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .modal-dropzone:hover, .modal-dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--warning-bg);
+    }
+    .modal-dropzone p { margin: 0; font-size: 0.9rem; color: var(--ink-muted); }
+    .modal-dropzone strong { color: var(--accent); font-weight: 600; }
+    .modal-dropzone img {
+      max-width: 100%; max-height: 220px; object-fit: contain;
+      display: none;
+    }
+    .modal-dropzone img.visible { display: block; }
+    .modal-current-thumb {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.75rem;
+      background: var(--bg); border: 1px solid var(--line);
+      margin-bottom: var(--space-sm);
+      font-size: 0.8125rem; color: var(--ink-muted);
+    }
+    .modal-current-thumb img {
+      width: 56px; height: 56px; object-fit: cover;
+      border: 1px solid var(--line);
+    }
+    .plan-item-info { flex: 1; min-width: 0; }
+    .plan-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .plan-item-meta { font-size: 0.72rem; color: var(--ink-subtle); margin-top: 2px; }
+
+    .not-admin {
+      background: var(--warning-bg);
+      border: 1px solid var(--accent);
+      color: var(--ink);
+      padding: var(--space-lg);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+        <a href="/plan-upload.html" class="is-active">Upload Plans</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container-sm">
+    <div id="notAdmin" class="not-admin" style="display:none;">
+      Admin access required to upload models.
+    </div>
+
+    <div id="uploaderWrap" style="display:none;">
+      <div class="form-head">
+        <p class="eyebrow">Upload</p>
+        <h2>Upload plans</h2>
+        <p class="lede">Admin-only. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code>{project}/_plans/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Large files (multi-GB) are supported.</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="projectSelect">Project <span class="required-mark">*</span></label>
+        <select class="field-select" id="projectSelect">
+          <option value="">Select a project…</option>
+        </select>
+      </div>
+
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">&#128196;</div>
+        <p>Drag & drop plan files here, or <strong>browse</strong></p>
+        <p style="font-size:0.72rem; color:var(--ink-subtle); margin-top:6px;">
+          Accepts any file type. Common: .pdf .dwg .dxf .tiff .tif .jpg .png .svg
+        </p>
+      </div>
+      <input type="file" id="fileInput" multiple>
+
+      <div class="file-list-wrap" id="fileList">
+        <div class="file-list-header">
+          <span id="fileCount">0 files selected</span>
+          <button class="clear-all" id="clearAll">Clear all</button>
+        </div>
+        <div id="fileEntries"></div>
+      </div>
+
+      <div class="upload-btn-wrap" id="uploadBtnWrap">
+        <button class="btn btn-primary btn-block" id="uploadBtn">Upload Plans</button>
+      </div>
+
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">0%</div>
+      </div>
+
+      <div class="status-message" id="statusMessage"></div>
+
+      <div class="models-section" id="plansSection" style="display:none;">
+        <div class="models-header">Project Plans</div>
+        <div id="plansList"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Edit Thumbnail modal -->
+  <div class="overlay" id="thumbOverlay">
+    <div class="modal">
+      <h3 id="thumbModalTitle">Edit Thumbnail</h3>
+      <div id="thumbCurrent" class="modal-current-thumb" style="display:none;">
+        <img id="thumbCurrentImg" alt="Current thumbnail">
+        <div>Current thumbnail — drop a new image to replace.</div>
+      </div>
+      <div class="modal-dropzone" id="thumbDropzone">
+        <div id="thumbPrompt">
+          <p>Drag & drop an image here, or <strong>browse</strong></p>
+          <p style="font-size: 0.72rem; color: var(--ink-subtle); margin-top: 6px;">
+            Stored alongside the model as <code>.thumb.jpg</code>. Any image type accepted.
+          </p>
+        </div>
+        <img id="thumbPreview" alt="">
+      </div>
+      <input type="file" id="thumbFileInput" accept="image/*" style="display:none;">
+      <div style="display:flex; gap: var(--space-sm); margin-top: var(--space-md);">
+        <button type="button" class="btn btn-outline" id="thumbCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="thumbSaveBtn" style="flex:1;" disabled>Save Thumbnail</button>
+      </div>
+      <div class="status-message" id="thumbStatus"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const projectFromUrl = params.get("project");
+
+    const uploaderWrap = document.getElementById("uploaderWrap");
+    const notAdmin = document.getElementById("notAdmin");
+    const projectSelect = document.getElementById("projectSelect");
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const fileListEl = document.getElementById("fileList");
+    const fileEntries = document.getElementById("fileEntries");
+    const fileCount = document.getElementById("fileCount");
+    const clearAllBtn = document.getElementById("clearAll");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const uploadBtnWrap = document.getElementById("uploadBtnWrap");
+    const progressContainer = document.getElementById("progressContainer");
+    const progressFill = document.getElementById("progressFill");
+    const progressText = document.getElementById("progressText");
+    const statusMessage = document.getElementById("statusMessage");
+
+    let selectedFiles = [];
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    (async () => {
+      const myInfo = await me.getMe();
+      if (!myInfo.isAdmin) {
+        notAdmin.style.display = "block";
+        return;
+      }
+      uploaderWrap.style.display = "block";
+
+      try {
+        const res = await fetch("/api/projects");
+        if (res.ok) {
+          const projects = await res.json();
+          projectSelect.innerHTML = '<option value="">Select a project…</option>';
+          projects.forEach((name) => {
+            const opt = document.createElement("option");
+            opt.value = name; opt.textContent = name;
+            projectSelect.appendChild(opt);
+          });
+          if (projectFromUrl) {
+            projectSelect.value = projectFromUrl;
+            projectSelect.disabled = true;
+            loadPlans(projectFromUrl);
+          }
+        }
+      } catch {}
+    })();
+
+    projectSelect.addEventListener("change", () => {
+      if (projectSelect.value) loadPlans(projectSelect.value);
+      else document.getElementById("plansSection").style.display = "none";
+    });
+
+    function renderFileList() {
+      fileEntries.innerHTML = "";
+      selectedFiles.forEach((file, i) => {
+        const entry = document.createElement("div");
+        entry.className = "file-entry";
+        entry.style.flexDirection = "column";
+        entry.style.alignItems = "stretch";
+        entry.innerHTML = `
+          <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
+            <span class="file-entry-icon">&#128196;</span>
+            <div class="file-entry-info">
+              <div class="file-entry-name" title="${file.name}">${file.name}</div>
+              <div class="file-entry-size">${formatSize(file.size)}</div>
+            </div>
+            <span class="file-entry-status pending" id="file-status-${i}">Pending</span>
+            <button class="icon-btn" data-index="${i}" title="Remove">&times;</button>
+          </div>
+          <div class="per-file-progress" id="pfp-wrap-${i}" style="display:none;">
+            <div class="per-file-progress-fill" id="pfp-${i}"></div>
+          </div>
+        `;
+        fileEntries.appendChild(entry);
+      });
+      fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`;
+      fileListEl.classList.toggle("visible", selectedFiles.length > 0);
+      uploadBtnWrap.classList.toggle("visible", selectedFiles.length > 0);
+    }
+
+    function addFiles(files) {
+      const existing = new Set(selectedFiles.map((f) => f.name + f.size));
+      for (const file of files) {
+        if (!existing.has(file.name + file.size)) selectedFiles.push(file);
+      }
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+      renderFileList();
+    }
+
+    function clearFiles() {
+      selectedFiles = [];
+      fileInput.value = "";
+      fileListEl.classList.remove("visible");
+      uploadBtnWrap.classList.remove("visible");
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault(); dropZone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) { addFiles(fileInput.files); fileInput.value = ""; }
+    });
+    fileEntries.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-index]");
+      if (btn) { selectedFiles.splice(parseInt(btn.dataset.index), 1); renderFileList(); }
+    });
+    clearAllBtn.addEventListener("click", clearFiles);
+
+    uploadBtn.addEventListener("click", async () => {
+      if (selectedFiles.length === 0) return;
+      const project = projectSelect.value;
+      if (!project) {
+        projectSelect.focus();
+        statusMessage.textContent = "Please select a project before uploading.";
+        statusMessage.className = "status-message visible error";
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Uploading…";
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.add("visible");
+
+      const total = selectedFiles.length;
+      let completed = 0, failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const file = selectedFiles[i];
+        const statusEl = document.getElementById(`file-status-${i}`);
+        const pfpWrap = document.getElementById(`pfp-wrap-${i}`);
+        const pfp = document.getElementById(`pfp-${i}`);
+        statusEl.textContent = "Uploading";
+        statusEl.className = "file-entry-status uploading";
+        pfpWrap.style.display = "block";
+        progressFill.style.width = ((i / total) * 100).toFixed(0) + "%";
+        progressText.textContent = `Uploading ${i + 1} of ${total} — ${file.name} (${formatSize(file.size)})`;
+
+        try {
+          await uploadModel(file, project, (loaded, tot) => {
+            if (!tot) return;
+            const pct = (loaded / tot) * 100;
+            pfp.style.width = pct.toFixed(1) + "%";
+          });
+          statusEl.textContent = "Done";
+          statusEl.className = "file-entry-status done";
+          pfp.style.width = "100%";
+          completed++;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "Failed";
+          statusEl.className = "file-entry-status failed";
+          failed++;
+        }
+      }
+
+      progressFill.style.width = "100%";
+      progressText.textContent = "Complete";
+
+      if (failed === 0) {
+        statusMessage.innerHTML = `<strong>${completed}</strong> model${completed !== 1 ? "s" : ""} uploaded to project <strong>${project}</strong>.`;
+        statusMessage.className = "status-message visible success";
+      } else {
+        statusMessage.textContent = `${completed} uploaded, ${failed} failed.`;
+        statusMessage.className = "status-message visible error";
+      }
+
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "Upload Plans";
+      loadPlans(project);
+    });
+
+    async function uploadModel(file, project, onProgress) {
+      // 1. Request a signed URL (admin-only on the server)
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "plan",
+          project,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+      }
+      const { uploadUrl, gcsPath } = await res.json();
+
+      // 2. PUT directly to GCS with progress reporting
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.upload.addEventListener("progress", (e) => {
+          if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+        });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve({ destName: gcsPath });
+          else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error")));
+        xhr.send(file);
+      });
+    }
+
+    async function loadPlans(project) {
+      const section = document.getElementById("plansSection");
+      const list = document.getElementById("plansList");
+      try {
+        const res = await fetch(`/api/plan/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error("Failed to list models");
+        const files = await res.json();
+        section.style.display = "block";
+
+        if (files.length === 0) {
+          list.innerHTML = '<div class="plan-item" style="justify-content:center; color:var(--ink-subtle);">No models uploaded yet</div>';
+          return;
+        }
+
+        list.innerHTML = "";
+        files.forEach((f) => {
+          const row = document.createElement("div");
+          row.className = "plan-item";
+          // Cache-bust so the thumbnail refreshes after re-upload
+          const thumbBust = `&t=${Date.now()}`;
+          const iconHtml = f.thumbnail
+            ? `<div class="plan-item-icon"><img src="/api/plan/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust}" alt=""></div>`
+            : `<div class="plan-item-icon">&#128196;</div>`;
+          row.innerHTML = `
+            ${iconHtml}
+            <div class="plan-item-info">
+              <div class="plan-item-name" title="${f.displayName}">${f.displayName}</div>
+              <div class="plan-item-meta">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}</div>
+            </div>
+            <a href="#" class="link-action edit-thumb-link" data-file="${f.name}" data-display="${f.displayName}" data-thumb="${f.thumbnail || ''}">Edit thumbnail</a>
+            <button class="btn btn-outline btn-sm download-btn" data-file="${f.name}">Download</button>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${f.name}" data-display="${f.displayName}">Delete</button>
+          `;
+          list.appendChild(row);
+        });
+
+        // Edit thumbnail links
+        list.querySelectorAll(".edit-thumb-link").forEach((link) => {
+          link.addEventListener("click", (e) => {
+            e.preventDefault();
+            openThumbModal({
+              modelPath: link.dataset.file,
+              displayName: link.dataset.display,
+              existingThumb: link.dataset.thumb || null,
+            });
+          });
+        });
+
+        list.querySelectorAll(".download-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true; btn.textContent = "…";
+            try {
+              const r = await fetch(`/api/plan/download-url?file=${encodeURIComponent(btn.dataset.file)}`);
+              if (!r.ok) throw new Error("Failed to get download URL");
+              const { downloadUrl } = await r.json();
+              window.location.href = downloadUrl;
+            } catch (err) {
+              alert("Download failed: " + err.message);
+            } finally {
+              btn.disabled = false; btn.textContent = "Download";
+            }
+          });
+        });
+
+        list.querySelectorAll("[data-delete]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            if (!confirm(`Delete "${btn.dataset.display}"? This cannot be undone.`)) return;
+            btn.disabled = true;
+            try {
+              const r = await fetch("/api/plan/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: btn.dataset.delete }),
+              });
+              if (!r.ok) throw new Error((await r.json()).error || "Delete failed");
+              loadPlans(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false;
+            }
+          });
+        });
+      } catch (err) {
+        section.style.display = "block";
+        list.innerHTML = `<div class="plan-item" style="color:var(--danger);">${err.message}</div>`;
+      }
+    }
+
+    // ---- Edit Thumbnail modal ----
+    const thumbOverlay = document.getElementById("thumbOverlay");
+    const thumbModalTitle = document.getElementById("thumbModalTitle");
+    const thumbCurrent = document.getElementById("thumbCurrent");
+    const thumbCurrentImg = document.getElementById("thumbCurrentImg");
+    const thumbDropzone = document.getElementById("thumbDropzone");
+    const thumbPrompt = document.getElementById("thumbPrompt");
+    const thumbPreview = document.getElementById("thumbPreview");
+    const thumbFileInput = document.getElementById("thumbFileInput");
+    const thumbSaveBtn = document.getElementById("thumbSaveBtn");
+    const thumbCancelBtn = document.getElementById("thumbCancelBtn");
+    const thumbStatus = document.getElementById("thumbStatus");
+
+    let thumbCtx = null; // { modelPath, displayName, existingThumb, file }
+
+    function openThumbModal(ctx) {
+      thumbCtx = { ...ctx, file: null };
+      thumbModalTitle.textContent = `Thumbnail — ${ctx.displayName}`;
+      thumbStatus.className = "status-message";
+      thumbStatus.textContent = "";
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Save Thumbnail";
+      thumbPreview.classList.remove("visible");
+      thumbPreview.src = "";
+      thumbPrompt.style.display = "";
+      if (ctx.existingThumb) {
+        thumbCurrent.style.display = "flex";
+        thumbCurrentImg.src = `/api/plan/thumbnail?file=${encodeURIComponent(ctx.existingThumb)}&t=${Date.now()}`;
+      } else {
+        thumbCurrent.style.display = "none";
+      }
+      thumbOverlay.classList.add("visible");
+    }
+
+    function closeThumbModal() {
+      thumbOverlay.classList.remove("visible");
+      thumbCtx = null;
+      thumbFileInput.value = "";
+    }
+
+    function setThumbFile(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      thumbCtx.file = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        thumbPreview.src = e.target.result;
+        thumbPreview.classList.add("visible");
+        thumbPrompt.style.display = "none";
+      };
+      reader.readAsDataURL(file);
+      thumbSaveBtn.disabled = false;
+    }
+
+    thumbDropzone.addEventListener("click", () => thumbFileInput.click());
+    thumbDropzone.addEventListener("dragover", (e) => { e.preventDefault(); thumbDropzone.classList.add("drag-over"); });
+    thumbDropzone.addEventListener("dragleave", () => thumbDropzone.classList.remove("drag-over"));
+    thumbDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      thumbDropzone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) setThumbFile(e.dataTransfer.files[0]);
+    });
+    thumbFileInput.addEventListener("change", () => {
+      if (thumbFileInput.files.length > 0) setThumbFile(thumbFileInput.files[0]);
+    });
+    thumbCancelBtn.addEventListener("click", closeThumbModal);
+    thumbOverlay.addEventListener("click", (e) => {
+      if (e.target === thumbOverlay) closeThumbModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && thumbOverlay.classList.contains("visible")) closeThumbModal();
+    });
+
+    thumbSaveBtn.addEventListener("click", async () => {
+      if (!thumbCtx?.file) return;
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Uploading…";
+      thumbStatus.textContent = "";
+      thumbStatus.className = "status-message";
+
+      // Plan paths look like "project/_plans/filename.ext". The server's
+      // upload-url handler will re-add the _plans/ prefix, so strip it here.
+      //   project = first segment
+      //   fileName sent to server = filename.ext.thumb.jpg (no _plans/ prefix)
+      const parts = thumbCtx.modelPath.split("/");
+      const project = parts.shift();
+      if (parts[0] === "_plans") parts.shift();
+      const rel = parts.join("/");           // e.g. "filename.pdf"
+      const thumbFileName = rel + ".thumb.jpg";
+
+      try {
+        // 1. Ask for a signed URL (admin-only)
+        const res = await fetch("/api/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: "plan",
+            project,
+            fileName: thumbFileName,
+            contentType: "image/jpeg", // stored as .thumb.jpg regardless of source type
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+        }
+        const { uploadUrl } = await res.json();
+
+        // 2. PUT the image bytes directly to GCS (Content-Type must match the signed URL)
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", "image/jpeg");
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+          });
+          xhr.addEventListener("error", () => reject(new Error("Network error")));
+          xhr.send(thumbCtx.file);
+        });
+
+        thumbStatus.textContent = "Thumbnail saved.";
+        thumbStatus.className = "status-message visible success";
+        setTimeout(() => {
+          closeThumbModal();
+          const project = projectSelect.value;
+          if (project) loadPlans(project);
+        }, 600);
+      } catch (err) {
+        thumbStatus.textContent = "Error: " + err.message;
+        thumbStatus.className = "status-message visible error";
+        thumbSaveBtn.disabled = false;
+        thumbSaveBtn.textContent = "Save Thumbnail";
+      }
+    });
+  </script>
+</body>
+</html>

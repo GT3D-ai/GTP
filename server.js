@@ -54,6 +54,11 @@ app.get("/models/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-models.html"));
 });
 
+// Public, per-project plans showcase: /plans/<project-name>
+app.get("/plans/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "project-plans.html"));
+});
+
 // Legacy /models(.html) → admin uploader
 app.get(["/models", "/models.html"], (req, res) => {
   res.redirect(301, "/model-upload.html");
@@ -417,10 +422,14 @@ app.get("/api/files", async (req, res) => {
 });
 
 // Generate a V4 signed URL for direct browser-to-GCS upload.
-// Client sends { bucket: "360"|"2d"|"model", project, fileName, contentType, level? }
+// Client sends { bucket: "360"|"2d"|"model"|"plan", project, fileName, contentType, level? }
 // Returns { uploadUrl, gcsPath }. The browser then PUTs the file bytes directly
 // to uploadUrl with the matching Content-Type, bypassing the Cloud Run 32 MiB cap.
-// Auth: "360" and "2d" require editor on the project; "model" requires admin.
+// Auth:
+//   "360", "2d" — editor on the project
+//   "model", "plan" — admin
+// Storage:
+//   "plan" writes to the image bucket at <project>/_plans/<fileName>
 app.post("/api/upload-url", async (req, res) => {
   const { bucket: bucketKind, project, fileName, contentType, level } = req.body || {};
   if (!bucketKind || !fileName || !contentType) {
@@ -428,9 +437,9 @@ app.post("/api/upload-url", async (req, res) => {
   }
   if (!project) return res.status(400).json({ error: "project is required" });
 
-  // Authorization: admin-only for model uploads, editor for others
-  if (bucketKind === "model") {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: "Admin required for model uploads" });
+  // Authorization
+  if (bucketKind === "model" || bucketKind === "plan") {
+    if (!req.user?.isAdmin) return res.status(403).json({ error: `Admin required for ${bucketKind} uploads` });
   } else {
     if (!req.user?.isAdmin) {
       const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
@@ -441,17 +450,22 @@ app.post("/api/upload-url", async (req, res) => {
   let target, bucketName;
   if (bucketKind === "2d") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else if (bucketKind === "model") { target = modelBucket; bucketName = MODEL_BUCKET_NAME; }
+  else if (bucketKind === "plan") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else { target = bucket; bucketName = BUCKET_NAME; }
 
   let dest = fileName;
-  if (project && level) dest = `${project}/${level}/${fileName}`;
+  if (bucketKind === "plan") {
+    // Plans live under a reserved _plans/ prefix so they don't leak into the
+    // regular 2D images list. The caller passes fileName without the prefix.
+    dest = `${project}/_plans/${fileName}`;
+  } else if (project && level) dest = `${project}/${level}/${fileName}`;
   else if (project) dest = `${project}/${fileName}`;
 
   try {
     const [url] = await target.file(dest).getSignedUrl({
       version: "v4",
       action: "write",
-      expires: Date.now() + 60 * 60 * 1000, // 60 minutes (large models take time)
+      expires: Date.now() + 60 * 60 * 1000, // 60 minutes (large models/plans take time)
       contentType,
     });
     res.json({ uploadUrl: url, gcsPath: dest, bucket: bucketName });
@@ -720,6 +734,7 @@ app.get("/api/2d/files", async (req, res) => {
     const [files] = await imageBucket.getFiles(options);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/")) // plans are managed separately
       .map((f) => ({
         name: f.name,
         displayName: prefix ? f.name.replace(prefix, "") : f.name,
@@ -806,6 +821,108 @@ app.get("/api/2d/image", async (req, res) => {
   } catch (err) {
     console.error("2D image proxy error:", err.message);
     res.status(500).send(err.message);
+  }
+});
+
+// ---- Plan endpoints (image bucket, {project}/_plans/ prefix) ----
+// Parallel to models but stored inside the image bucket under a reserved
+// prefix. Thumbnails stored as <file>.thumb.jpg sibling objects.
+
+// List plans in a project — PUBLIC
+app.get("/api/plan/files", async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = `${project}/_plans/`;
+    const [files] = await imageBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+        };
+      });
+    res.json(list);
+  } catch (err) {
+    console.error("List plans error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Signed download URL for a plan — PUBLIC (15-min expiry)
+app.get("/api/plan/download-url", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!filePath.includes("/_plans/")) return res.status(400).json({ error: "not a plan path" });
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Plan download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxy a plan thumbnail — PUBLIC
+app.get("/api/plan/thumbnail", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).send("file is required");
+    if (!filePath.includes("/_plans/") || !filePath.endsWith(".thumb.jpg")) {
+      return res.status(400).send("invalid thumbnail path");
+    }
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).send("Not found");
+    const [metadata] = await file.getMetadata();
+    res.set("Content-Type", metadata.contentType || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=300");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    console.error("Plan thumbnail error:", err.message);
+    res.status(500).send(err.message);
+  }
+});
+
+// Delete a plan — admins + project editors. Also deletes the sibling thumbnail.
+app.post("/api/plan/delete", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!filePath.includes("/_plans/")) return res.status(400).json({ error: "not a plan path" });
+  if (filePath.endsWith(".thumb.jpg")) {
+    return res.status(400).json({ error: "Thumbnails are deleted alongside their plan" });
+  }
+  try {
+    const f = imageBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await f.delete();
+    console.log(`Deleted plan: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    try {
+      const thumb = imageBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) {
+        await thumb.delete();
+        console.log(`Deleted plan thumbnail: gs://${IMAGE_BUCKET_NAME}/${filePath}.thumb.jpg`);
+      }
+    } catch (e) { /* non-fatal */ }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Plan delete error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
