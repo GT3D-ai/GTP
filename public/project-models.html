@@ -116,7 +116,22 @@
     }
     .model-card-meta span:first-child { color: var(--ink); font-weight: 500; }
 
-    .model-card-actions { margin-top: auto; padding-top: 8px; }
+    .model-card-actions {
+      margin-top: auto;
+      padding-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .model-card-actions .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .model-card-actions .btn-danger:hover {
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--danger);
+    }
 
     .placeholder {
       text-align: center;
@@ -230,6 +245,7 @@
               </div>
               <div class="model-card-actions">
                 <button class="btn btn-outline btn-sm download-btn" data-file="${escapeAttr(f.name)}">Download</button>
+                <button class="btn btn-outline btn-sm btn-danger delete-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" style="display:none;">Delete</button>
               </div>
             </div>
           `;
@@ -257,6 +273,34 @@
             }
           });
         });
+
+        grid.querySelectorAll(".delete-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const name = btn.dataset.display;
+            if (!confirm(`Delete "${name}"? This also removes its thumbnail. This cannot be undone.`)) return;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = "Deleting…";
+            try {
+              const r = await fetch("/api/model/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: btn.dataset.file }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadModels(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
+          });
+        });
+
+        // Reveal editor-only controls (Delete button) when the visitor can edit
+        if (window.me && await window.me.canEdit(project)) {
+          grid.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
+        }
       } catch (err) {
         wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
       }

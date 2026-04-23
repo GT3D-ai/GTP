@@ -882,15 +882,31 @@ app.get("/api/model/download-url", async (req, res) => {
 });
 
 // Delete a model
-app.post("/api/model/delete", requireAdmin, async (req, res) => {
+// Delete a model — admins + project editors. Also deletes the sibling
+// thumbnail (<file>.thumb.jpg) if present.
+app.post("/api/model/delete", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (filePath.endsWith(".thumb.jpg")) {
+    return res.status(400).json({ error: "Thumbnails are deleted alongside their model" });
+  }
   try {
     const f = modelBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
     await f.delete();
     console.log(`Deleted model: gs://${MODEL_BUCKET_NAME}/${filePath}`);
+
+    // Best-effort: remove the thumbnail if one exists
+    try {
+      const thumb = modelBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) {
+        await thumb.delete();
+        console.log(`Deleted thumbnail: gs://${MODEL_BUCKET_NAME}/${filePath}.thumb.jpg`);
+      }
+    } catch (e) { /* non-fatal */ }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Model delete error:", err.message);
