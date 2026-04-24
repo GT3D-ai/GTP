@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Images — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    .project-headline {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    @media (max-width: 640px) {
+      .header-inner { flex-wrap: wrap; row-gap: 4px; }
+      .project-headline {
+        order: 3; flex-basis: 100%;
+        font-size: 0.85rem; color: var(--ink-muted);
+        padding-top: 4px; border-top: 1px solid var(--line);
+      }
+    }
+
+    .page-head { margin-bottom: var(--space-md); display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+    .page-head h1 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .images-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+    }
+    @media (min-width: 640px) { .images-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 980px) { .images-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .image-card {
+      background: var(--bg-elevated);
+      display: flex;
+      flex-direction: column;
+      transition: background var(--transition);
+    }
+
+    .image-card-thumb {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.5rem;
+      color: var(--ink-muted);
+      border-bottom: 1px solid var(--line);
+      position: relative;
+      overflow: hidden;
+      cursor: zoom-in;
+    }
+    .image-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .image-card-body {
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+    .image-card-name {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .image-card-meta {
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .image-card-meta span:first-child { color: var(--ink); font-weight: 500; }
+
+    .image-card-actions {
+      margin-top: auto;
+      padding-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .image-card-actions .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .image-card-actions .btn-danger:hover {
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--danger);
+    }
+
+    .placeholder {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-md);
+      color: var(--ink-subtle);
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
+    }
+    .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+
+    /* Full-screen image viewer modal */
+    .image-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .image-modal.visible { display: flex; }
+    .image-modal-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .image-modal-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+    }
+    .image-modal-download, .image-modal-close {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .image-modal-download:hover, .image-modal-close:hover {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .image-modal-close { width: 36px; padding: 0.4rem; font-size: 1.1rem; }
+    .image-modal-body {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #3b4048; min-height: 0; overflow: auto;
+    }
+    .image-modal-body img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <span class="project-headline" id="projectHeadline">2D Images</span>
+      <nav class="nav-primary" aria-label="Primary">
+        <a id="mapViewerLink" href="#">Map</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>2D Images</h1>
+      <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload images</a>
+    </div>
+
+    <div id="imagesWrap">
+      <div class="placeholder">
+        <p>Loading…</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Full-screen image viewer modal -->
+  <div class="image-modal" id="imageModal" role="dialog" aria-modal="true">
+    <div class="image-modal-bar">
+      <span class="image-modal-title" id="imageTitle"></span>
+      <a class="image-modal-download" id="imageDownload" href="#" download>Download</a>
+      <button class="image-modal-close" id="imageClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="image-modal-body" id="imageBody"></div>
+  </div>
+
+  <script>
+    // Extract project from URL: /images/<project-name>
+    let project = null;
+    const pathMatch = window.location.pathname.match(/^\/images\/(.+?)\/?$/);
+    if (pathMatch) project = decodeURIComponent(pathMatch[1]);
+
+    const wrap = document.getElementById("imagesWrap");
+    const projectHeadline = document.getElementById("projectHeadline");
+
+    if (!project) {
+      wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /images/&lt;project-name&gt;.</div>';
+    } else {
+      projectHeadline.textContent = project;
+      document.getElementById("mapViewerLink").href = `/map-viewer/${encodeURIComponent(project)}`;
+
+      // Admin upload shortcut + non-editor logo redirect
+      (async () => {
+        const isEditor = window.me ? await window.me.canEdit(project) : false;
+        if (window.me && await window.me.isAdmin()) {
+          const a = document.getElementById("adminUploadLink");
+          a.href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
+          a.textContent = "+ Manage images";
+          a.style.display = "";
+        }
+        if (!isEditor) {
+          const logo = document.querySelector(".site-header .logo");
+          if (logo) logo.href = `/${encodeURIComponent(project)}`;
+        }
+      })();
+
+      loadImages(project);
+    }
+
+    function formatSize(bytes) {
+      if (!bytes && bytes !== 0) return "";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    function formatDate(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    async function loadImages(project) {
+      try {
+        const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const files = await res.json();
+
+        if (files.length === 0) {
+          wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128444;</div><p>No 2D images uploaded for this project yet.</p></div>';
+          return;
+        }
+
+        // Sort newest first
+        files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+
+        const grid = document.createElement("div");
+        grid.className = "images-grid";
+
+        files.forEach((f) => {
+          const card = document.createElement("div");
+          card.className = "image-card";
+          const src = `/api/2d/image?file=${encodeURIComponent(f.name)}`;
+          card.innerHTML = `
+            <div class="image-card-thumb" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
+              <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy">
+            </div>
+            <div class="image-card-body">
+              <div class="image-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
+              <div class="image-card-meta">
+                <span>${formatDate(f.updated)}</span>
+                <span>${formatSize(f.size)}</span>
+              </div>
+              <div class="image-card-actions">
+                <a class="btn btn-outline btn-sm" href="${src}" download="${escapeAttr(f.displayName)}">Download</a>
+                <button class="btn btn-outline btn-sm btn-danger delete-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" style="display:none;">Delete</button>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+
+        // Click a thumbnail → open full-screen modal
+        grid.querySelectorAll(".image-card-thumb").forEach((el) => {
+          el.addEventListener("click", () => {
+            openPreview(el.dataset.file, el.dataset.display);
+          });
+        });
+
+        wrap.innerHTML = "";
+        wrap.appendChild(grid);
+
+        // Editor-only delete buttons
+        grid.querySelectorAll(".delete-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const name = btn.dataset.display;
+            if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = "Deleting…";
+            try {
+              const r = await fetch("/api/2d/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: btn.dataset.file }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadImages(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
+          });
+        });
+
+        if (window.me && await window.me.canEdit(project)) {
+          grid.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
+        }
+      } catch (err) {
+        wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+
+    // ---- Image preview modal ----
+    const imageModal = document.getElementById("imageModal");
+    const imageBody = document.getElementById("imageBody");
+    const imageTitle = document.getElementById("imageTitle");
+    const imageClose = document.getElementById("imageClose");
+    const imageDownload = document.getElementById("imageDownload");
+
+    function openPreview(filePath, displayName) {
+      imageTitle.textContent = displayName;
+      const src = `/api/2d/image?file=${encodeURIComponent(filePath)}`;
+      imageBody.innerHTML = `<img src="${escapeAttr(src)}" alt="${escapeAttr(displayName)}">`;
+      imageDownload.href = src;
+      imageDownload.setAttribute("download", displayName);
+      imageModal.classList.add("visible");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closePreview() {
+      imageModal.classList.remove("visible");
+      imageBody.innerHTML = "";
+      document.body.style.overflow = "";
+    }
+
+    imageClose.addEventListener("click", closePreview);
+    imageModal.addEventListener("click", (e) => {
+      if (e.target === imageModal) closePreview();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && imageModal.classList.contains("visible")) closePreview();
+    });
+  </script>
+</body>
+</html>

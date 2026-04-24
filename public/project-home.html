@@ -212,6 +212,7 @@
       </a>
       <nav class="nav-primary" aria-label="Primary">
         <a id="mapLink" href="#">Map</a>
+        <a id="imagesLink" href="#">2D Images</a>
         <a id="plansLink" href="#">2D Plans</a>
         <a id="modelsLink" href="#">3D Models</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
@@ -236,6 +237,7 @@
             <div class="home-card-meta" id="mainCardAddress"></div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="mainMapLink">Map</a>
+              <a href="#" id="mainImagesLink">2D Images</a>
               <a href="#" id="mainPlansLink">2D Plans</a>
               <a href="#" id="mainModelsLink">3D Models</a>
             </div>
@@ -256,6 +258,21 @@
             </div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="mapCardOpen">Open map</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2D IMAGE: most recent -->
+        <div class="home-card" id="imageCard">
+          <a id="imageThumbLink" href="#" aria-label="Open 2D images">
+            <div class="home-card-thumb is-placeholder" id="imageCardThumb"><span class="glyph">&#128444;</span></div>
+          </a>
+          <div class="home-card-body">
+            <div class="home-card-eyebrow">Most recent 2D image</div>
+            <div class="home-card-title" id="imageCardTitle">—</div>
+            <div class="home-card-meta" id="imageCardMeta"></div>
+            <div class="home-card-actions">
+              <a href="#" class="primary" id="imageCardOpen">View 2D Images</a>
             </div>
           </div>
         </div>
@@ -323,11 +340,13 @@
       document.title = `${project} — GT Platform`;
       document.getElementById("projectName").textContent = project;
       document.getElementById("mapLink").href = `/map-viewer/${enc}`;
+      document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
       document.getElementById("modelsLink").href = `/models/${enc}`;
 
       // Main card links
       document.getElementById("mainMapLink").href = `/map-viewer/${enc}`;
+      document.getElementById("mainImagesLink").href = `/images/${enc}`;
       document.getElementById("mainPlansLink").href = `/plans/${enc}`;
       document.getElementById("mainModelsLink").href = `/models/${enc}`;
 
@@ -335,16 +354,19 @@
       document.getElementById("mapThumbLink").href = `/map-viewer/${enc}`;
       document.getElementById("mapCardOpen").href = `/map-viewer/${enc}`;
 
-      // Plan / Model card link targets
+      // Plan / Model / Image card link targets
       document.getElementById("planThumbLink").href = `/plans/${enc}`;
       document.getElementById("planCardOpen").href = `/plans/${enc}`;
       document.getElementById("modelThumbLink").href = `/models/${enc}`;
       document.getElementById("modelCardOpen").href = `/models/${enc}`;
+      document.getElementById("imageThumbLink").href = `/images/${enc}`;
+      document.getElementById("imageCardOpen").href = `/images/${enc}`;
 
       // Kick off all loads in parallel
       await Promise.all([
         loadProjectInfo(),
         loadMapCard(),
+        loadImageCard(),
         loadPlanCard(),
         loadModelCard(),
       ]);
@@ -517,6 +539,43 @@
         }
       } catch (err) {
         document.getElementById("planCardMeta").innerHTML =
+          `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
+      }
+    }
+
+    // ---- 2D Image card: most recently uploaded image ----
+    async function loadImageCard() {
+      try {
+        const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const files = await res.json();
+        if (files.length === 0) {
+          document.getElementById("imageCardTitle").textContent = "No 2D images yet";
+          document.getElementById("imageCardMeta").innerHTML = '<span class="skeleton">Uploaded images will appear here.</span>';
+          return;
+        }
+        files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+        const latest = files[0];
+        document.getElementById("imageCardTitle").textContent = latest.displayName;
+        document.getElementById("imageCardMeta").textContent =
+          `${formatDate(latest.updated)} · ${formatSize(latest.size)}`;
+        const thumb = document.getElementById("imageCardThumb");
+        thumb.classList.remove("is-placeholder");
+        thumb.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = `/api/2d/image?file=${encodeURIComponent(latest.name)}`;
+        img.alt = latest.displayName;
+        img.loading = "lazy";
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "cover";
+        img.onerror = () => {
+          thumb.classList.add("is-placeholder");
+          thumb.innerHTML = '<span class="glyph">&#128444;</span>';
+        };
+        thumb.appendChild(img);
+      } catch (err) {
+        document.getElementById("imageCardMeta").innerHTML =
           `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
       }
     }

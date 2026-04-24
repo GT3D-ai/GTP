@@ -59,6 +59,11 @@ app.get("/plans/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-plans.html"));
 });
 
+// Public, per-project 2D images showcase: /images/<project-name>
+app.get("/images/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "project-images.html"));
+});
+
 // Legacy /models(.html) → admin uploader
 app.get(["/models", "/models.html"], (req, res) => {
   res.redirect(301, "/model-upload.html");
@@ -1314,7 +1319,7 @@ app.get("/:project", (req, res, next) => {
   if (!project || project.includes(".") || project.startsWith("_")) return next();
   // Reserved top-level words that are not projects
   const reserved = new Set([
-    "api", "map-viewer", "models", "plans", "projects", "robots.txt",
+    "api", "map-viewer", "models", "plans", "images", "projects", "robots.txt",
     "tokens.css", "app.css", "me.js",
   ]);
   if (reserved.has(project)) return next();
