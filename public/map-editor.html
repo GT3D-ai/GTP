@@ -496,9 +496,11 @@
       </a>
       <span class="project-headline" id="pageTitle">Map Editor</span>
       <nav class="nav-primary" aria-label="Primary" style="margin-left:auto;">
-        <a href="/">Projects</a>
-        <a id="viewerLink" href="/viewer.html">360 Viewer</a>
-        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
+        <a id="projectHomeLink" href="/">Project Home</a>
+        <a id="mapEditorLink" href="#" class="is-active">Map Editor</a>
+        <a id="viewerLink" href="/viewer.html">360 Images</a>
+        <a id="imageViewerLink" href="/image-viewer.html">2D Images</a>
+        <a id="modelsLink" href="/models/">Models</a>
       </nav>
     </div>
   </header>
@@ -701,9 +703,12 @@
     });
 
     if (project) {
+      const enc = encodeURIComponent(project);
       document.getElementById("pageTitle").textContent = `Map Editor · ${project}`;
-      document.getElementById("viewerLink").href = `/viewer.html?project=${encodeURIComponent(project)}`;
-      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
+      document.getElementById("projectHomeLink").href = `/${enc}`;
+      document.getElementById("viewerLink").href = `/viewer.html?project=${enc}`;
+      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${enc}`;
+      document.getElementById("modelsLink").href = `/models/${enc}`;
       init();
     }
 
