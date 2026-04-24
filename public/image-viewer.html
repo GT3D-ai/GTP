@@ -239,10 +239,11 @@
         Ground Truth <span>3D</span>
       </a>
       <nav class="nav-primary" aria-label="Primary">
-        <a href="/">Projects</a>
-        <a id="viewerLink" href="/viewer.html">360 Viewer</a>
-        <a id="mapEditorLink" href="/map-editor.html">Map</a>
-        <a id="uploadLink" href="/images.html">Upload Images</a>
+        <a id="projectHomeLink" href="/">Project Home</a>
+        <a id="mapEditorLink" href="/map-editor.html">Map Editor</a>
+        <a id="viewerLink" href="/viewer.html">360 Images</a>
+        <a id="imagesLink" href="#" class="is-active">2D Images</a>
+        <a id="modelsLink" href="/models/">Models</a>
       </nav>
     </div>
   </header>
@@ -298,9 +299,11 @@
 
     if (project) {
       document.getElementById("sidebarHeader").textContent = `Images — ${project}`;
-      document.getElementById("uploadLink").href = `/images.html?project=${encodeURIComponent(project)}`;
-      document.getElementById("viewerLink").href = `/viewer.html?project=${encodeURIComponent(project)}`;
-      document.getElementById("mapEditorLink").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
+      const enc = encodeURIComponent(project);
+      document.getElementById("projectHomeLink").href = `/${enc}`;
+      document.getElementById("mapEditorLink").href = `/map-editor.html?project=${enc}`;
+      document.getElementById("viewerLink").href = `/viewer.html?project=${enc}`;
+      document.getElementById("modelsLink").href = `/models/${enc}`;
     }
 
     let isAdminUser = false;
