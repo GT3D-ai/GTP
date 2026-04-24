@@ -721,7 +721,7 @@ app.post("/api/mappings", requireProjectRole("editor"), saveMappingsHandler);
 
 // ---- 2D Image endpoints (gt_platform_image_storage) ----
 
-// List 2D images in a project
+// List 2D images in a project (PUBLIC — hidden images filtered out)
 app.get("/api/2d/files", async (req, res) => {
   try {
     const project = req.query.project;
@@ -735,6 +735,7 @@ app.get("/api/2d/files", async (req, res) => {
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/")) // plans are managed separately
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
       .map((f) => ({
         name: f.name,
         displayName: prefix ? f.name.replace(prefix, "") : f.name,
@@ -745,6 +746,53 @@ app.get("/api/2d/files", async (req, res) => {
     res.json(list);
   } catch (err) {
     console.error("List 2D files error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: list 2D images including hidden ones. Reached through the
+// IAP-protected backend so only signed-in admins can call it.
+app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
+  try {
+    const project = req.query.project;
+    const options = {};
+    let prefix = "";
+    if (project) {
+      prefix = project + "/";
+      options.prefix = prefix;
+    }
+    const [files] = await imageBucket.getFiles(options);
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: prefix ? f.name.replace(prefix, "") : f.name,
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+      }));
+    res.json(list);
+  } catch (err) {
+    console.error("List 2D admin files error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: toggle hidden flag on a 2D image
+app.post("/api/admin/2d/visibility", requireAdmin, async (req, res) => {
+  const { file: filePath, hidden } = req.body;
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    // Passing null clears a custom metadata key in the Node SDK.
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("2D visibility toggle error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -806,7 +854,7 @@ app.post("/api/2d/delete", requireProjectRole("editor"), async (req, res) => {
   }
 });
 
-// Proxy 2D image from GCS
+// Proxy 2D image from GCS (PUBLIC — hidden images return 404)
 app.get("/api/2d/image", async (req, res) => {
   try {
     const filePath = req.query.file;
@@ -816,10 +864,29 @@ app.get("/api/2d/image", async (req, res) => {
       return res.status(404).send("File not found");
     }
     const [metadata] = await file.getMetadata();
+    if (metadata.metadata && metadata.metadata.hidden === "true") {
+      return res.status(404).send("File not found");
+    }
     res.set("Content-Type", metadata.contentType || "application/octet-stream");
     file.createReadStream().pipe(res);
   } catch (err) {
     console.error("2D image proxy error:", err.message);
+    res.status(500).send(err.message);
+  }
+});
+
+// Admin: proxy any 2D image, including hidden ones
+app.get("/api/admin/2d/image", requireAdmin, async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).send("File not found");
+    const [metadata] = await file.getMetadata();
+    res.set("Content-Type", metadata.contentType || "application/octet-stream");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    console.error("2D admin image proxy error:", err.message);
     res.status(500).send(err.message);
   }
 });

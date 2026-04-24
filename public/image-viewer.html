@@ -73,6 +73,25 @@
     }
     .delete-btn:hover { color: var(--danger); border-color: var(--danger); }
 
+    .visibility-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--ink-subtle);
+      padding: 3px 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+      transition: all var(--transition);
+    }
+    .visibility-btn:hover { color: var(--ink); border-color: var(--line-strong); }
+    .file-item.is-hidden { opacity: 0.55; }
+    .file-item.is-hidden .file-item-name::after {
+      content: " · hidden";
+      color: var(--ink-subtle);
+      font-weight: 400;
+      font-style: italic;
+    }
+
     .viewer-area {
       flex: 1;
       display: flex;
@@ -284,9 +303,15 @@
       document.getElementById("mapEditorLink").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
     }
 
+    let isAdminUser = false;
+
     async function loadFiles() {
       try {
-        let url = "/api/2d/files";
+        // Admins hit the admin listing so they see hidden items; non-admins
+        // get the public-filtered list.
+        isAdminUser = !!(window.me && await window.me.isAdmin());
+        const base = isAdminUser ? "/api/admin/2d/files" : "/api/2d/files";
+        let url = base;
         if (project) url += `?project=${encodeURIComponent(project)}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to load files");
@@ -299,29 +324,56 @@
 
         fileList.innerHTML = "";
         files.forEach((file) => {
-          const thumbUrl = `/api/2d/image?file=${encodeURIComponent(file.name)}`;
+          const thumbBase = isAdminUser ? "/api/admin/2d/image" : "/api/2d/image";
+          const thumbUrl = `${thumbBase}?file=${encodeURIComponent(file.name)}`;
           const item = document.createElement("div");
           item.className = "file-item";
+          if (file.hidden) item.classList.add("is-hidden");
+          const visibilityBtn = isAdminUser
+            ? `<button class="visibility-btn" title="${file.hidden ? "Show to non-admins" : "Hide from non-admins"}">${file.hidden ? "&#128065;" : "&#128683;"}</button>`
+            : "";
           item.innerHTML = `
             <img class="file-item-thumb" src="${thumbUrl}" alt="${file.displayName}" loading="lazy">
             <div class="file-item-info">
               <div class="file-item-name" title="${file.displayName}">${file.displayName}</div>
               <div class="file-item-meta">${formatSize(file.size)}</div>
             </div>
+            ${visibilityBtn}
             <button class="delete-btn" title="Delete image">&times;</button>
           `;
           item.addEventListener("click", (e) => {
-            if (e.target.closest(".delete-btn")) return;
+            if (e.target.closest(".delete-btn") || e.target.closest(".visibility-btn")) return;
             showImage(file, item);
           });
           item.querySelector(".delete-btn").addEventListener("click", (e) => {
             e.stopPropagation();
             deleteImage(file);
           });
+          const visEl = item.querySelector(".visibility-btn");
+          if (visEl) {
+            visEl.addEventListener("click", (e) => {
+              e.stopPropagation();
+              toggleVisibility(file);
+            });
+          }
           fileList.appendChild(item);
         });
       } catch (err) {
         fileList.innerHTML = `<div class="placeholder" style="color:var(--danger); padding:var(--space-md);"><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function toggleVisibility(file) {
+      try {
+        const res = await fetch("/api/admin/2d/visibility", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: file.name, hidden: !file.hidden }),
+        });
+        if (!res.ok) throw new Error("Failed to update visibility");
+        loadFiles();
+      } catch (err) {
+        alert("Error: " + err.message);
       }
     }
 
