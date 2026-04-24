@@ -84,6 +84,21 @@
       transition: all var(--transition);
     }
     .visibility-btn:hover { color: var(--ink); border-color: var(--line-strong); }
+
+    .download-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--ink-subtle);
+      padding: 3px 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      transition: all var(--transition);
+    }
+    .download-btn:hover { color: var(--accent); border-color: var(--accent); }
     .file-item.is-hidden { opacity: 0.55; }
     .file-item.is-hidden .file-item-name::after {
       content: " · hidden";
@@ -248,6 +263,25 @@
       transition: all var(--transition);
     }
     .fs-close:hover { background: var(--accent); border-color: var(--accent); }
+    .fs-download {
+      position: absolute;
+      top: 12px;
+      right: 68px;
+      height: 44px;
+      padding: 0 14px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      text-decoration: none;
+      font-size: 0.8125rem;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 1010;
+      transition: all var(--transition);
+    }
+    .fs-download:hover { background: var(--accent); border-color: var(--accent); }
     .fs-title {
       position: absolute;
       top: 20px;
@@ -318,6 +352,7 @@
   <!-- Full-screen modal (used on mobile and when opening from the sidebar on narrow screens) -->
   <div class="fs-modal" id="fsModal" role="dialog" aria-modal="true">
     <div class="fs-title" id="fsTitle"></div>
+    <a class="fs-download" id="fsDownload" href="#" download title="Download image">&#11015; Download</a>
     <button class="fs-close" id="fsClose" aria-label="Close">&times;</button>
     <img id="fsImg" alt="">
   </div>
@@ -441,17 +476,23 @@
           const visibilityBtn = isAdminUser
             ? `<button class="visibility-btn" title="${file.hidden ? "Show to non-admins" : "Hide from non-admins"}">${file.hidden ? "&#128065;" : "&#128683;"}</button>`
             : "";
+          // Download link — uses the browser's `download` attribute so the
+          // file saves with its original name. Uses the admin endpoint when
+          // available so hidden images remain downloadable by admins.
+          const dlBase = isAdminUser ? "/api/admin/2d/image" : "/api/2d/image";
+          const dlHref = `${dlBase}?file=${encodeURIComponent(file.name)}`;
           item.innerHTML = `
             <img class="file-item-thumb" src="${thumbUrl}" alt="${file.displayName}" loading="lazy">
             <div class="file-item-info">
               <div class="file-item-name" title="${file.displayName}">${file.displayName}</div>
               <div class="file-item-meta">${formatSize(file.size)}</div>
             </div>
+            <a class="download-btn" href="${dlHref}" download="${file.displayName}" title="Download image">&#11015;</a>
             ${visibilityBtn}
             <button class="delete-btn" title="Delete image">&times;</button>
           `;
           item.addEventListener("click", (e) => {
-            if (e.target.closest(".delete-btn") || e.target.closest(".visibility-btn")) return;
+            if (e.target.closest(".delete-btn") || e.target.closest(".visibility-btn") || e.target.closest(".download-btn")) return;
             showImage(file, item);
           });
           item.querySelector(".delete-btn").addEventListener("click", (e) => {
@@ -549,10 +590,15 @@
     const fsImg = document.getElementById("fsImg");
     const fsTitle = document.getElementById("fsTitle");
     const fsClose = document.getElementById("fsClose");
+    const fsDownload = document.getElementById("fsDownload");
 
     function openFullscreen(file) {
       fsTitle.textContent = file.displayName;
-      fsImg.src = `/api/2d/image?file=${encodeURIComponent(file.name)}`;
+      const base = isAdminUser ? "/api/admin/2d/image" : "/api/2d/image";
+      const src = `${base}?file=${encodeURIComponent(file.name)}`;
+      fsImg.src = src;
+      fsDownload.href = src;
+      fsDownload.setAttribute("download", file.displayName);
       fsModal.classList.add("visible");
       document.body.style.overflow = "hidden"; // lock background scroll while modal open
     }
