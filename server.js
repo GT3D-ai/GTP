@@ -201,10 +201,24 @@ app.post("/api/create-project", requireAdmin, upload.single("coverPhoto"), async
     // Create project folder in 360 bucket
     await bucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
 
-    // Create default level folders
-    for (const lvl of DEFAULT_LEVELS) {
-      await bucket.file(`${name}/${lvl}/`).save("", { contentType: "application/x-directory" });
-    }
+    // Create level folders. The client sends a "levels" field (JSON array of
+     // selected level names); fall back to DEFAULT_LEVELS when absent.
+     let levels = DEFAULT_LEVELS;
+     if (typeof req.body.levels === "string" && req.body.levels.trim()) {
+       try {
+         const parsed = JSON.parse(req.body.levels);
+         if (Array.isArray(parsed)) {
+           levels = parsed
+             .map((l) => String(l || "").trim().toLowerCase())
+             .filter(Boolean)
+             // Only allow levels from the default set (prevents arbitrary folder names)
+             .filter((l) => DEFAULT_LEVELS.includes(l));
+         }
+       } catch { /* ignore bad JSON — use defaults */ }
+     }
+     for (const lvl of levels) {
+       await bucket.file(`${name}/${lvl}/`).save("", { contentType: "application/x-directory" });
+     }
 
     // Create project folder in 2D image bucket
     await imageBucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
@@ -240,7 +254,7 @@ app.post("/api/create-project", requireAdmin, upload.single("coverPhoto"), async
       contentType: "application/json",
     });
 
-    console.log(`Created project: ${name} (with ${DEFAULT_LEVELS.length} levels)`);
+    console.log(`Created project: ${name} (with ${levels.length} levels)`);
     res.json({ success: true, project: name, metadata });
   } catch (err) {
     console.error("Create project error:", err.message);

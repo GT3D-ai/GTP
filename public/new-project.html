@@ -65,6 +65,19 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
       padding: 4px 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: background var(--transition), color var(--transition), border-color var(--transition);
+    }
+    .level-chip:hover { border-color: var(--accent); }
+    .level-chip.is-selected {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .level-chip.is-selected::before {
+      content: "✓ ";
+      font-weight: 700;
     }
   </style>
 </head>
@@ -113,15 +126,16 @@
       </div>
 
       <div class="levels-preview">
-        <div class="field-label" style="margin-bottom: 0.75rem;">Default Levels (will be created)</div>
-        <div class="levels-chips">
-          <span class="level-chip">level 0</span>
-          <span class="level-chip">level 1</span>
-          <span class="level-chip">level 2</span>
-          <span class="level-chip">level 3</span>
-          <span class="level-chip">attic</span>
-          <span class="level-chip">garage</span>
-          <span class="level-chip">exterior</span>
+        <div class="field-label" style="margin-bottom: 0.5rem;">Levels to create</div>
+        <p style="color: var(--ink-muted); font-size: 0.8125rem; margin: 0 0 0.75rem;">Click a level to include or exclude it.</p>
+        <div class="levels-chips" id="levelsChips">
+          <span class="level-chip is-selected" data-level="level 0">level 0</span>
+          <span class="level-chip is-selected" data-level="level 1">level 1</span>
+          <span class="level-chip is-selected" data-level="level 2">level 2</span>
+          <span class="level-chip is-selected" data-level="level 3">level 3</span>
+          <span class="level-chip is-selected" data-level="attic">attic</span>
+          <span class="level-chip is-selected" data-level="garage">garage</span>
+          <span class="level-chip is-selected" data-level="exterior">exterior</span>
         </div>
       </div>
 
@@ -179,6 +193,18 @@
       if (coverInput.files.length > 0) setCover(coverInput.files[0]);
     });
 
+    // Level chip toggling
+    const levelsChips = document.getElementById("levelsChips");
+    levelsChips.addEventListener("click", (e) => {
+      const chip = e.target.closest(".level-chip");
+      if (!chip) return;
+      chip.classList.toggle("is-selected");
+    });
+    function getSelectedLevels() {
+      return Array.from(levelsChips.querySelectorAll(".level-chip.is-selected"))
+        .map((el) => el.dataset.level);
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = nameEl.value.trim();
@@ -193,6 +219,7 @@
         const formData = new FormData();
         formData.append("name", name);
         formData.append("address", addressEl.value.trim());
+        formData.append("levels", JSON.stringify(getSelectedLevels()));
         if (coverFile) formData.append("coverPhoto", coverFile);
 
         const res = await fetch("/api/create-project", { method: "POST", body: formData });
