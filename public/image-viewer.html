@@ -92,6 +92,40 @@
       font-style: italic;
     }
 
+    /* Admin upload dropzone at the top of the sidebar */
+    .upload-block {
+      display: none;
+      border-bottom: 1px solid var(--line);
+      padding: var(--space-sm);
+    }
+    .upload-block.visible { display: block; }
+    .upload-dropzone {
+      border: 1px dashed var(--line-strong);
+      background: var(--bg);
+      padding: var(--space-sm);
+      text-align: center;
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .upload-dropzone:hover, .upload-dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--warning-bg);
+    }
+    .upload-dropzone p {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--ink-muted);
+    }
+    .upload-dropzone strong { color: var(--accent); font-weight: 600; }
+    .upload-status {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      min-height: 1em;
+    }
+    .upload-status.error { color: var(--danger); }
+    #uploadInput { display: none; }
+
     .viewer-area {
       flex: 1;
       display: flex;
@@ -251,6 +285,13 @@
   <div class="main">
     <aside class="sidebar">
       <div class="sidebar-header" id="sidebarHeader">Images</div>
+      <div class="upload-block" id="uploadBlock">
+        <div class="upload-dropzone" id="uploadDropzone">
+          <p>Drag & drop images here, or <strong>browse</strong></p>
+        </div>
+        <div class="upload-status" id="uploadStatus"></div>
+        <input type="file" id="uploadInput" accept="image/*" multiple>
+      </div>
       <div class="file-list" id="fileList">
         <div class="placeholder" style="color:var(--ink-subtle); padding: var(--space-md);">
           <p>Loading…</p>
@@ -308,11 +349,76 @@
 
     let isAdminUser = false;
 
+    // ---- Admin upload block ----
+    const uploadBlock = document.getElementById("uploadBlock");
+    const uploadDropzone = document.getElementById("uploadDropzone");
+    const uploadInput = document.getElementById("uploadInput");
+    const uploadStatus = document.getElementById("uploadStatus");
+
+    uploadDropzone.addEventListener("click", () => uploadInput.click());
+    uploadDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadDropzone.classList.add("drag-over");
+    });
+    uploadDropzone.addEventListener("dragleave", () => uploadDropzone.classList.remove("drag-over"));
+    uploadDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadDropzone.classList.remove("drag-over");
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+      if (files.length) uploadFiles(files);
+    });
+    uploadInput.addEventListener("change", () => {
+      const files = Array.from(uploadInput.files || []);
+      if (files.length) uploadFiles(files);
+      uploadInput.value = "";
+    });
+
+    async function uploadFiles(files) {
+      if (!project) {
+        uploadStatus.textContent = "No project context — upload unavailable.";
+        uploadStatus.className = "upload-status error";
+        return;
+      }
+      uploadStatus.className = "upload-status";
+      let done = 0;
+      const total = files.length;
+      let failed = 0;
+      for (const file of files) {
+        uploadStatus.textContent = `Uploading ${done + 1} of ${total}: ${file.name}…`;
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("project", project);
+          fd.append("destName", file.name);
+          const res = await fetch("/api/2d/upload", { method: "POST", body: fd });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+        } catch (err) {
+          failed++;
+          console.error("Upload failed for", file.name, err);
+        }
+        done++;
+      }
+      if (failed === 0) {
+        uploadStatus.textContent = `Uploaded ${total} image${total === 1 ? "" : "s"}.`;
+        uploadStatus.className = "upload-status";
+      } else {
+        uploadStatus.textContent = `Uploaded ${total - failed} / ${total} — ${failed} failed.`;
+        uploadStatus.className = "upload-status error";
+      }
+      loadFiles();
+    }
+
     async function loadFiles() {
       try {
         // Admins hit the admin listing so they see hidden items; non-admins
         // get the public-filtered list.
         isAdminUser = !!(window.me && await window.me.isAdmin());
+        // Reveal the upload block for admins only
+        if (isAdminUser) uploadBlock.classList.add("visible");
+        else uploadBlock.classList.remove("visible");
         const base = isAdminUser ? "/api/admin/2d/files" : "/api/2d/files";
         let url = base;
         if (project) url += `?project=${encodeURIComponent(project)}`;
