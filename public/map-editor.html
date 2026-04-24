@@ -494,8 +494,7 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <span class="project-headline" id="pageTitle">Map Editor</span>
-      <nav class="nav-primary" aria-label="Primary" style="margin-left:auto;">
+      <nav class="nav-primary" aria-label="Primary" style="margin-left:auto; flex-wrap:nowrap; white-space:nowrap;">
         <a id="projectHomeLink" href="/">Project Home</a>
         <a id="mapEditorLink" href="#" class="is-active">Map Editor</a>
         <a id="viewerLink" href="/viewer.html">360 Images</a>
@@ -704,7 +703,6 @@
 
     if (project) {
       const enc = encodeURIComponent(project);
-      document.getElementById("pageTitle").textContent = `Map Editor · ${project}`;
       document.getElementById("projectHomeLink").href = `/${enc}`;
       document.getElementById("viewerLink").href = `/viewer.html?project=${enc}`;
       document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${enc}`;
