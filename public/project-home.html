@@ -82,6 +82,31 @@
     }
     .home-card-thumb .glyph { position: relative; z-index: 1; }
 
+    /* Pin overlay used on the map card thumbnail */
+    .map-thumb-stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    .map-thumb-stage img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .map-thumb-pin {
+      position: absolute;
+      width: 9px;
+      height: 9px;
+      background: #ffffff;
+      border: 1.5px solid #0d0d0d;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 1.5px rgba(255,255,255,0.5), 0 1px 4px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+
     .home-card-body {
       padding: var(--space-md);
       display: flex;
@@ -425,18 +450,32 @@
       thumb.innerHTML = "";
       if (path) {
         thumb.classList.remove("is-placeholder");
+        const stage = document.createElement("div");
+        stage.className = "map-thumb-stage";
         const img = document.createElement("img");
         img.src = `/api/2d/image?file=${encodeURIComponent(path)}`;
         img.alt = `Floor plan — ${level}`;
         img.loading = "lazy";
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "cover";
         img.onerror = () => {
           thumb.classList.add("is-placeholder");
           thumb.innerHTML = '<span class="glyph">&#128506;</span>';
         };
-        thumb.appendChild(img);
+        stage.appendChild(img);
+
+        // Overlay pins for the selected level — same 360 photo markers
+        // that the map viewer shows, rendered as small circles on top of
+        // the floor plan thumbnail.
+        const prefix = `${project}/${level}/`;
+        const pins = (mappings.pins || []).filter((p) => p.image360 && p.image360.startsWith(prefix));
+        pins.forEach((pin) => {
+          const dot = document.createElement("div");
+          dot.className = "map-thumb-pin";
+          dot.style.left = (pin.x * 100) + "%";
+          dot.style.top = (pin.y * 100) + "%";
+          stage.appendChild(dot);
+        });
+
+        thumb.appendChild(stage);
       } else {
         thumb.classList.add("is-placeholder");
         thumb.innerHTML = '<span class="glyph">&#128506;</span>';
