@@ -261,12 +261,19 @@
       projectHeadline.textContent = project;
       document.getElementById("mapViewerLink").href = `/map-viewer/${encodeURIComponent(project)}`;
 
-      // Admin "+ Upload plan" shortcut when applicable
+      // Admin "+ Upload plan" shortcut when applicable; also re-route the
+      // GT3D logo home target to the current project home page for
+      // non-editors so it stays within the public project context.
       (async () => {
+        const isEditor = window.me ? await window.me.canEdit(project) : false;
         if (window.me && await window.me.isAdmin()) {
           const a = document.getElementById("adminUploadLink");
           a.href = `/plan-upload.html?project=${encodeURIComponent(project)}`;
           a.style.display = "";
+        }
+        if (!isEditor) {
+          const logo = document.querySelector(".site-header .logo");
+          if (logo) logo.href = `/${encodeURIComponent(project)}`;
         }
       })();
 

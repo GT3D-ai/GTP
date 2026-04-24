@@ -378,11 +378,16 @@
       document.getElementById("modelsMenuItemEditor").href = `/models/${enc}`;
 
       // If the viewer can edit, swap to the editor menu: hide non-editor items,
-      // reveal editor items.
+      // reveal editor items. Non-editors get the GT3D logo re-routed to the
+      // project home page instead of the admin project list at /.
       (async () => {
-        if (window.me && await window.me.canEdit(project)) {
+        const isEditor = window.me ? await window.me.canEdit(project) : false;
+        if (isEditor) {
           document.querySelectorAll(".non-editor-only").forEach((el) => el.style.display = "none");
           document.querySelectorAll(".editor-only").forEach((el) => el.style.display = "");
+        } else {
+          const logo = document.querySelector(".site-header .logo");
+          if (logo) logo.href = `/${enc}`;
         }
       })();
 
