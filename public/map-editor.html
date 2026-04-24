@@ -298,6 +298,37 @@
 
     .pin:hover .pin-tooltip { display: block; }
 
+    /* Hover thumbnail — single shared element positioned next to the pin */
+    .pin-hover-thumb {
+      position: fixed;
+      z-index: 900;
+      width: 160px;
+      height: 120px;
+      background: var(--ink);
+      border: 1px solid var(--line-strong);
+      box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+      pointer-events: none;
+      display: none;
+      overflow: hidden;
+    }
+    .pin-hover-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .pin-hover-thumb .caption {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 4px 6px;
+      font-size: 0.7rem;
+      color: #fff;
+      background: rgba(0,0,0,0.6);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .pin-context-menu {
       position: fixed;
       background: var(--bg-elevated);
@@ -560,6 +591,11 @@
       </div>
       <div class="pano-modal-viewer" id="floorPlanPickerGrid" style="padding:16px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; align-content:start;"></div>
     </div>
+  </div>
+
+  <div class="pin-hover-thumb" id="pinHoverThumb">
+    <img id="pinHoverThumbImg" alt="">
+    <div class="caption" id="pinHoverThumbCaption"></div>
   </div>
 
   <div class="pin-context-menu" id="pinContextMenu">
@@ -1203,6 +1239,34 @@
       pinEl.classList.add("movable");
     });
 
+    // Hover thumbnail preview on pin hover
+    const pinHoverThumb = document.getElementById("pinHoverThumb");
+    const pinHoverThumbImg = document.getElementById("pinHoverThumbImg");
+    const pinHoverThumbCaption = document.getElementById("pinHoverThumbCaption");
+
+    function showPinHoverThumb(pin, e) {
+      if (activeDrag || moveModePin) return; // don't distract while moving
+      const name = pin.image360.split("/").pop();
+      pinHoverThumbCaption.textContent = name;
+      pinHoverThumbImg.src = `/api/thumbnail?file=${encodeURIComponent(pin.image360)}`;
+      pinHoverThumb.style.display = "block";
+      positionPinHoverThumb(e);
+    }
+    function positionPinHoverThumb(e) {
+      if (pinHoverThumb.style.display !== "block") return;
+      const thumbW = 160, thumbH = 120, pad = 14;
+      let x = e.clientX + pad;
+      let y = e.clientY + pad;
+      if (x + thumbW > window.innerWidth) x = e.clientX - thumbW - pad;
+      if (y + thumbH > window.innerHeight) y = e.clientY - thumbH - pad;
+      pinHoverThumb.style.left = x + "px";
+      pinHoverThumb.style.top = y + "px";
+    }
+    function hidePinHoverThumb() {
+      pinHoverThumb.style.display = "none";
+      pinHoverThumbImg.removeAttribute("src");
+    }
+
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
 
@@ -1219,6 +1283,11 @@
 
         const displayName = pin.image360.split("/").pop();
         el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
+
+        // Hover preview — show a small thumbnail near the pin on mouseenter
+        el.addEventListener("mouseenter", (e) => showPinHoverThumb(pin, e));
+        el.addEventListener("mousemove", (e) => positionPinHoverThumb(e));
+        el.addEventListener("mouseleave", () => hidePinHoverThumb());
 
         // Mousedown — if in move mode, start dragging immediately
         el.addEventListener("mousedown", (e) => {
