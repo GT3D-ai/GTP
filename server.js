@@ -315,6 +315,116 @@ app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole(
   }
 });
 
+// ---- Rename / Delete project (admin only) ----
+
+function isValidProjectName(s) {
+  if (typeof s !== "string") return false;
+  const t = s.trim();
+  if (!t) return false;
+  if (t.includes("/") || t.includes("\\")) return false;
+  if (t.startsWith(".") || t.startsWith("_")) return false;
+  return true;
+}
+
+async function moveAllInBucket(b, oldPrefix, newPrefix) {
+  const [files] = await b.getFiles({ prefix: oldPrefix });
+  for (const f of files) {
+    const dest = newPrefix + f.name.slice(oldPrefix.length);
+    await f.copy(b.file(dest));
+    await f.delete();
+  }
+}
+
+async function deleteAllInBucket(b, prefix) {
+  const [files] = await b.getFiles({ prefix });
+  for (const f of files) {
+    try { await f.delete(); } catch (e) { console.error("Delete failed", f.name, e.message); }
+  }
+}
+
+app.post("/api/rename-project", requireAdmin, async (req, res) => {
+  const oldName = (req.body.oldName || req.body.name || "").trim();
+  const newName = (req.body.newName || "").trim();
+  if (!oldName) return res.status(400).json({ error: "oldName is required" });
+  if (!isValidProjectName(newName)) return res.status(400).json({ error: "newName is invalid" });
+  if (oldName === newName) return res.json({ success: true, project: newName });
+
+  try {
+    // Block when newName already exists
+    const [collision] = await bucket.file(`${newName}/`).exists();
+    if (collision) return res.status(409).json({ error: "A project with that name already exists" });
+
+    // Move all GCS objects from <old>/* to <new>/* in each bucket
+    const oldPrefix = `${oldName}/`;
+    const newPrefix = `${newName}/`;
+    await moveAllInBucket(bucket, oldPrefix, newPrefix);
+    await moveAllInBucket(imageBucket, oldPrefix, newPrefix);
+    await moveAllInBucket(modelBucket, oldPrefix, newPrefix);
+
+    // Rewrite mappings.json — paths inside reference the old project name
+    const mappingsFile = bucket.file(`${newName}/mappings.json`);
+    const [mExists] = await mappingsFile.exists();
+    if (mExists) {
+      const [content] = await mappingsFile.download();
+      let m = null;
+      try { m = JSON.parse(content.toString()); } catch { m = null; }
+      if (m) {
+        const fix = (p) => typeof p === "string" && p.startsWith(oldPrefix)
+          ? newPrefix + p.slice(oldPrefix.length) : p;
+        if (m.floorPlanImage) m.floorPlanImage = fix(m.floorPlanImage);
+        if (m.floorPlans && typeof m.floorPlans === "object") {
+          for (const k of Object.keys(m.floorPlans)) m.floorPlans[k] = fix(m.floorPlans[k]);
+        }
+        if (Array.isArray(m.pins)) m.pins = m.pins.map((p) => ({ ...p, image360: fix(p.image360) }));
+        await mappingsFile.save(JSON.stringify(m, null, 2), { contentType: "application/json" });
+      }
+    }
+
+    // Update project.json metadata (name + cover photo path)
+    const projectFile = bucket.file(`${newName}/project.json`);
+    const [pExists] = await projectFile.exists();
+    if (pExists) {
+      const [content] = await projectFile.download();
+      let meta = {};
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+      meta.name = newName;
+      meta.updatedAt = new Date().toISOString();
+      if (typeof meta.coverPhoto === "string" && meta.coverPhoto.startsWith(oldPrefix)) {
+        meta.coverPhoto = newPrefix + meta.coverPhoto.slice(oldPrefix.length);
+      }
+      await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    }
+
+    // Roster: rename project key across all users
+    await userService.renameProjectInRoster(oldName, newName);
+
+    console.log(`Renamed project: ${oldName} -> ${newName}`);
+    res.json({ success: true, project: newName });
+  } catch (err) {
+    console.error("Rename project error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/delete-project", requireAdmin, async (req, res) => {
+  const name = (req.body.name || "").trim();
+  const confirm = req.body.confirm === true || req.body.confirm === "true";
+  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!confirm) return res.status(400).json({ error: "confirmation required" });
+  try {
+    const prefix = `${name}/`;
+    await deleteAllInBucket(bucket, prefix);
+    await deleteAllInBucket(imageBucket, prefix);
+    await deleteAllInBucket(modelBucket, prefix);
+    await userService.removeProjectFromRoster(name);
+    console.log(`Deleted project: ${name}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete project error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get project metadata
 app.get("/api/project-info", async (req, res) => {
   const project = req.query.project;

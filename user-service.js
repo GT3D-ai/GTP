@@ -101,6 +101,38 @@ module.exports = function createUserService({ bucket }) {
     return true;
   }
 
+  // Rename a project key across every user's `projects` map. Used when an
+  // admin renames a project so role assignments follow the new name.
+  async function renameProjectInRoster(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    const roster = await loadRoster();
+    let changed = false;
+    for (const user of Object.values(roster.users)) {
+      if (user.projects && Object.prototype.hasOwnProperty.call(user.projects, oldName)) {
+        user.projects[newName] = user.projects[oldName];
+        delete user.projects[oldName];
+        user.updatedAt = nowIso();
+        changed = true;
+      }
+    }
+    if (changed) await saveRoster(roster);
+  }
+
+  // Remove a project from every user's `projects` map (used on delete).
+  async function removeProjectFromRoster(name) {
+    if (!name) return;
+    const roster = await loadRoster();
+    let changed = false;
+    for (const user of Object.values(roster.users)) {
+      if (user.projects && Object.prototype.hasOwnProperty.call(user.projects, name)) {
+        delete user.projects[name];
+        user.updatedAt = nowIso();
+        changed = true;
+      }
+    }
+    if (changed) await saveRoster(roster);
+  }
+
   async function setProjectRole(email, project, role) {
     const e = normalizeEmail(email);
     const roster = await loadRoster();
@@ -176,6 +208,7 @@ module.exports = function createUserService({ bucket }) {
   return {
     loadRoster, saveRoster, getRosterCached, invalidate,
     getUser, listUsers, upsertUser, deleteUser, setProjectRole,
+    renameProjectInRoster, removeProjectFromRoster,
     hasProjectAccess, isAdmin, accessibleProjects, bootstrapIfEmpty,
   };
 };

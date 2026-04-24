@@ -35,6 +35,40 @@
     .cover-meta { font-size: 0.75rem; color: var(--ink-subtle); margin-top: 6px; }
     #coverInput { display: none; }
     .loading { text-align: center; padding: var(--space-xl); color: var(--ink-subtle); }
+
+    /* Danger zone for admin-only delete */
+    .danger-zone {
+      margin-top: var(--space-xl);
+      padding: var(--space-md);
+      border: 1px solid var(--danger);
+      background: var(--danger-bg);
+    }
+    .danger-zone h3 {
+      margin: 0 0 6px;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--danger);
+    }
+    .danger-zone p {
+      margin: 0 0 var(--space-sm);
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+      border: 1px solid var(--danger);
+      padding: 0.55rem 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      transition: opacity var(--transition);
+    }
+    .btn-danger:hover { opacity: 0.85; }
   </style>
 </head>
 <body>
@@ -64,7 +98,7 @@
         <div class="field">
           <label class="field-label" for="projectName">Project Name</label>
           <input class="field-input" type="text" id="projectName" readonly>
-          <div class="field-hint">Project name is immutable.</div>
+          <div class="field-hint" id="nameHint">Only an admin can rename a project.</div>
         </div>
 
         <div class="field">
@@ -90,6 +124,12 @@
         </div>
         <div class="status-message" id="statusMessage"></div>
       </form>
+
+      <div class="danger-zone" id="dangerZone" style="display:none;">
+        <h3>Danger zone</h3>
+        <p>Deleting a project permanently removes all 360 photos, 2D images, plans, and 3D models for this project. This cannot be undone.</p>
+        <button type="button" class="btn-danger" id="deleteBtn">Delete project</button>
+      </div>
     </div>
   </main>
 
@@ -122,11 +162,17 @@
       return (bytes / (1024 * 1024)).toFixed(2) + " MB";
     }
 
+    let isAdminUser = false;
+
     async function loadProject() {
       try {
-        const res = await fetch(`/api/project-info?project=${encodeURIComponent(project)}`);
-        if (!res.ok) throw new Error("Failed to load project");
-        const info = await res.json();
+        const [infoRes, admin] = await Promise.all([
+          fetch(`/api/project-info?project=${encodeURIComponent(project)}`),
+          window.me ? window.me.isAdmin() : Promise.resolve(false),
+        ]);
+        if (!infoRes.ok) throw new Error("Failed to load project");
+        const info = await infoRes.json();
+        isAdminUser = !!admin;
 
         nameEl.value = info.name || project;
         addressEl.value = info.address || "";
@@ -138,6 +184,13 @@
           coverMeta.textContent = "Current cover — click or drop to replace";
         } else {
           coverMeta.textContent = "No cover photo — click or drop to add one";
+        }
+
+        // Admin-only controls: enable rename + reveal danger zone
+        if (isAdminUser) {
+          nameEl.removeAttribute("readonly");
+          document.getElementById("nameHint").textContent = "Renaming moves all project files and updates user roles.";
+          document.getElementById("dangerZone").style.display = "";
         }
 
         document.getElementById("loadingState").style.display = "none";
@@ -180,8 +233,25 @@
       statusMessage.className = "status-message visible info";
 
       try {
+        const newName = nameEl.value.trim();
+        let activeName = project;
+
+        // If admin renamed the project, do that first so subsequent
+        // address/cover updates target the new name.
+        if (isAdminUser && newName && newName !== project) {
+          statusMessage.textContent = `Renaming to "${newName}"…`;
+          const r = await fetch("/api/rename-project", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ oldName: project, newName }),
+          });
+          const rd = await r.json();
+          if (!r.ok || !rd.success) throw new Error(rd.error || "Rename failed");
+          activeName = newName;
+        }
+
         const formData = new FormData();
-        formData.append("name", project);
+        formData.append("name", activeName);
         formData.append("address", addressEl.value.trim());
         if (coverFile) formData.append("coverPhoto", coverFile);
 
@@ -194,6 +264,46 @@
         statusMessage.className = "status-message visible error";
         submitBtn.disabled = false;
         submitBtn.textContent = "Save Changes";
+      }
+    });
+
+    // Admin: delete project with double confirmation
+    document.getElementById("deleteBtn").addEventListener("click", async () => {
+      if (!isAdminUser) return;
+      const first = confirm(
+        `Are you sure you want to delete "${project}"?\n\n` +
+        `This will permanently remove every 360 photo, 2D image, plan, and 3D model in this project. This cannot be undone.`
+      );
+      if (!first) return;
+
+      // Type-to-confirm for the actual destruction
+      const typed = prompt(`Type the project name to confirm deletion:\n\n${project}`);
+      if (typed === null) return;
+      if (typed.trim() !== project) {
+        alert("Name didn't match — delete cancelled.");
+        return;
+      }
+
+      const btn = document.getElementById("deleteBtn");
+      btn.disabled = true;
+      btn.textContent = "Deleting…";
+      statusMessage.textContent = `Deleting "${project}"…`;
+      statusMessage.className = "status-message visible info";
+
+      try {
+        const res = await fetch("/api/delete-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: project, confirm: true }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Delete failed");
+        window.location.href = "/";
+      } catch (err) {
+        statusMessage.textContent = "Error: " + err.message;
+        statusMessage.className = "status-message visible error";
+        btn.disabled = false;
+        btn.textContent = "Delete project";
       }
     });
   </script>
