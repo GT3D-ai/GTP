@@ -402,6 +402,7 @@
             </div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="mapCardOpen">Open map</a>
+              <a href="#" id="mapCardEdit" class="editor-only" style="display:none;">Edit map</a>
             </div>
           </div>
         </div>
@@ -512,6 +513,7 @@
       canEditProject = window.me ? !!(await window.me.canEdit(project)) : false;
       if (canEditProject) {
         document.querySelectorAll(".home-card").forEach((c) => c.classList.add("is-editor"));
+        document.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
       }
 
       // Title + header nav
@@ -653,6 +655,11 @@
         : `/map-viewer/${enc}`;
       document.getElementById("mapThumbLink").href = mapTarget;
       document.getElementById("mapCardOpen").href = mapTarget;
+      // Editor "Edit map" link → map-editor scoped to the same level
+      const editTarget = level
+        ? `/map-editor.html?project=${enc}&level=${encodeURIComponent(level)}`
+        : `/map-editor.html?project=${enc}`;
+      document.getElementById("mapCardEdit").href = editTarget;
 
       thumb.innerHTML = "";
       if (path) {
