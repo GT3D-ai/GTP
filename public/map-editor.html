@@ -1108,11 +1108,15 @@
           const levelPrefix = project + "/" + currentLevelFilter + "/";
           if (!file.name.startsWith(levelPrefix)) return;
         }
+        // Show only the bare filename in the sidebar list — strip the
+        // project/level prefix that the API includes in displayName.
+        const baseName = (file.displayName || file.name).split("/").pop();
+
         const item = document.createElement("div");
         item.className = "drag-item" + (placedSet.has(file.name) ? " placed" : "");
         item.draggable = true;
         item.dataset.file = file.name;
-        item.dataset.display = file.displayName;
+        item.dataset.display = baseName;
 
         // Determine file's current level from its path
         let fileCurrentLevel = "";
@@ -1138,7 +1142,7 @@
 
         item.innerHTML = `
           <div class="drag-item-icon">&#127758;</div>
-          <div class="drag-item-name" title="${file.displayName}">${file.displayName}</div>
+          <div class="drag-item-name" title="${file.displayName}">${baseName}</div>
           <div class="drag-item-actions">
             ${levelHtml}
             <button class="delete-btn" title="Delete photo">&#128465;</button>
@@ -1149,7 +1153,7 @@
         const nameEl = item.querySelector(".drag-item-name");
         nameEl.addEventListener("click", (e) => {
           e.stopPropagation();
-          showThumbPopover(file.name, file.displayName, nameEl);
+          showThumbPopover(file.name, baseName, nameEl);
         });
 
         item.addEventListener("dragstart", (e) => {
@@ -1188,7 +1192,7 @@
         const delBtn = item.querySelector(".delete-btn");
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          if (!confirm(`Delete "${file.displayName}"? This cannot be undone.`)) return;
+          if (!confirm(`Delete "${baseName}"? This cannot be undone.`)) return;
           delBtn.disabled = true;
           try {
             const r = await fetch("/api/delete", {
