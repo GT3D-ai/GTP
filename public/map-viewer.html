@@ -297,14 +297,12 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <!-- Non-editor menu (Models, Photos, GT3D Home) -->
+        <!-- Non-editor menu (Models, GT3D Home) -->
         <a id="modelsMenuItem" href="/models/" class="non-editor-only">Models</a>
-        <a id="photosMenuItem" href="/viewer.html" class="non-editor-only">Photos</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener" class="non-editor-only">GT3D Home</a>
 
-        <!-- Editor menu (Edit Map, 360 Photos, 2D Photos, Models, Projects) -->
+        <!-- Editor menu (Edit Map, 2D Photos, Models, Projects) -->
         <a id="editMapMenuItem" href="/map-editor.html" class="editor-only" style="display:none;">Edit Map</a>
-        <a id="viewerMenuItem" href="/viewer.html" class="editor-only" style="display:none;">360 Photos</a>
         <a id="imageViewerMenuItem" href="/image-viewer.html" class="editor-only" style="display:none;">2D Photos</a>
         <a id="modelsMenuItemEditor" href="/models/" class="editor-only" style="display:none;">Models</a>
         <a href="/" class="editor-only" style="display:none;">Projects</a>
@@ -370,10 +368,8 @@
       const enc = encodeURIComponent(project);
       // Non-editor menu items
       document.getElementById("modelsMenuItem").href = `/models/${enc}`;
-      document.getElementById("photosMenuItem").href = `/viewer.html?project=${enc}`;
       // Editor menu items — href filled in now, visibility set after /api/me resolves
       document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${enc}`;
-      document.getElementById("viewerMenuItem").href = `/viewer.html?project=${enc}`;
       document.getElementById("imageViewerMenuItem").href = `/image-viewer.html?project=${enc}`;
       document.getElementById("modelsMenuItemEditor").href = `/models/${enc}`;
 
