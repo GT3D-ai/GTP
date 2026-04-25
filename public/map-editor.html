@@ -661,6 +661,7 @@
     <a href="#" id="uploadPhotosLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Upload Photos</a>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
+      <a href="#" id="viewMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#128065; View Map</a>
       <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
     </span>
   </div>
@@ -967,7 +968,20 @@
       refreshFloorPlanDisplay();
       render360List();
       renderPins();
+      updateViewMapLink();
     });
+
+    // Keep the "View Map" toolbar link pointed at the public map-viewer
+    // for the project (and current level when one is selected).
+    function updateViewMapLink() {
+      const link = document.getElementById("viewMapLink");
+      if (!link || !project) return;
+      const enc = encodeURIComponent(project);
+      link.href = currentLevelFilter
+        ? `/map-viewer/${enc}?level=${encodeURIComponent(currentLevelFilter)}`
+        : `/map-viewer/${enc}`;
+    }
+    updateViewMapLink();
 
     // ---- Zoom + pan ----
     const zoomIndicator = document.getElementById("zoomIndicator");
