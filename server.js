@@ -464,6 +464,109 @@ app.post("/api/create-level", requireProjectRole("editor"), async (req, res) => 
   }
 });
 
+// Rename a level — moves all 360 photos/thumbnails under the level prefix to
+// the new prefix, and rewrites the project's mappings.json so floorPlans and
+// pin paths follow the rename.
+app.post("/api/rename-level", requireProjectRole("editor"), async (req, res) => {
+  const { project, oldLevel, newLevel } = req.body;
+  if (!project || !oldLevel || !newLevel) {
+    return res.status(400).json({ error: "project, oldLevel, and newLevel are required" });
+  }
+  const o = String(oldLevel).trim().toLowerCase();
+  const n = String(newLevel).trim().toLowerCase();
+  if (!n || n.includes("/") || n.includes("\\")) {
+    return res.status(400).json({ error: "newLevel is invalid" });
+  }
+  if (o === n) return res.json({ success: true });
+  try {
+    const oldPrefix = `${project}/${o}/`;
+    const newPrefix = `${project}/${n}/`;
+    // Block when the destination already exists (avoid silent merges)
+    const [collision] = await bucket.file(newPrefix).exists();
+    if (collision) return res.status(409).json({ error: "A level with that name already exists" });
+
+    // Move every file under the old prefix
+    const [files] = await bucket.getFiles({ prefix: oldPrefix });
+    for (const f of files) {
+      const dest = newPrefix + f.name.slice(oldPrefix.length);
+      await f.copy(bucket.file(dest));
+      await f.delete();
+    }
+    // Ensure the level "folder" exists at the new name (in case it had no files)
+    await bucket.file(newPrefix).save("", { contentType: "application/x-directory" });
+
+    // Rewrite mappings.json: floorPlans key + any pin image360 with the old prefix
+    const mappingsFile = bucket.file(`${project}/mappings.json`);
+    const [mExists] = await mappingsFile.exists();
+    if (mExists) {
+      const [content] = await mappingsFile.download();
+      let m = null;
+      try { m = JSON.parse(content.toString()); } catch { m = null; }
+      if (m) {
+        if (m.floorPlans && Object.prototype.hasOwnProperty.call(m.floorPlans, o)) {
+          m.floorPlans[n] = m.floorPlans[o];
+          delete m.floorPlans[o];
+        }
+        if (Array.isArray(m.pins)) {
+          m.pins = m.pins.map((p) => {
+            if (typeof p.image360 === "string" && p.image360.startsWith(oldPrefix)) {
+              return { ...p, image360: newPrefix + p.image360.slice(oldPrefix.length) };
+            }
+            return p;
+          });
+        }
+        await mappingsFile.save(JSON.stringify(m, null, 2), { contentType: "application/json" });
+      }
+    }
+
+    console.log(`Renamed level: ${project}/${o} -> ${project}/${n}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Rename level error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a level — removes every object with the prefix and strips the level
+// from mappings.json (pins under that level + floorPlans[level]).
+app.post("/api/delete-level", requireProjectRole("editor"), async (req, res) => {
+  const { project, level, confirm } = req.body;
+  if (!project || !level) return res.status(400).json({ error: "project and level are required" });
+  if (confirm !== true && confirm !== "true") return res.status(400).json({ error: "confirmation required" });
+  const lvl = String(level).trim().toLowerCase();
+  try {
+    const prefix = `${project}/${lvl}/`;
+    const [files] = await bucket.getFiles({ prefix });
+    for (const f of files) {
+      try { await f.delete(); } catch (e) { console.error("Delete failed", f.name, e.message); }
+    }
+
+    // Strip level references from mappings.json
+    const mappingsFile = bucket.file(`${project}/mappings.json`);
+    const [mExists] = await mappingsFile.exists();
+    if (mExists) {
+      const [content] = await mappingsFile.download();
+      let m = null;
+      try { m = JSON.parse(content.toString()); } catch { m = null; }
+      if (m) {
+        if (m.floorPlans && Object.prototype.hasOwnProperty.call(m.floorPlans, lvl)) {
+          delete m.floorPlans[lvl];
+        }
+        if (Array.isArray(m.pins)) {
+          m.pins = m.pins.filter((p) => !(typeof p.image360 === "string" && p.image360.startsWith(prefix)));
+        }
+        await mappingsFile.save(JSON.stringify(m, null, 2), { contentType: "application/json" });
+      }
+    }
+
+    console.log(`Deleted level: ${project}/${lvl} (${files.length} files)`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete level error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Move a file to a level (copy + delete). Empty level moves to project root.
 app.post("/api/assign-level", requireProjectRole("editor"), async (req, res) => {
   const { file: srcPath, project, level } = req.body;

@@ -370,6 +370,123 @@
     .pin-context-menu-item.remove { color: var(--danger); }
     .pin-context-menu-item.view { color: var(--accent); }
 
+    /* Edit Levels modal */
+    .levels-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(13, 13, 13, 0.55);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+    }
+    .levels-modal-backdrop.visible { display: flex; }
+    .levels-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 420px;
+      max-height: calc(100vh - 2 * var(--space-md));
+      display: flex;
+      flex-direction: column;
+    }
+    .levels-modal-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .levels-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+    .levels-modal-close {
+      background: none;
+      border: none;
+      color: var(--ink-subtle);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .levels-modal-close:hover { color: var(--ink); }
+    .levels-modal-body { padding: var(--space-md); overflow-y: auto; flex: 1; }
+    .levels-list {
+      display: flex; flex-direction: column;
+      border: 1px solid var(--line);
+      margin-bottom: var(--space-md);
+    }
+    .levels-list-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg-elevated);
+    }
+    .levels-list-row:last-child { border-bottom: none; }
+    .levels-list-row input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      padding: 0.4rem 0.55rem;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+    }
+    .levels-list-row input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .levels-row-btn {
+      background: none;
+      border: 1px solid var(--line-strong);
+      color: var(--ink-muted);
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .levels-row-btn:hover { color: var(--ink); border-color: var(--ink); }
+    .levels-row-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .levels-row-btn.danger:hover { background: var(--danger); color: #fff; }
+    .levels-row-btn.primary { color: var(--accent); border-color: var(--accent); }
+    .levels-row-btn.primary:hover { background: var(--accent); color: #fff; }
+    .levels-row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .levels-add-row {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .levels-add-row input[type="text"] {
+      flex: 1;
+      padding: 0.5rem 0.65rem;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+    }
+    .levels-add-row input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .levels-status {
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      min-height: 1em;
+      margin-top: 8px;
+    }
+    .levels-status.error { color: var(--danger); }
+
     .file-list::-webkit-scrollbar { width: 6px; }
     .file-list::-webkit-scrollbar-track { background: transparent; }
     .file-list::-webkit-scrollbar-thumb { background: var(--line-strong); }
@@ -540,6 +657,7 @@
     <select id="levelFilter">
       <option value="">All Levels</option>
     </select>
+    <a href="#" id="editLevelsLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Edit level names</a>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
       <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
@@ -590,6 +708,24 @@
         <button class="pano-modal-close" id="floorPlanPickerClose">&times;</button>
       </div>
       <div class="pano-modal-viewer" id="floorPlanPickerGrid" style="padding:16px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; align-content:start;"></div>
+    </div>
+  </div>
+
+  <!-- Edit level names modal -->
+  <div class="levels-modal-backdrop" id="levelsModal" role="dialog" aria-modal="true">
+    <div class="levels-modal">
+      <div class="levels-modal-header">
+        <h3>Edit level names</h3>
+        <button class="levels-modal-close" id="levelsModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="levels-modal-body">
+        <div class="levels-list" id="levelsList"></div>
+        <div class="levels-add-row">
+          <input type="text" id="newLevelInput" placeholder="Add a new level (e.g. basement)" maxlength="64">
+          <button class="levels-row-btn primary" id="newLevelBtn">Add</button>
+        </div>
+        <div class="levels-status" id="levelsStatus"></div>
+      </div>
     </div>
   </div>
 
@@ -1266,6 +1402,171 @@
       pinHoverThumb.style.display = "none";
       pinHoverThumbImg.removeAttribute("src");
     }
+
+    // ---- Edit level names modal ----
+    const levelsModal = document.getElementById("levelsModal");
+    const levelsList = document.getElementById("levelsList");
+    const levelsStatus = document.getElementById("levelsStatus");
+    const editLevelsLink = document.getElementById("editLevelsLink");
+    const newLevelInput = document.getElementById("newLevelInput");
+    const newLevelBtn = document.getElementById("newLevelBtn");
+
+    function setLevelsStatus(msg, isError) {
+      levelsStatus.textContent = msg || "";
+      levelsStatus.className = "levels-status" + (isError ? " error" : "");
+    }
+
+    async function fetchLevels() {
+      const res = await fetch(`/api/levels?project=${encodeURIComponent(project)}`);
+      if (!res.ok) throw new Error(`Failed to load levels (HTTP ${res.status})`);
+      return res.json();
+    }
+
+    function renderLevelsList(levels) {
+      levelsList.innerHTML = "";
+      if (levels.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "levels-list-row";
+        empty.style.color = "var(--ink-muted)";
+        empty.style.fontStyle = "italic";
+        empty.style.fontSize = "0.85rem";
+        empty.textContent = "No levels yet — add one below.";
+        levelsList.appendChild(empty);
+        return;
+      }
+      levels.forEach((lvl) => {
+        const row = document.createElement("div");
+        row.className = "levels-list-row";
+        row.innerHTML = `
+          <input type="text" value="${escapeAttr(lvl)}" data-original="${escapeAttr(lvl)}" maxlength="64">
+          <button class="levels-row-btn save" data-original="${escapeAttr(lvl)}">Save</button>
+          <button class="levels-row-btn danger delete" data-original="${escapeAttr(lvl)}">Delete</button>
+        `;
+        levelsList.appendChild(row);
+      });
+
+      levelsList.querySelectorAll(".save").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const original = btn.dataset.original;
+          const input = btn.parentElement.querySelector("input");
+          const next = (input.value || "").trim().toLowerCase();
+          renameLevel(original, next);
+        });
+      });
+      levelsList.querySelectorAll(".delete").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const original = btn.dataset.original;
+          deleteLevel(original);
+        });
+      });
+    }
+
+    function escapeAttr(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    async function refreshLevelsModal() {
+      try {
+        setLevelsStatus("Loading…");
+        const levels = await fetchLevels();
+        renderLevelsList(levels);
+        setLevelsStatus("");
+      } catch (err) {
+        setLevelsStatus(err.message, true);
+      }
+    }
+
+    async function renameLevel(oldLevel, newLevel) {
+      if (!newLevel) { setLevelsStatus("Level name cannot be empty.", true); return; }
+      if (newLevel === oldLevel) { setLevelsStatus("No change."); return; }
+      if (!confirm(`Rename level "${oldLevel}" to "${newLevel}"?\n\nAll 360 photos and pin references for this level will move to the new name.`)) return;
+      setLevelsStatus(`Renaming "${oldLevel}" → "${newLevel}"…`);
+      try {
+        const r = await fetch("/api/rename-level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, oldLevel, newLevel }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || "Rename failed");
+        setLevelsStatus(`Renamed to "${newLevel}".`);
+        await onLevelsChanged();
+      } catch (err) {
+        setLevelsStatus(err.message, true);
+      }
+    }
+
+    async function deleteLevel(level) {
+      if (!confirm(`Delete level "${level}"?\n\nThis permanently removes every 360 photo in this level and any pins referencing it. This cannot be undone.`)) return;
+      const typed = prompt(`Type the level name to confirm deletion:\n\n${level}`);
+      if (typed === null) return;
+      if (typed.trim().toLowerCase() !== level) {
+        setLevelsStatus("Name didn't match — delete cancelled.", true);
+        return;
+      }
+      setLevelsStatus(`Deleting "${level}"…`);
+      try {
+        const r = await fetch("/api/delete-level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, level, confirm: true }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || "Delete failed");
+        setLevelsStatus(`Deleted "${level}".`);
+        await onLevelsChanged();
+      } catch (err) {
+        setLevelsStatus(err.message, true);
+      }
+    }
+
+    async function addLevel() {
+      const next = (newLevelInput.value || "").trim().toLowerCase();
+      if (!next) { setLevelsStatus("Enter a level name.", true); return; }
+      setLevelsStatus(`Adding "${next}"…`);
+      try {
+        const r = await fetch("/api/create-level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, level: next }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || "Add failed");
+        newLevelInput.value = "";
+        setLevelsStatus(`Added "${next}".`);
+        await onLevelsChanged();
+      } catch (err) {
+        setLevelsStatus(err.message, true);
+      }
+    }
+
+    // After any change: refresh the modal list, the toolbar dropdown, and the
+    // 360 sidebar/mappings so pin filters and floor plan keys stay in sync.
+    async function onLevelsChanged() {
+      await Promise.all([loadLevels(), loadMappings(), load360Files()]);
+      await refreshLevelsModal();
+      renderPins();
+    }
+
+    function openLevelsModal() {
+      levelsModal.classList.add("visible");
+      refreshLevelsModal();
+    }
+    function closeLevelsModal() {
+      levelsModal.classList.remove("visible");
+      setLevelsStatus("");
+    }
+
+    editLevelsLink.addEventListener("click", (e) => { e.preventDefault(); openLevelsModal(); });
+    document.getElementById("levelsModalClose").addEventListener("click", closeLevelsModal);
+    levelsModal.addEventListener("click", (e) => { if (e.target === levelsModal) closeLevelsModal(); });
+    newLevelBtn.addEventListener("click", addLevel);
+    newLevelInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addLevel(); } });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && levelsModal.classList.contains("visible")) closeLevelsModal();
+    });
 
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
