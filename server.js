@@ -430,6 +430,34 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
   }
 });
 
+// Editor: set or clear the thumbnail override for a project home card.
+// Persists into project.json under `cardThumbnails[<card>]`. Pass an empty
+// `file` to clear the override and fall back to the default.
+app.post("/api/project-thumbnail", requireProjectRole("editor"), async (req, res) => {
+  const { project, card, file } = req.body;
+  const validCards = new Set(["main", "images", "plans", "models"]);
+  if (!project || !card) return res.status(400).json({ error: "project and card are required" });
+  if (!validCards.has(card)) return res.status(400).json({ error: "invalid card" });
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (!meta.cardThumbnails || typeof meta.cardThumbnails !== "object") meta.cardThumbnails = {};
+    if (file) meta.cardThumbnails[card] = file;
+    else delete meta.cardThumbnails[card];
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, cardThumbnails: meta.cardThumbnails });
+  } catch (err) {
+    console.error("project-thumbnail error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get project metadata
 app.get("/api/project-info", async (req, res) => {
   const project = req.query.project;

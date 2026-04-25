@@ -196,6 +196,148 @@
     }
     .map-card-level-row select:focus { border-color: var(--ink); }
 
+    /* Editor "edit thumbnail" badge sits over each card's thumbnail */
+    .home-card { position: relative; }
+    .edit-thumb-link {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(13, 13, 13, 0.78);
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-decoration: none;
+      padding: 5px 9px;
+      z-index: 5;
+      display: none;            /* shown only for editors */
+      transition: background var(--transition);
+    }
+    .edit-thumb-link:hover { background: var(--accent); color: #fff; }
+    .home-card.is-editor .edit-thumb-link { display: inline-block; }
+    /* Main card thumbnail is on the left in row layout — keep edit badge there */
+    @media (min-width: 720px) {
+      .home-card.main .edit-thumb-link { right: auto; left: 8px; }
+    }
+
+    /* Thumbnail picker modal */
+    .thumb-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(13, 13, 13, 0.6);
+      z-index: 2000;
+      display: none;
+      align-items: stretch;
+      justify-content: center;
+      padding: var(--space-md);
+    }
+    .thumb-modal-backdrop.visible { display: flex; }
+    .thumb-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 2 * var(--space-md));
+    }
+    .thumb-modal-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .thumb-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .thumb-modal-close {
+      background: none;
+      border: none;
+      color: var(--ink-subtle);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    .thumb-modal-close:hover { color: var(--ink); }
+    .thumb-modal-body { padding: var(--space-md); overflow-y: auto; flex: 1; }
+    .thumb-upload-row {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      padding-bottom: var(--space-md);
+      margin-bottom: var(--space-md);
+      border-bottom: 1px solid var(--line);
+    }
+    .thumb-upload-row .upload-hint { color: var(--ink-muted); font-size: 0.85rem; flex: 1; }
+    .thumb-upload-row input[type="file"] { display: none; }
+    .btn-pick {
+      background: var(--ink);
+      color: #fff;
+      border: 1px solid var(--ink);
+      padding: 0.5rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .btn-pick:hover { opacity: 0.9; }
+    .btn-clear {
+      background: none;
+      border: 1px solid var(--line-strong);
+      color: var(--ink-muted);
+      padding: 0.5rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .btn-clear:hover { color: var(--ink); border-color: var(--ink); }
+    .thumb-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+    }
+    .thumb-tile {
+      cursor: pointer;
+      border: 2px solid transparent;
+      background: var(--bg);
+      transition: border-color var(--transition);
+      overflow: hidden;
+    }
+    .thumb-tile:hover { border-color: var(--accent); }
+    .thumb-tile img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      display: block;
+    }
+    .thumb-tile .name {
+      padding: 4px 6px;
+      font-size: 0.7rem;
+      color: var(--ink-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .thumb-status {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      min-height: 1em;
+    }
+    .thumb-status.error { color: var(--danger); }
+    .thumb-empty {
+      text-align: center;
+      padding: var(--space-lg);
+      color: var(--ink-subtle);
+      border: 1px dashed var(--line);
+    }
+
     /* Make the tile clickable for simple cards */
     .home-card-link { text-decoration: none; color: inherit; display: contents; }
 
@@ -230,6 +372,7 @@
       <div class="home-grid" id="homeGrid">
         <!-- MAIN: project cover + address + top-level links -->
         <div class="home-card main" id="mainCard">
+          <a href="#" class="edit-thumb-link" data-card="main">Edit</a>
           <div class="home-card-thumb is-placeholder" id="mainCardThumb"><span class="glyph">&#128194;</span></div>
           <div class="home-card-body">
             <div class="home-card-eyebrow">Project</div>
@@ -246,6 +389,7 @@
 
         <!-- MAP: Level 1 floor plan thumbnail + level selector -->
         <div class="home-card" id="mapCard">
+          <a href="#" class="edit-thumb-link" data-card="map">Edit</a>
           <a id="mapThumbLink" href="#" aria-label="Open map">
             <div class="home-card-thumb is-placeholder" id="mapCardThumb"><span class="glyph">&#128506;</span></div>
           </a>
@@ -264,6 +408,7 @@
 
         <!-- 2D IMAGE: most recent -->
         <div class="home-card" id="imageCard">
+          <a href="#" class="edit-thumb-link" data-card="images">Edit</a>
           <a id="imageThumbLink" href="#" aria-label="Open 2D images">
             <div class="home-card-thumb is-placeholder" id="imageCardThumb"><span class="glyph">&#128444;</span></div>
           </a>
@@ -279,6 +424,7 @@
 
         <!-- 2D PLAN: most recent -->
         <div class="home-card" id="planCard">
+          <a href="#" class="edit-thumb-link" data-card="plans">Edit</a>
           <a id="planThumbLink" href="#" aria-label="Open plans">
             <div class="home-card-thumb is-placeholder" id="planCardThumb"><span class="glyph">&#128196;</span></div>
           </a>
@@ -294,6 +440,7 @@
 
         <!-- 3D MODEL: most recent -->
         <div class="home-card" id="modelCard">
+          <a href="#" class="edit-thumb-link" data-card="models">Edit</a>
           <a id="modelThumbLink" href="#" aria-label="Open models">
             <div class="home-card-thumb is-placeholder" id="modelCardThumb"><span class="glyph">&#127744;</span></div>
           </a>
@@ -309,6 +456,26 @@
       </div>
     </div>
   </main>
+
+  <!-- Thumbnail picker modal -->
+  <div class="thumb-modal-backdrop" id="thumbModal" role="dialog" aria-modal="true">
+    <div class="thumb-modal">
+      <div class="thumb-modal-header">
+        <h3 id="thumbModalTitle">Choose a thumbnail</h3>
+        <button class="thumb-modal-close" id="thumbModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="thumb-modal-body">
+        <div class="thumb-upload-row">
+          <button type="button" class="btn-pick" id="thumbUploadBtn">Upload new image</button>
+          <button type="button" class="btn-clear" id="thumbClearBtn">Reset to default</button>
+          <span class="upload-hint">Or pick from existing 2D images below.</span>
+          <input type="file" id="thumbUploadInput" accept="image/*">
+        </div>
+        <div id="thumbGridWrap"><div class="thumb-empty">Loading…</div></div>
+        <div class="thumb-status" id="thumbStatus"></div>
+      </div>
+    </div>
+  </div>
 
   <script>
     // The URL is /<project-name>; decode whatever comes after the first slash.
@@ -333,8 +500,19 @@
       return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
 
+    // Cached cardThumbnails overrides loaded from project-info, plus editor flag
+    let cardThumbnails = {};
+    let canEditProject = false;
+    let imageList = []; // cached 2D image list shared across cards/modal
+
     async function initPage() {
       const enc = encodeURIComponent(project);
+
+      // Editor flag — used to reveal Edit links on each card
+      canEditProject = window.me ? !!(await window.me.canEdit(project)) : false;
+      if (canEditProject) {
+        document.querySelectorAll(".home-card").forEach((c) => c.classList.add("is-editor"));
+      }
 
       // Title + header nav
       document.title = `${project} — GT Platform`;
@@ -378,6 +556,8 @@
         const res = await fetch(`/api/project-info?project=${encodeURIComponent(project)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const info = await res.json();
+        cardThumbnails = info.cardThumbnails || {};
+
         document.getElementById("mainCardTitle").textContent = info.name || project;
 
         const address = info.address || "";
@@ -390,12 +570,14 @@
           addrEl.innerHTML = '<span class="skeleton">No address set</span>';
         }
 
-        if (info.coverPhoto) {
-          const thumb = document.getElementById("mainCardThumb");
+        // Editor override takes precedence over the project-level coverPhoto
+        const mainSrc = cardThumbnails.main || info.coverPhoto || null;
+        const thumb = document.getElementById("mainCardThumb");
+        thumb.innerHTML = "";
+        if (mainSrc) {
           thumb.classList.remove("is-placeholder");
-          thumb.innerHTML = "";
           const img = document.createElement("img");
-          img.src = `/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}`;
+          img.src = `/api/2d/image?file=${encodeURIComponent(mainSrc)}`;
           img.alt = info.name || project;
           img.loading = "lazy";
           img.style.width = "100%";
@@ -406,6 +588,9 @@
             thumb.innerHTML = '<span class="glyph">&#128194;</span>';
           };
           thumb.appendChild(img);
+        } else {
+          thumb.classList.add("is-placeholder");
+          thumb.innerHTML = '<span class="glyph">&#128194;</span>';
         }
       } catch (err) {
         document.getElementById("mainCardAddress").innerHTML =
@@ -520,7 +705,10 @@
         document.getElementById("planCardTitle").textContent = latest.displayName;
         document.getElementById("planCardMeta").textContent =
           `${formatDate(latest.updated)} · ${formatSize(latest.size)}`;
-        if (latest.thumbnail) {
+        // Editor override → use a 2D image; otherwise fall back to the plan's own thumbnail
+        if (cardThumbnails.plans) {
+          renderCardThumbImage("planCardThumb", cardThumbnails.plans, "&#128196;");
+        } else if (latest.thumbnail) {
           const thumb = document.getElementById("planCardThumb");
           thumb.classList.remove("is-placeholder");
           thumb.innerHTML = "";
@@ -549,35 +737,51 @@
         const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const files = await res.json();
-        if (files.length === 0) {
+        imageList = files; // cache for the picker modal
+        if (files.length === 0 && !cardThumbnails.images) {
           document.getElementById("imageCardTitle").textContent = "No 2D images yet";
           document.getElementById("imageCardMeta").innerHTML = '<span class="skeleton">Uploaded images will appear here.</span>';
           return;
         }
         files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
         const latest = files[0];
-        document.getElementById("imageCardTitle").textContent = latest.displayName;
-        document.getElementById("imageCardMeta").textContent =
-          `${formatDate(latest.updated)} · ${formatSize(latest.size)}`;
-        const thumb = document.getElementById("imageCardThumb");
-        thumb.classList.remove("is-placeholder");
-        thumb.innerHTML = "";
-        const img = document.createElement("img");
-        img.src = `/api/2d/image?file=${encodeURIComponent(latest.name)}`;
-        img.alt = latest.displayName;
-        img.loading = "lazy";
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "cover";
-        img.onerror = () => {
-          thumb.classList.add("is-placeholder");
-          thumb.innerHTML = '<span class="glyph">&#128444;</span>';
-        };
-        thumb.appendChild(img);
+        const overrideName = cardThumbnails.images;
+        const override = overrideName ? files.find((f) => f.name === overrideName) : null;
+        const display = override || latest;
+        if (display) {
+          document.getElementById("imageCardTitle").textContent = display.displayName || (overrideName || "").split("/").pop();
+          document.getElementById("imageCardMeta").textContent =
+            `${formatDate(display.updated)} · ${formatSize(display.size)}`;
+        }
+        renderCardThumbImage("imageCardThumb", overrideName || (display && display.name), "&#128444;");
       } catch (err) {
         document.getElementById("imageCardMeta").innerHTML =
           `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
       }
+    }
+
+    // Render a 2D-image thumbnail into a card thumb element. Falls back to the
+    // placeholder glyph when the source is missing or fails to load.
+    function renderCardThumbImage(thumbId, src, glyphHtml) {
+      const thumb = document.getElementById(thumbId);
+      thumb.innerHTML = "";
+      if (!src) {
+        thumb.classList.add("is-placeholder");
+        thumb.innerHTML = `<span class="glyph">${glyphHtml}</span>`;
+        return;
+      }
+      thumb.classList.remove("is-placeholder");
+      const img = document.createElement("img");
+      img.src = `/api/2d/image?file=${encodeURIComponent(src)}`;
+      img.loading = "lazy";
+      img.style.width = "100%";
+      img.style.height = "100%";
+      img.style.objectFit = "cover";
+      img.onerror = () => {
+        thumb.classList.add("is-placeholder");
+        thumb.innerHTML = `<span class="glyph">${glyphHtml}</span>`;
+      };
+      thumb.appendChild(img);
     }
 
     // ---- Model card: most recently uploaded 3D model ----
@@ -596,7 +800,9 @@
         document.getElementById("modelCardTitle").textContent = latest.displayName;
         document.getElementById("modelCardMeta").textContent =
           `${formatDate(latest.updated)} · ${formatSize(latest.size)}`;
-        if (latest.thumbnail) {
+        if (cardThumbnails.models) {
+          renderCardThumbImage("modelCardThumb", cardThumbnails.models, "&#127744;");
+        } else if (latest.thumbnail) {
           const thumb = document.getElementById("modelCardThumb");
           thumb.classList.remove("is-placeholder");
           thumb.innerHTML = "";
@@ -618,6 +824,189 @@
           `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
       }
     }
+
+    // ---- Thumbnail picker modal ----
+    const thumbModal = document.getElementById("thumbModal");
+    const thumbModalTitle = document.getElementById("thumbModalTitle");
+    const thumbModalClose = document.getElementById("thumbModalClose");
+    const thumbGridWrap = document.getElementById("thumbGridWrap");
+    const thumbStatus = document.getElementById("thumbStatus");
+    const thumbUploadBtn = document.getElementById("thumbUploadBtn");
+    const thumbUploadInput = document.getElementById("thumbUploadInput");
+    const thumbClearBtn = document.getElementById("thumbClearBtn");
+    let activeCard = null;
+
+    const cardLabels = { main: "Project cover", map: "Map", images: "2D Images", plans: "2D Plans", models: "3D Models" };
+
+    function setThumbStatus(msg, isError) {
+      thumbStatus.textContent = msg || "";
+      thumbStatus.className = "thumb-status" + (isError ? " error" : "");
+    }
+
+    function renderThumbGrid() {
+      if (!imageList || imageList.length === 0) {
+        thumbGridWrap.innerHTML = '<div class="thumb-empty">No 2D images in this project yet. Upload one above to set as the thumbnail.</div>';
+        return;
+      }
+      const grid = document.createElement("div");
+      grid.className = "thumb-grid";
+      // Newest first
+      const sorted = imageList.slice().sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+      sorted.forEach((file) => {
+        const tile = document.createElement("div");
+        tile.className = "thumb-tile";
+        tile.innerHTML = `
+          <img src="/api/2d/image?file=${encodeURIComponent(file.name)}" alt="${file.displayName}" loading="lazy">
+          <div class="name" title="${file.displayName}">${file.displayName}</div>
+        `;
+        tile.addEventListener("click", () => pickThumbnail(file.name));
+        grid.appendChild(tile);
+      });
+      thumbGridWrap.innerHTML = "";
+      thumbGridWrap.appendChild(grid);
+    }
+
+    async function refreshImageList() {
+      try {
+        const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
+        if (res.ok) imageList = await res.json();
+      } catch {}
+    }
+
+    async function openThumbModal(card) {
+      activeCard = card;
+      thumbModalTitle.textContent = `Set thumbnail — ${cardLabels[card] || card}`;
+      thumbClearBtn.style.display = (cardThumbnails[card] ? "" : "none");
+      setThumbStatus("");
+      thumbGridWrap.innerHTML = '<div class="thumb-empty">Loading…</div>';
+      thumbModal.classList.add("visible");
+      await refreshImageList();
+      renderThumbGrid();
+    }
+    function closeThumbModal() {
+      thumbModal.classList.remove("visible");
+      activeCard = null;
+    }
+
+    async function pickThumbnail(filePath) {
+      if (!activeCard) return;
+      setThumbStatus("Saving…");
+      try {
+        // The map card is special: pick a 2D image as the floor plan for the
+        // currently-selected level. Persists to mappings.json via /save-mappings.
+        if (activeCard === "map") {
+          const levelSelect = document.getElementById("mapLevelSelect");
+          const level = levelSelect.value;
+          if (!level) throw new Error("No level selected for map");
+          if (!mappings.floorPlans) mappings.floorPlans = {};
+          mappings.floorPlans[level] = filePath;
+          const r = await fetch("/api/save-mappings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project, data: mappings }),
+          });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+          renderMapThumb(level);
+        } else {
+          const r = await fetch("/api/project-thumbnail", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project, card: activeCard, file: filePath }),
+          });
+          const d = await r.json();
+          if (!r.ok || !d.success) throw new Error(d.error || "Save failed");
+          cardThumbnails = d.cardThumbnails || cardThumbnails;
+          // Re-render the affected card
+          if (activeCard === "main") await loadProjectInfo();
+          else if (activeCard === "images") await loadImageCard();
+          else if (activeCard === "plans") await loadPlanCard();
+          else if (activeCard === "models") await loadModelCard();
+        }
+        setThumbStatus("Saved.");
+        closeThumbModal();
+      } catch (err) {
+        setThumbStatus(err.message, true);
+      }
+    }
+
+    async function clearThumbnail() {
+      if (!activeCard) return;
+      if (activeCard === "map") {
+        // Clearing the map thumb = remove the floor plan for current level
+        const level = document.getElementById("mapLevelSelect").value;
+        if (!level) { closeThumbModal(); return; }
+        if (mappings.floorPlans) delete mappings.floorPlans[level];
+        const r = await fetch("/api/save-mappings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, data: mappings }),
+        });
+        if (!r.ok) { setThumbStatus("Clear failed", true); return; }
+        renderMapThumb(level);
+        closeThumbModal();
+        return;
+      }
+      setThumbStatus("Clearing…");
+      try {
+        const r = await fetch("/api/project-thumbnail", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, card: activeCard, file: "" }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || "Clear failed");
+        cardThumbnails = d.cardThumbnails || {};
+        if (activeCard === "main") await loadProjectInfo();
+        else if (activeCard === "images") await loadImageCard();
+        else if (activeCard === "plans") await loadPlanCard();
+        else if (activeCard === "models") await loadModelCard();
+        closeThumbModal();
+      } catch (err) {
+        setThumbStatus(err.message, true);
+      }
+    }
+
+    async function uploadAndSetThumbnail(file) {
+      if (!file) return;
+      setThumbStatus(`Uploading "${file.name}"…`);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("project", project);
+        fd.append("destName", file.name);
+        const up = await fetch("/api/2d/upload", { method: "POST", body: fd });
+        const upJson = await up.json().catch(() => ({}));
+        if (!up.ok) throw new Error(upJson.error || `Upload HTTP ${up.status}`);
+        const newPath = upJson.destName || `${project}/${file.name}`;
+        await refreshImageList();
+        renderThumbGrid();
+        await pickThumbnail(newPath);
+      } catch (err) {
+        setThumbStatus(err.message, true);
+      }
+    }
+
+    // Wire up: click any card's edit link → open the modal scoped to that card
+    document.querySelectorAll(".edit-thumb-link").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!canEditProject) return;
+        openThumbModal(a.dataset.card);
+      });
+    });
+    thumbModalClose.addEventListener("click", closeThumbModal);
+    thumbModal.addEventListener("click", (e) => { if (e.target === thumbModal) closeThumbModal(); });
+    thumbUploadBtn.addEventListener("click", () => thumbUploadInput.click());
+    thumbUploadInput.addEventListener("change", () => {
+      const file = thumbUploadInput.files[0];
+      thumbUploadInput.value = "";
+      if (file) uploadAndSetThumbnail(file);
+    });
+    thumbClearBtn.addEventListener("click", clearThumbnail);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && thumbModal.classList.contains("visible")) closeThumbModal();
+    });
   </script>
 </body>
 </html>
