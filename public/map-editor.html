@@ -658,6 +658,7 @@
       <option value="">All Levels</option>
     </select>
     <a href="#" id="editLevelsLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Edit level names</a>
+    <a href="#" id="uploadPhotosLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Upload Photos</a>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
       <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
@@ -708,6 +709,27 @@
         <button class="pano-modal-close" id="floorPlanPickerClose">&times;</button>
       </div>
       <div class="pano-modal-viewer" id="floorPlanPickerGrid" style="padding:16px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; align-content:start;"></div>
+    </div>
+  </div>
+
+  <!-- Upload 360 photos modal -->
+  <div class="levels-modal-backdrop" id="uploadPhotosModal" role="dialog" aria-modal="true">
+    <div class="levels-modal">
+      <div class="levels-modal-header">
+        <h3>Upload 360 Photos</h3>
+        <button class="levels-modal-close" id="uploadPhotosClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="levels-modal-body">
+        <p style="margin:0 0 var(--space-md); font-size:0.85rem; color:var(--ink-muted);">
+          Photos will be uploaded into the selected level: <strong id="uploadLevelLabel">—</strong>
+        </p>
+        <div id="uploadDropzone" style="border:1px dashed var(--line-strong); background:var(--bg); padding:var(--space-md); text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s;">
+          <p style="margin:0; font-size:0.9rem; color:var(--ink-muted);">Drag & drop 360 panoramas here, or <strong style="color:var(--accent);">browse</strong></p>
+        </div>
+        <input type="file" id="uploadPhotoInput" accept="image/*" multiple style="display:none;">
+        <div id="uploadProgressList" style="margin-top:var(--space-md); display:flex; flex-direction:column; gap:6px;"></div>
+        <div class="levels-status" id="uploadPhotosStatus"></div>
+      </div>
     </div>
   </div>
 
@@ -1558,6 +1580,143 @@
       levelsModal.classList.remove("visible");
       setLevelsStatus("");
     }
+
+    // ---- Upload 360 photos modal ----
+    const uploadPhotosModal = document.getElementById("uploadPhotosModal");
+    const uploadPhotosLink = document.getElementById("uploadPhotosLink");
+    const uploadPhotoInput = document.getElementById("uploadPhotoInput");
+    const uploadDropzone = document.getElementById("uploadDropzone");
+    const uploadProgressList = document.getElementById("uploadProgressList");
+    const uploadPhotosStatus = document.getElementById("uploadPhotosStatus");
+    const uploadLevelLabel = document.getElementById("uploadLevelLabel");
+
+    function setUploadStatus(msg, isError) {
+      uploadPhotosStatus.textContent = msg || "";
+      uploadPhotosStatus.className = "levels-status" + (isError ? " error" : "");
+    }
+
+    function openUploadPhotosModal() {
+      const lvl = (currentLevelFilter || "").trim();
+      uploadLevelLabel.textContent = lvl || "(no level selected — pick one in the Level dropdown)";
+      uploadProgressList.innerHTML = "";
+      setUploadStatus("");
+      uploadPhotosModal.classList.add("visible");
+    }
+    function closeUploadPhotosModal() {
+      uploadPhotosModal.classList.remove("visible");
+    }
+
+    async function uploadOnePhoto(file, level, rowEl) {
+      const setText = (msg) => { rowEl.querySelector(".u-status").textContent = msg; };
+      try {
+        setText("Requesting upload URL…");
+        const res = await fetch("/api/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: "360",
+            project,
+            level: level || undefined,
+            fileName: file.name,
+            contentType: file.type || "application/octet-stream",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const { uploadUrl } = await res.json();
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+          xhr.upload.addEventListener("progress", (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              setText(`Uploading… ${pct}%`);
+            }
+          });
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`GCS HTTP ${xhr.status}`));
+          });
+          xhr.addEventListener("error", () => reject(new Error("Network error")));
+          xhr.send(file);
+        });
+
+        setText("Done.");
+        rowEl.style.color = "var(--ink-muted)";
+        return { ok: true };
+      } catch (err) {
+        setText(`Failed: ${err.message}`);
+        rowEl.style.color = "var(--danger)";
+        return { ok: false, error: err };
+      }
+    }
+
+    async function uploadPhotos(files) {
+      const level = (currentLevelFilter || "").trim();
+      if (!level) {
+        setUploadStatus("Pick a specific level in the Level dropdown before uploading.", true);
+        return;
+      }
+      const photos = files.filter((f) => f.type.startsWith("image/"));
+      if (!photos.length) {
+        setUploadStatus("No image files selected.", true);
+        return;
+      }
+      setUploadStatus(`Uploading ${photos.length} photo${photos.length === 1 ? "" : "s"} to "${level}"…`);
+      uploadProgressList.innerHTML = "";
+
+      const rows = photos.map((f) => {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.justifyContent = "space-between";
+        row.style.fontSize = "0.78rem";
+        row.style.gap = "10px";
+        row.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${f.name}</span><span class="u-status" style="white-space:nowrap;">Queued</span>`;
+        uploadProgressList.appendChild(row);
+        return row;
+      });
+
+      let ok = 0, failed = 0;
+      for (let i = 0; i < photos.length; i++) {
+        const r = await uploadOnePhoto(photos[i], level, rows[i]);
+        if (r.ok) ok++; else failed++;
+      }
+
+      if (failed === 0) {
+        setUploadStatus(`Uploaded ${ok} photo${ok === 1 ? "" : "s"} to "${level}".`);
+      } else {
+        setUploadStatus(`Uploaded ${ok}, ${failed} failed.`, true);
+      }
+
+      // Refresh the sidebar 360 list so newly uploaded photos appear immediately
+      try { await load360Files(); } catch {}
+    }
+
+    uploadPhotosLink.addEventListener("click", (e) => { e.preventDefault(); openUploadPhotosModal(); });
+    document.getElementById("uploadPhotosClose").addEventListener("click", closeUploadPhotosModal);
+    uploadPhotosModal.addEventListener("click", (e) => { if (e.target === uploadPhotosModal) closeUploadPhotosModal(); });
+    uploadDropzone.addEventListener("click", () => uploadPhotoInput.click());
+    uploadDropzone.addEventListener("dragover", (e) => { e.preventDefault(); uploadDropzone.style.borderColor = "var(--accent)"; uploadDropzone.style.background = "var(--warning-bg)"; });
+    uploadDropzone.addEventListener("dragleave", () => { uploadDropzone.style.borderColor = "var(--line-strong)"; uploadDropzone.style.background = "var(--bg)"; });
+    uploadDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadDropzone.style.borderColor = "var(--line-strong)";
+      uploadDropzone.style.background = "var(--bg)";
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length) uploadPhotos(files);
+    });
+    uploadPhotoInput.addEventListener("change", () => {
+      const files = Array.from(uploadPhotoInput.files || []);
+      uploadPhotoInput.value = "";
+      if (files.length) uploadPhotos(files);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && uploadPhotosModal.classList.contains("visible")) closeUploadPhotosModal();
+    });
 
     editLevelsLink.addEventListener("click", (e) => { e.preventDefault(); openLevelsModal(); });
     document.getElementById("levelsModalClose").addEventListener("click", closeLevelsModal);
