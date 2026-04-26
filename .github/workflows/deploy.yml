@@ -33,7 +33,19 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run
+        env:
+          SENDGRID_FROM_EMAIL: ${{ vars.SENDGRID_FROM_EMAIL }}
+          SENDGRID_FROM_NAME: ${{ vars.SENDGRID_FROM_NAME }}
+          SENDGRID_SECRET_NAME: ${{ vars.SENDGRID_SECRET_NAME }}
         run: |
+          # SendGrid wiring is opt-in: only mount the secret + env vars when
+          # vars.SENDGRID_FROM_EMAIL and vars.SENDGRID_SECRET_NAME are set in
+          # the GitHub repo (or environment). The secret must already exist in
+          # GCP Secret Manager and the runtime SA must have secretAccessor.
+          EXTRA_ARGS=""
+          if [ -n "$SENDGRID_FROM_EMAIL" ] && [ -n "$SENDGRID_SECRET_NAME" ]; then
+            EXTRA_ARGS="--update-secrets=SENDGRID_API_KEY=${SENDGRID_SECRET_NAME}:latest --update-env-vars=SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL},SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME:-Ground Truth 3D}"
+          fi
           gcloud run deploy "$SERVICE" \
             --source . \
             --project "$PROJECT_ID" \
@@ -46,6 +58,7 @@ jobs:
             --no-use-http2 \
             --ingress=internal-and-cloud-load-balancing \
             --service-account "$RUNTIME_SA" \
+            $EXTRA_ARGS \
             --quiet
 
       - name: Show deployed URL

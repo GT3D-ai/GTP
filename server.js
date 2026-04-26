@@ -5,6 +5,7 @@ const fs = require("fs");
 const { Storage } = require("@google-cloud/storage");
 const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 const createUserService = require("./user-service");
+const emailService = require("./email-service");
 
 const BUCKET_NAME = "gt-platform-360-photos-bucket";
 const PORT = process.env.PORT || 3000;
@@ -1463,7 +1464,30 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
     if (currentRole !== "editor") {
       await userService.setProjectRole(email, project, "viewer");
     }
-    res.json({ success: true, email, name, project, role: currentRole === "editor" ? "editor" : "viewer" });
+
+    const proto = req.get("x-forwarded-proto") || req.protocol || "https";
+    const host = req.get("x-forwarded-host") || req.get("host");
+    const projectUrl = `${proto}://${host}/${encodeURIComponent(project)}`;
+
+    const invite = await emailService.sendShareInvite({
+      toEmail: email,
+      toName: name,
+      fromName: req.user?.name || req.user?.email || "A teammate",
+      fromEmail: req.user?.email || "",
+      project,
+      projectUrl,
+    });
+
+    res.json({
+      success: true,
+      email,
+      name,
+      project,
+      role: currentRole === "editor" ? "editor" : "viewer",
+      emailSent: invite.sent,
+      emailReason: invite.sent ? undefined : invite.reason,
+      projectUrl,
+    });
   } catch (err) {
     console.error("Share project error:", err.message);
     res.status(500).json({ error: err.message });

@@ -314,9 +314,9 @@
                 <a href="/${encodeURIComponent(name)}">Home</a>
                 <a href="/map-viewer/${encodeURIComponent(name)}">Map</a>
                 <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
-                <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
                 <a href="/plans/${encodeURIComponent(name)}">2D Plans</a>
                 <a href="/models/${encodeURIComponent(name)}">3D Models</a>
+                <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
                 <a href="#" class="share-link" data-project="${name}">Share</a>
                 <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
@@ -394,13 +394,20 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Share failed (${res.status})`);
-        const projectUrl = `${window.location.origin}/${encodeURIComponent(shareProject)}`;
-        const subject = `You have access to "${shareProject}" on Ground Truth 3D`;
-        const body = `Hi ${name},\n\nYou've been given viewer access to the "${shareProject}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
-        window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         shareStatus.className = "share-modal-status ok";
-        shareStatus.textContent = `Shared with ${email}. Opening your email client…`;
-        setTimeout(closeShareModal, 1500);
+        if (data.emailSent) {
+          shareStatus.textContent = `Invite sent to ${email}.`;
+          setTimeout(closeShareModal, 1500);
+        } else {
+          // Server isn't configured to send email — fall back to opening the
+          // sharer's mail client with the link prefilled.
+          const projectUrl = data.projectUrl || `${window.location.origin}/${encodeURIComponent(shareProject)}`;
+          const subject = `You have access to "${shareProject}" on Ground Truth 3D`;
+          const body = `Hi ${name},\n\nYou've been given viewer access to the "${shareProject}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
+          window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          shareStatus.textContent = `Access granted. Opening your email client to send the invite…`;
+          setTimeout(closeShareModal, 2000);
+        }
       } catch (err) {
         shareStatus.className = "share-modal-status error";
         shareStatus.textContent = err.message;
