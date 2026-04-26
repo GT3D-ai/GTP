@@ -80,11 +80,39 @@
 
     .sidebar {
       width: 260px;
+      min-width: 180px;
+      max-width: 600px;
       background: var(--bg-elevated);
       border-right: 1px solid var(--line);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
+    }
+
+    .sidebar-resizer {
+      width: 5px;
+      cursor: col-resize;
+      background: transparent;
+      flex-shrink: 0;
+      position: relative;
+      margin-left: -3px;
+      z-index: 5;
+      transition: background 0.15s;
+    }
+
+    .sidebar-resizer:hover,
+    .sidebar-resizer.dragging {
+      background: var(--accent);
+    }
+
+    body.sidebar-resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
+    body.sidebar-resizing iframe,
+    body.sidebar-resizing .map-area {
+      pointer-events: none;
     }
 
     .sidebar-header {
@@ -667,13 +695,14 @@
   </div>
 
   <div class="main">
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="sidebar-header">360 Photos</div>
       <div class="sidebar-hint">Drag onto floor plan to place</div>
       <div class="file-list" id="fileList">
         <div class="placeholder" style="padding:24px"><p>Loading...</p></div>
       </div>
     </div>
+    <div class="sidebar-resizer" id="sidebarResizer" role="separator" aria-orientation="vertical" aria-label="Resize photo list panel" title="Drag to resize"></div>
 
     <div class="map-area" id="mapArea">
       <div class="placeholder" id="mapPlaceholder">
@@ -780,6 +809,41 @@
     const mapArea = document.getElementById("mapArea");
     const fileList = document.getElementById("fileList");
     const saveStatus = document.getElementById("saveStatus");
+
+    // ---- Resizable sidebar ----
+    (function setupSidebarResizer() {
+      const sidebar = document.getElementById("sidebar");
+      const resizer = document.getElementById("sidebarResizer");
+      const STORAGE_KEY = "mapEditor.sidebarWidth";
+      const MIN = 180, MAX = 600;
+
+      const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+      if (saved >= MIN && saved <= MAX) sidebar.style.width = saved + "px";
+
+      let dragging = false;
+      resizer.addEventListener("mousedown", (e) => {
+        dragging = true;
+        resizer.classList.add("dragging");
+        document.body.classList.add("sidebar-resizing");
+        e.preventDefault();
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (!dragging) return;
+        const left = sidebar.getBoundingClientRect().left;
+        const w = Math.min(MAX, Math.max(MIN, e.clientX - left));
+        sidebar.style.width = w + "px";
+      });
+
+      document.addEventListener("mouseup", () => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove("dragging");
+        document.body.classList.remove("sidebar-resizing");
+        const w = parseInt(sidebar.style.width, 10);
+        if (w) localStorage.setItem(STORAGE_KEY, String(w));
+      });
+    })();
 
     let mappings = { floorPlanImage: null, floorPlans: {}, pins: [] };
 
