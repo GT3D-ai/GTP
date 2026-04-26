@@ -124,6 +124,88 @@
       .container { padding: var(--space-md) var(--space-sm); }
       .page-actions { gap: var(--space-xs); }
     }
+
+    /* Share modal — mirrors .levels-modal pattern from map-editor.html */
+    .share-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(13, 13, 13, 0.55);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+    }
+    .share-modal-backdrop.visible { display: flex; }
+    .share-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .share-modal-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .share-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+    .share-modal-close {
+      background: none;
+      border: none;
+      color: var(--ink-subtle);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .share-modal-close:hover { color: var(--ink); }
+    .share-modal-body { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .share-modal-body label {
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .share-modal-body input {
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      font-size: 0.9rem;
+      outline: none;
+      font-family: inherit;
+    }
+    .share-modal-body input:focus { border-color: var(--accent); }
+    .share-modal-target {
+      font-size: 0.8rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-xs);
+    }
+    .share-modal-target strong { color: var(--ink); }
+    .share-modal-status {
+      font-size: 0.8rem;
+      min-height: 1.1em;
+    }
+    .share-modal-status.error { color: var(--danger); }
+    .share-modal-status.ok { color: var(--success); }
+    .share-modal-footer {
+      padding: var(--space-md);
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
+    }
   </style>
 </head>
 <body>
@@ -152,6 +234,27 @@
       </div>
     </div>
   </main>
+
+  <div class="share-modal-backdrop" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+    <div class="share-modal">
+      <div class="share-modal-header">
+        <h3 id="shareModalTitle">Share project</h3>
+        <button class="share-modal-close" id="shareModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="share-modal-body">
+        <p class="share-modal-target">Sharing <strong id="shareModalProject"></strong> as a viewer.</p>
+        <label for="shareModalName">Name</label>
+        <input type="text" id="shareModalName" autocomplete="name" placeholder="Recipient's name">
+        <label for="shareModalEmail">Email</label>
+        <input type="email" id="shareModalEmail" autocomplete="email" placeholder="recipient@example.com">
+        <div class="share-modal-status" id="shareModalStatus"></div>
+      </div>
+      <div class="share-modal-footer">
+        <button class="btn" id="shareModalCancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="shareModalSubmit" type="button">Share</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const projectList = document.getElementById("projectList");
@@ -214,11 +317,18 @@
                 <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
                 <a href="/plans/${encodeURIComponent(name)}">2D Plans</a>
                 <a href="/models/${encodeURIComponent(name)}">3D Models</a>
+                <a href="#" class="share-link" data-project="${name}">Share</a>
                 <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
             </div>
           `;
           card.addEventListener("click", (e) => {
+            const shareLink = e.target.closest(".share-link");
+            if (shareLink) {
+              e.preventDefault();
+              openShareModal(shareLink.dataset.project);
+              return;
+            }
             if (e.target.closest("a[href]")) return;
             window.location.href = `/${encodeURIComponent(name)}`;
           });
@@ -233,6 +343,75 @@
     }
 
     loadProjects();
+
+    // ---- Share modal ----
+    const shareModal = document.getElementById("shareModal");
+    const shareProjectLabel = document.getElementById("shareModalProject");
+    const shareName = document.getElementById("shareModalName");
+    const shareEmail = document.getElementById("shareModalEmail");
+    const shareStatus = document.getElementById("shareModalStatus");
+    const shareSubmit = document.getElementById("shareModalSubmit");
+    let shareProject = null;
+
+    function openShareModal(project) {
+      shareProject = project;
+      shareProjectLabel.textContent = project;
+      shareName.value = "";
+      shareEmail.value = "";
+      shareStatus.textContent = "";
+      shareStatus.className = "share-modal-status";
+      shareSubmit.disabled = false;
+      shareModal.classList.add("visible");
+      setTimeout(() => shareName.focus(), 0);
+    }
+
+    function closeShareModal() {
+      shareModal.classList.remove("visible");
+      shareProject = null;
+    }
+
+    document.getElementById("shareModalClose").addEventListener("click", closeShareModal);
+    document.getElementById("shareModalCancel").addEventListener("click", closeShareModal);
+    shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShareModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && shareModal.classList.contains("visible")) closeShareModal();
+    });
+
+    async function submitShare() {
+      const name = shareName.value.trim();
+      const email = shareEmail.value.trim();
+      if (!name) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Name is required."; return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Enter a valid email address."; return; }
+      shareSubmit.disabled = true;
+      shareStatus.className = "share-modal-status";
+      shareStatus.textContent = "Sharing…";
+      try {
+        const res = await fetch("/api/share-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ project: shareProject, name, email }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Share failed (${res.status})`);
+        const projectUrl = `${window.location.origin}/${encodeURIComponent(shareProject)}`;
+        const subject = `You have access to "${shareProject}" on Ground Truth 3D`;
+        const body = `Hi ${name},\n\nYou've been given viewer access to the "${shareProject}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
+        window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        shareStatus.className = "share-modal-status ok";
+        shareStatus.textContent = `Shared with ${email}. Opening your email client…`;
+        setTimeout(closeShareModal, 1500);
+      } catch (err) {
+        shareStatus.className = "share-modal-status error";
+        shareStatus.textContent = err.message;
+        shareSubmit.disabled = false;
+      }
+    }
+
+    shareSubmit.addEventListener("click", submitShare);
+    [shareName, shareEmail].forEach((el) => {
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") submitShare(); });
+    });
 
     // Show admin-only "New Project" controls
     (async () => {

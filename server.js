@@ -1441,6 +1441,35 @@ app.delete("/api/users/:email", requireAdmin, async (req, res) => {
   }
 });
 
+// Share a project with another user as a viewer. Editors (and admins) can
+// invite anyone by name + email. If the recipient already has editor role we
+// leave it intact rather than downgrading.
+app.post("/api/share-project", requireProjectRole("editor"), async (req, res) => {
+  const project = req.projectName;
+  const rawEmail = (req.body && req.body.email) || "";
+  const rawName = (req.body && req.body.name) || "";
+  const email = String(rawEmail).trim().toLowerCase();
+  const name = String(rawName).trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Valid email required" });
+  }
+  if (!name) return res.status(400).json({ error: "Name required" });
+  try {
+    const existing = await userService.getUser(email);
+    const patch = { name };
+    if (!existing) patch.projects = { [project]: "viewer" };
+    await userService.upsertUser(email, patch);
+    const currentRole = existing?.projects?.[project];
+    if (currentRole !== "editor") {
+      await userService.setProjectRole(email, project, "viewer");
+    }
+    res.json({ success: true, email, name, project, role: currentRole === "editor" ? "editor" : "viewer" });
+  } catch (err) {
+    console.error("Share project error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Public per-project home page at /<project-name>. Placed LAST so all static
 // files, pretty URLs (/map-viewer, /models, /plans), and /api/* routes take
 // priority. Anything with a "." in the path is treated as a filename and
