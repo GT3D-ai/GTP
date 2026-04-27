@@ -738,6 +738,12 @@
         <span class="pano-modal-title">Select a Floor Plan</span>
         <button class="pano-modal-close" id="floorPlanPickerClose">&times;</button>
       </div>
+      <div style="padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <button type="button" class="btn btn-outline btn-sm" id="fpUploadNewBtn">Upload a new map</button>
+        <button type="button" class="btn btn-outline btn-sm" id="fpInvertBtn" disabled title="Set a floor plan first">Invert map colors</button>
+        <span id="fpStatus" style="margin-left:auto; font-size:0.8125rem; color:var(--ink-muted);"></span>
+        <input type="file" id="fpUploadInput" accept="image/*,.pdf" style="display:none;">
+      </div>
       <div class="pano-modal-viewer" id="floorPlanPickerGrid" style="padding:16px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; align-content:start;"></div>
     </div>
   </div>
@@ -1302,6 +1308,9 @@
 
     function openFloorPlanPicker() {
       floorPlanPickerGrid.innerHTML = "";
+      fpStatus.textContent = "";
+      // Refresh enabled-state of the Invert button each time the modal opens.
+      updateInvertBtnState();
       if (!currentLevelFilter) {
         floorPlanPickerGrid.innerHTML = '<div class="fp-empty">Select a specific level from the dropdown first, then click Edit Map to assign a floor plan to that level.</div>';
         floorPlanPickerOverlay.classList.add("visible");
@@ -1312,7 +1321,7 @@
       if (modalTitle) modalTitle.textContent = `Select Floor Plan for "${currentLevelFilter}"`;
 
       if (!availableFloorPlans || availableFloorPlans.length === 0) {
-        floorPlanPickerGrid.innerHTML = '<div class="fp-empty">No 2D images uploaded for this project yet. Upload some on the 2D Images page first.</div>';
+        floorPlanPickerGrid.innerHTML = '<div class="fp-empty">No 2D images uploaded for this project yet. Upload one with <em>Upload a new map</em> above, or from the 2D Images page.</div>';
       } else {
         const currentPath = getFloorPlanForLevel(currentLevelFilter);
         availableFloorPlans.forEach((f) => {
@@ -1333,6 +1342,155 @@
       }
       floorPlanPickerOverlay.classList.add("visible");
     }
+
+    // ---- Toolbar: Upload a new map / Invert map colors ----
+    const fpUploadNewBtn = document.getElementById("fpUploadNewBtn");
+    const fpInvertBtn = document.getElementById("fpInvertBtn");
+    const fpUploadInput = document.getElementById("fpUploadInput");
+    const fpStatus = document.getElementById("fpStatus");
+
+    function setFpToolbarBusy(busy, message) {
+      fpUploadNewBtn.disabled = busy;
+      fpInvertBtn.disabled = busy || !canInvertCurrentFloorPlan();
+      fpStatus.textContent = message || "";
+      fpStatus.style.color = "var(--ink-muted)";
+    }
+    function setFpStatusError(message) {
+      fpStatus.textContent = message;
+      fpStatus.style.color = "var(--danger)";
+    }
+    function canInvertCurrentFloorPlan() {
+      if (!currentLevelFilter) return false;
+      const path = getFloorPlanForLevel(currentLevelFilter);
+      if (!path) return false;
+      // Canvas can't read PDF pixels; only enable for raster images.
+      return !/\.pdf$/i.test(path);
+    }
+    function updateInvertBtnState() {
+      const ok = canInvertCurrentFloorPlan();
+      fpInvertBtn.disabled = !ok;
+      fpInvertBtn.title = ok
+        ? "Invert R/G/B on every pixel of the current floor plan"
+        : (!currentLevelFilter
+            ? "Select a level first"
+            : "Set a raster floor plan first (PDFs can't be inverted in the browser)");
+    }
+
+    // After a successful upload, refresh the list and immediately apply the
+    // newly-stored file as the current level's floor plan.
+    async function applyUploadedFloorPlan(gcsPath) {
+      await loadFloorPlans();
+      setFloorPlanForLevel(currentLevelFilter, gcsPath);
+      showFloorPlan(gcsPath);
+      saveMappings();
+      closeFloorPlanPicker();
+    }
+
+    async function getSignedUploadUrl({ fileName, contentType }) {
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bucket: "2d", project, fileName, contentType }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+      }
+      return await res.json(); // { uploadUrl, gcsPath, bucket }
+    }
+
+    function putToGCS(uploadUrl, blob, contentType) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", contentType);
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
+        xhr.send(blob);
+      });
+    }
+
+    fpUploadNewBtn.addEventListener("click", () => fpUploadInput.click());
+
+    fpUploadInput.addEventListener("change", async () => {
+      const file = fpUploadInput.files && fpUploadInput.files[0];
+      fpUploadInput.value = "";
+      if (!file) return;
+      if (!currentLevelFilter) {
+        setFpStatusError("Select a level before uploading a new map.");
+        return;
+      }
+      try {
+        setFpToolbarBusy(true, `Uploading ${file.name}…`);
+        const { uploadUrl, gcsPath } = await getSignedUploadUrl({
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        });
+        await putToGCS(uploadUrl, file, file.type || "application/octet-stream");
+        await applyUploadedFloorPlan(gcsPath);
+      } catch (err) {
+        console.error("Upload-new floor plan failed:", err);
+        setFpStatusError(err.message || "Upload failed");
+        setFpToolbarBusy(false, "");
+      }
+    });
+
+    fpInvertBtn.addEventListener("click", async () => {
+      if (!canInvertCurrentFloorPlan()) return;
+      const sourcePath = getFloorPlanForLevel(currentLevelFilter);
+      try {
+        setFpToolbarBusy(true, "Inverting…");
+        // Same-origin fetch via the existing image proxy — no CORS complications.
+        const sourceUrl = `/api/2d/image?file=${encodeURIComponent(sourcePath)}`;
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error("Could not load the current floor plan"));
+          i.src = sourceUrl;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = id.data;
+        for (let i = 0; i < data.length; i += 4) {
+          data[i]   = 255 - data[i];
+          data[i+1] = 255 - data[i+1];
+          data[i+2] = 255 - data[i+2];
+          // alpha (data[i+3]) untouched
+        }
+        ctx.putImageData(id, 0, 0);
+
+        // Always emit PNG to keep crisp lines on CAD-style floor plans.
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((b) => b ? resolve(b) : reject(new Error("Canvas export failed")), "image/png");
+        });
+
+        // Derive a sibling filename. If the source already ends in -inverted,
+        // strip it so a second invert returns to a clean basename.
+        const sourceBase = sourcePath.split("/").pop();
+        const dot = sourceBase.lastIndexOf(".");
+        const stem = (dot >= 0 ? sourceBase.slice(0, dot) : sourceBase).replace(/-inverted$/i, "");
+        const newName = `${stem}-inverted.png`;
+
+        setFpToolbarBusy(true, `Uploading ${newName}…`);
+        const { uploadUrl, gcsPath } = await getSignedUploadUrl({
+          fileName: newName,
+          contentType: "image/png",
+        });
+        await putToGCS(uploadUrl, blob, "image/png");
+        await applyUploadedFloorPlan(gcsPath);
+      } catch (err) {
+        console.error("Invert floor plan failed:", err);
+        setFpStatusError(err.message || "Invert failed");
+        setFpToolbarBusy(false, "");
+      }
+    });
 
     function closeFloorPlanPicker() {
       floorPlanPickerOverlay.classList.remove("visible");
