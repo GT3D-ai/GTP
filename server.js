@@ -1503,9 +1503,23 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
     const host = req.get("x-forwarded-host") || req.get("host");
     const projectUrl = `${proto}://${host}/${encodeURIComponent(project)}`;
     const coverPath = await resolveProjectCover(project);
-    const thumbnailUrl = coverPath
-      ? `${proto}://${host}/api/2d/image?file=${encodeURIComponent(coverPath)}`
-      : null;
+    // Cloud Run is fronted by IAP, so the /api/2d/image proxy isn't reachable
+    // from an email client without a Google login. Sign a short-lived URL
+    // straight to the GCS object instead — same pattern used for plan/model
+    // download links.
+    let thumbnailUrl = null;
+    if (coverPath) {
+      try {
+        const [signed] = await imageBucket.file(coverPath).getSignedUrl({
+          version: "v4",
+          action: "read",
+          expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        });
+        thumbnailUrl = signed;
+      } catch (err) {
+        console.warn(`[share] signed thumbnail URL failed for ${coverPath}:`, err.message);
+      }
+    }
 
     const invite = await emailService.sendShareInvite({
       toEmail: email,
