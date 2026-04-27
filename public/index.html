@@ -45,7 +45,30 @@
       display: flex;
       flex-direction: column;
       transition: background var(--transition);
+      position: relative;
     }
+
+    .share-icon-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.65);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 5;
+      padding: 0;
+      transition: background var(--transition), transform 0.1s;
+    }
+    .share-icon-btn:hover { background: var(--accent); }
+    .share-icon-btn:active { transform: scale(0.94); }
+    .share-icon-btn svg { display: block; }
     .project-card:hover { background: var(--bg); color: inherit; text-decoration: none; }
     .project-card:hover .project-card-name { color: var(--accent); }
 
@@ -307,6 +330,13 @@
           card.className = "project-card";
           card.innerHTML = `
             ${coverHtml}
+            <button type="button" class="share-icon-btn" data-project="${name}" title="Share project" aria-label="Share project">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/>
+                <polyline points="16 6 12 2 8 6"/>
+                <line x1="12" y1="2" x2="12" y2="15"/>
+              </svg>
+            </button>
             <div class="project-card-body">
               <div class="project-card-name">${name}</div>
               ${addressHtml}
@@ -317,16 +347,16 @@
                 <a href="/plans/${encodeURIComponent(name)}">2D Plans</a>
                 <a href="/models/${encodeURIComponent(name)}">3D Models</a>
                 <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
-                <a href="#" class="share-link" data-project="${name}">Share</a>
                 <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
               </div>
             </div>
           `;
           card.addEventListener("click", (e) => {
-            const shareLink = e.target.closest(".share-link");
-            if (shareLink) {
+            const shareBtn = e.target.closest(".share-icon-btn");
+            if (shareBtn) {
               e.preventDefault();
-              openShareModal(shareLink.dataset.project);
+              e.stopPropagation();
+              openShareModal(shareBtn.dataset.project);
               return;
             }
             if (e.target.closest("a[href]")) return;

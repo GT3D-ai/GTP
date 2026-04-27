@@ -216,9 +216,112 @@
     }
     .edit-thumb-link:hover { background: var(--accent); color: #fff; }
     .home-card.is-editor .edit-thumb-link { display: inline-block; }
-    /* Main card thumbnail is on the left in row layout — keep edit badge there */
-    @media (min-width: 720px) {
-      .home-card.main .edit-thumb-link { right: auto; left: 8px; }
+    /* Main card edit badge sits on the left so the share icon owns the right corner */
+    .home-card.main .edit-thumb-link { right: auto; left: 8px; }
+
+    /* Share icon overlay on the project (main) card thumbnail */
+    .share-icon-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.65);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 5;
+      padding: 0;
+      transition: background var(--transition), transform 0.1s;
+    }
+    .share-icon-btn:hover { background: var(--accent); }
+    .share-icon-btn:active { transform: scale(0.94); }
+    .share-icon-btn svg { display: block; }
+
+    /* Share modal — mirrors the index.html share modal */
+    .share-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(13, 13, 13, 0.55);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+    }
+    .share-modal-backdrop.visible { display: flex; }
+    .share-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .share-modal-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .share-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+    .share-modal-close {
+      background: none;
+      border: none;
+      color: var(--ink-subtle);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .share-modal-close:hover { color: var(--ink); }
+    .share-modal-body { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .share-modal-body label {
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .share-modal-body input {
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      font-size: 0.9rem;
+      outline: none;
+      font-family: inherit;
+    }
+    .share-modal-body input:focus { border-color: var(--accent); }
+    .share-modal-target {
+      font-size: 0.8rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-xs);
+    }
+    .share-modal-target strong { color: var(--ink); }
+    .share-modal-status {
+      font-size: 0.8rem;
+      min-height: 1.1em;
+    }
+    .share-modal-status.error { color: var(--danger); }
+    .share-modal-status.ok { color: var(--success); }
+    .share-modal-footer {
+      padding: var(--space-md);
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
     }
 
     /* Thumbnail picker modal */
@@ -373,6 +476,13 @@
         <!-- MAIN: project cover + address + top-level links -->
         <div class="home-card main" id="mainCard">
           <a href="#" class="edit-thumb-link" data-card="main">Edit</a>
+          <button type="button" class="share-icon-btn" id="shareProjectBtn" title="Share project" aria-label="Share project">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/>
+              <polyline points="16 6 12 2 8 6"/>
+              <line x1="12" y1="2" x2="12" y2="15"/>
+            </svg>
+          </button>
           <div class="home-card-thumb is-placeholder" id="mainCardThumb"><span class="glyph">&#128194;</span></div>
           <div class="home-card-body">
             <div class="home-card-eyebrow">Project</div>
@@ -474,6 +584,28 @@
         </div>
         <div id="thumbGridWrap"><div class="thumb-empty">Loading…</div></div>
         <div class="thumb-status" id="thumbStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share modal -->
+  <div class="share-modal-backdrop" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+    <div class="share-modal">
+      <div class="share-modal-header">
+        <h3 id="shareModalTitle">Share project</h3>
+        <button class="share-modal-close" id="shareModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="share-modal-body">
+        <p class="share-modal-target">Sharing <strong id="shareModalProject"></strong> as a viewer.</p>
+        <label for="shareModalName">Name</label>
+        <input type="text" id="shareModalName" autocomplete="name" placeholder="Recipient's name">
+        <label for="shareModalEmail">Email</label>
+        <input type="email" id="shareModalEmail" autocomplete="email" placeholder="recipient@example.com">
+        <div class="share-modal-status" id="shareModalStatus"></div>
+      </div>
+      <div class="share-modal-footer">
+        <button class="btn" id="shareModalCancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="shareModalSubmit" type="button">Share</button>
       </div>
     </div>
   </div>
@@ -1013,6 +1145,79 @@
     thumbClearBtn.addEventListener("click", clearThumbnail);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && thumbModal.classList.contains("visible")) closeThumbModal();
+    });
+
+    // ---- Share modal ----
+    const shareModal = document.getElementById("shareModal");
+    const shareProjectLabel = document.getElementById("shareModalProject");
+    const shareName = document.getElementById("shareModalName");
+    const shareEmail = document.getElementById("shareModalEmail");
+    const shareStatus = document.getElementById("shareModalStatus");
+    const shareSubmit = document.getElementById("shareModalSubmit");
+    const shareProjectBtn = document.getElementById("shareProjectBtn");
+
+    function openShareModal() {
+      shareProjectLabel.textContent = project;
+      shareName.value = "";
+      shareEmail.value = "";
+      shareStatus.textContent = "";
+      shareStatus.className = "share-modal-status";
+      shareSubmit.disabled = false;
+      shareModal.classList.add("visible");
+      setTimeout(() => shareName.focus(), 0);
+    }
+
+    function closeShareModal() {
+      shareModal.classList.remove("visible");
+    }
+
+    shareProjectBtn.addEventListener("click", openShareModal);
+    document.getElementById("shareModalClose").addEventListener("click", closeShareModal);
+    document.getElementById("shareModalCancel").addEventListener("click", closeShareModal);
+    shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShareModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && shareModal.classList.contains("visible")) closeShareModal();
+    });
+
+    async function submitShare() {
+      const name = shareName.value.trim();
+      const email = shareEmail.value.trim();
+      if (!name) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Name is required."; return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Enter a valid email address."; return; }
+      shareSubmit.disabled = true;
+      shareStatus.className = "share-modal-status";
+      shareStatus.textContent = "Sharing…";
+      try {
+        const res = await fetch("/api/share-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ project, name, email }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Share failed (${res.status})`);
+        shareStatus.className = "share-modal-status ok";
+        if (data.emailSent) {
+          shareStatus.textContent = `Invite sent to ${email}.`;
+          setTimeout(closeShareModal, 1500);
+        } else {
+          const projectUrl = data.projectUrl || `${window.location.origin}/${encodeURIComponent(project)}`;
+          const subject = `You have access to "${project}" on Ground Truth 3D`;
+          const body = `Hi ${name},\n\nYou've been given viewer access to the "${project}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
+          window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          shareStatus.textContent = `Access granted. Opening your email client to send the invite…`;
+          setTimeout(closeShareModal, 2000);
+        }
+      } catch (err) {
+        shareStatus.className = "share-modal-status error";
+        shareStatus.textContent = err.message;
+        shareSubmit.disabled = false;
+      }
+    }
+
+    shareSubmit.addEventListener("click", submitShare);
+    [shareName, shareEmail].forEach((el) => {
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") submitShare(); });
     });
   </script>
 </body>
