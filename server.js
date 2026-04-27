@@ -1445,6 +1445,35 @@ app.delete("/api/users/:email", requireAdmin, async (req, res) => {
 // Share a project with another user as a viewer. Editors (and admins) can
 // invite anyone by name + email. If the recipient already has editor role we
 // leave it intact rather than downgrading.
+// Resolve a thumbnail file path for a project — same logic the home page uses:
+// the editor-set coverPhoto wins, otherwise fall back to the first 2D image.
+async function resolveProjectCover(project) {
+  try {
+    const infoFile = bucket.file(`${project}/project.json`);
+    const [exists] = await infoFile.exists();
+    if (exists) {
+      const [content] = await infoFile.download();
+      const info = JSON.parse(content.toString());
+      if (info.coverPhoto) return info.coverPhoto;
+    }
+  } catch (err) {
+    console.warn(`[share] coverPhoto lookup failed for ${project}:`, err.message);
+  }
+  try {
+    const [files] = await imageBucket.getFiles({ prefix: `${project}/` });
+    const first = files.find((f) =>
+      !f.name.endsWith("/") &&
+      !f.name.includes("/_plans/") &&
+      (f.metadata.contentType || "").startsWith("image/") &&
+      !(f.metadata.metadata && f.metadata.metadata.hidden === "true")
+    );
+    if (first) return first.name;
+  } catch (err) {
+    console.warn(`[share] 2D fallback lookup failed for ${project}:`, err.message);
+  }
+  return null;
+}
+
 app.post("/api/share-project", requireProjectRole("editor"), async (req, res) => {
   // requireProjectRole only sets req.projectName for non-admins (admins skip
   // the project resolution path), so fall back to the request body. This
@@ -1473,6 +1502,10 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
     const host = req.get("x-forwarded-host") || req.get("host");
     const projectUrl = `${proto}://${host}/${encodeURIComponent(project)}`;
+    const coverPath = await resolveProjectCover(project);
+    const thumbnailUrl = coverPath
+      ? `${proto}://${host}/api/2d/image?file=${encodeURIComponent(coverPath)}`
+      : null;
 
     const invite = await emailService.sendShareInvite({
       toEmail: email,
@@ -1481,6 +1514,7 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
       fromEmail: req.user?.email || "",
       project,
       projectUrl,
+      thumbnailUrl,
     });
 
     res.json({

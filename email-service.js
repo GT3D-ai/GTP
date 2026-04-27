@@ -37,7 +37,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
-async function sendShareInvite({ toEmail, toName, fromName, fromEmail, project, projectUrl }) {
+async function sendShareInvite({ toEmail, toName, fromName, fromEmail, project, projectUrl, thumbnailUrl }) {
   init();
   if (!sgMail) return { sent: false, reason: "email-not-configured" };
 
@@ -50,8 +50,16 @@ async function sendShareInvite({ toEmail, toName, fromName, fromEmail, project, 
     `Open the project: ${projectUrl}\n\n` +
     `If you weren't expecting this, you can ignore this message.\n`;
 
+  const thumbnailHtml = thumbnailUrl
+    ? `<a href="${projectUrl}" style="display:block; margin: 0 0 20px;">
+         <img src="${thumbnailUrl}" alt="${escapeHtml(project)}"
+              style="width:100%; max-width:560px; aspect-ratio:4/3; object-fit:cover; display:block; border-radius:6px; border:1px solid #e5e1d8;">
+       </a>`
+    : "";
+
   const html = `
     <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #1a1a1a;">
+      ${thumbnailHtml}
       <p>Hi ${escapeHtml(toName)},</p>
       <p><strong>${escapeHtml(sender)}</strong> (${escapeHtml(fromEmail)}) has given you viewer access to the
         <strong>${escapeHtml(project)}</strong> project on Ground Truth 3D.</p>
