@@ -462,6 +462,18 @@
         <a id="modelsLink" href="#">3D Models</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </nav>
+      <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
+        <span class="bar"></span>
+      </button>
+    </div>
+    <div class="dropdown-panel" id="menuDropdown">
+      <div class="dropdown-inner">
+        <a id="mapMenuItem" href="#">Map</a>
+        <a id="imagesMenuItem" href="#">2D Images</a>
+        <a id="plansMenuItem" href="#">2D Plans</a>
+        <a id="modelsMenuItem" href="#">3D Models</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+      </div>
     </div>
   </header>
 
@@ -636,6 +648,30 @@
       initPage();
     }
 
+    // Mobile hamburger menu — toggle, click-outside, and Escape to close
+    (function () {
+      const btn = document.getElementById("menuBtn");
+      const panel = document.getElementById("menuDropdown");
+      if (!btn || !panel) return;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = panel.classList.toggle("is-open");
+        btn.setAttribute("aria-expanded", open);
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+    })();
+
     function formatSize(bytes) {
       if (bytes == null) return "";
       if (bytes < 1024) return bytes + " B";
@@ -674,6 +710,11 @@
       document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
       document.getElementById("modelsLink").href = `/models/${enc}`;
+      // Mirror the same hrefs into the mobile dropdown menu
+      document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
+      document.getElementById("imagesMenuItem").href = `/images/${enc}`;
+      document.getElementById("plansMenuItem").href = `/plans/${enc}`;
+      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
 
       // Main card links
       document.getElementById("mainMapLink").href = `/map-viewer/${enc}`;

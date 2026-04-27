@@ -212,6 +212,19 @@
       <nav class="nav-primary" aria-label="Primary">
         <a id="mapViewerLink" href="#">Map</a>
       </nav>
+      <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
+        <span class="bar"></span>
+      </button>
+    </div>
+    <div class="dropdown-panel" id="menuDropdown">
+      <div class="dropdown-inner">
+        <a id="homeMenuItem" href="#">Project Home</a>
+        <a id="mapMenuItem" href="#">Map</a>
+        <a id="imagesMenuItem" href="#">2D Images</a>
+        <a id="plansMenuItem" href="#">2D Plans</a>
+        <a id="modelsMenuItem" href="#">3D Models</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+      </div>
     </div>
   </header>
 
@@ -267,7 +280,14 @@
       wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /models/&lt;project-name&gt;.</div>';
     } else {
       projectHeadline.textContent = project;
-      document.getElementById("mapViewerLink").href = `/map-viewer/${encodeURIComponent(project)}`;
+      const enc = encodeURIComponent(project);
+      document.getElementById("mapViewerLink").href = `/map-viewer/${enc}`;
+      // Mobile dropdown menu — let viewers jump between project sections
+      document.getElementById("homeMenuItem").href = `/public/${enc}`;
+      document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
+      document.getElementById("imagesMenuItem").href = `/images/${enc}`;
+      document.getElementById("plansMenuItem").href = `/plans/${enc}`;
+      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
 
       // Admin "+ Upload model" shortcut when applicable; for non-editors,
       // re-route the GT3D logo home target to the project home page.
@@ -425,6 +445,30 @@
       }[c]));
     }
     function escapeAttr(s) { return escapeHtml(s); }
+
+    // Mobile hamburger menu — toggle, click-outside, and Escape to close
+    (function () {
+      const btn = document.getElementById("menuBtn");
+      const panel = document.getElementById("menuDropdown");
+      if (!btn || !panel) return;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = panel.classList.toggle("is-open");
+        btn.setAttribute("aria-expanded", open);
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+    })();
 
     // ---- Edit Thumbnail modal ----
     const thumbOverlay = document.getElementById("thumbOverlay");

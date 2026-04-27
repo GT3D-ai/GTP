@@ -104,6 +104,11 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
   flex-shrink: 0;
 }
 .menu-toggle:hover { border-color: var(--ink-muted); background: var(--bg); }
+/* Project pages keep .nav-primary visible on desktop and only show the
+   hamburger on mobile — opt in with the .mobile-only modifier. Pages
+   without a desktop nav (e.g. map-viewer) leave the modifier off so the
+   hamburger remains visible at every breakpoint. */
+@media (min-width: 768px) { .menu-toggle.mobile-only { display: none; } }
 
 .menu-toggle .bar {
   position: relative;
