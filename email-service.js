@@ -100,4 +100,55 @@ async function sendShareInvite({ toEmail, toName, fromName, fromEmail, project, 
   }
 }
 
-module.exports = { sendShareInvite, isEnabled };
+// Anonymous contact-request form on the public landing page. Sends a short
+// notification to the platform owner with the requester's contact details and
+// sets Reply-To so the owner can reply directly.
+async function sendContactRequest({ name, company, email }) {
+  init();
+  if (!sgMail) return { sent: false, reason: "email-not-configured" };
+
+  const subject = `GTP access request — ${name}${company ? ` (${company})` : ""}`;
+
+  const text =
+    `A visitor on the GTP landing page asked for access:\n\n` +
+    `Name:    ${name}\n` +
+    `Company: ${company}\n` +
+    `Email:   ${email}\n\n` +
+    `Reply directly to this message to contact them.\n`;
+
+  const html = `
+    <div style="font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #0d0d0d;">
+      <h2 style="margin: 0 0 12px; font-size: 1.125em;">New GTP access request</h2>
+      <p style="margin: 0 0 16px; color: #4a4a4a;">A visitor on the GTP landing page asked for access:</p>
+      <table style="border-collapse: collapse; width: 100%; font-size: 0.95em;">
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Name</td><td style="padding: 6px 0;">${escapeHtml(name)}</td></tr>
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Company</td><td style="padding: 6px 0;">${escapeHtml(company)}</td></tr>
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Email</td><td style="padding: 6px 0;"><a href="mailto:${escapeHtml(email)}" style="color: #0a66c2;">${escapeHtml(email)}</a></td></tr>
+      </table>
+      <p style="margin-top: 20px; font-size: 0.85em; color: #777;">Reply directly to this message to contact the requester.</p>
+    </div>
+  `;
+
+  const msg = {
+    to: { email: "j@gt3d.com" },
+    from: {
+      email: process.env.SENDGRID_FROM_EMAIL,
+      name: process.env.SENDGRID_FROM_NAME || "Ground Truth 3D",
+    },
+    subject,
+    text,
+    html,
+    replyTo: { email, name },
+  };
+
+  try {
+    await sgMail.send(msg);
+    return { sent: true };
+  } catch (err) {
+    const detail = err.response?.body || err.message;
+    console.error("[email-service] SendGrid send failed (contact-request):", JSON.stringify(detail));
+    return { sent: false, reason: "send-failed", error: err.message };
+  }
+}
+
+module.exports = { sendShareInvite, sendContactRequest, isEnabled };

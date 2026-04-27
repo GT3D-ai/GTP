@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Projects — GT Platform</title>
+  <title>GTP Home — Ground Truth Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,454 +11,219 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
   <style>
-    .page-actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-sm);
-      margin-bottom: var(--space-md);
-      flex-wrap: wrap;
-    }
-    .page-actions h1 {
-      font-family: var(--font-display);
-      font-weight: 600;
-      font-size: clamp(1.5rem, 3vw, 1.875rem);
-      letter-spacing: -0.02em;
-      margin: 0;
-    }
-
-    .projects-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 1px;
-      background: var(--line);
-      border: 1px solid var(--line);
-    }
-    @media (min-width: 640px) { .projects-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 980px) { .projects-grid { grid-template-columns: repeat(3, 1fr); } }
-
-    .project-card {
-      background: var(--bg-elevated);
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
+    body {
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      transition: background var(--transition);
-      position: relative;
     }
-
-    .share-icon-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(13, 13, 13, 0.65);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      z-index: 5;
-      padding: 0;
-      transition: background var(--transition), transform 0.1s;
-    }
-    .share-icon-btn:hover { background: var(--accent); }
-    .share-icon-btn:active { transform: scale(0.94); }
-    .share-icon-btn svg { display: block; }
-    .project-card:hover { background: var(--bg); color: inherit; text-decoration: none; }
-    .project-card:hover .project-card-name { color: var(--accent); }
-
-    .project-card-cover {
-      width: 100%;
-      aspect-ratio: 4 / 3;
-      object-fit: cover;
-      display: block;
-      background: #efece6;
-      border-bottom: 1px solid var(--line);
-    }
-    .project-card-cover-placeholder {
-      width: 100%;
-      aspect-ratio: 4 / 3;
-      background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-      color: var(--ink-subtle);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .project-card-body {
-      padding: var(--space-md);
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .landing-wrap {
       flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-lg) var(--space-md);
     }
-    .project-card-name {
+    .landing {
+      max-width: 640px;
+      width: 100%;
+      text-align: center;
+    }
+    .landing-mark {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto var(--space-md);
+      display: block;
+    }
+    .landing h1 {
       font-family: var(--font-display);
       font-weight: 600;
-      font-size: 1.0625rem;
-      letter-spacing: -0.01em;
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      letter-spacing: -0.02em;
+      margin: 0 0 var(--space-md);
       color: var(--ink);
-      word-break: break-word;
-      transition: color var(--transition);
     }
-    .project-card-address {
-      font-size: 0.8125rem;
+    .landing p {
+      font-size: 1.0625rem;
+      line-height: 1.55;
       color: var(--ink-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      margin: 0 0 var(--space-md);
     }
-
-    .project-card-actions {
-      display: flex;
-      gap: var(--space-md);
-      flex-wrap: wrap;
-      margin-top: var(--space-sm);
+    .landing .actions {
+      margin-top: var(--space-lg);
     }
-    .project-card-actions a {
-      font-size: 0.7rem;
+    .contact-form .field { text-align: left; margin-bottom: var(--space-sm); }
+    .contact-form .field-label {
+      display: block;
+      font-size: 0.72rem;
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--ink-muted);
-      text-decoration: none;
+      margin-bottom: 4px;
     }
-    .project-card-actions a:hover { color: var(--accent); }
-    .project-card-actions .edit-link { margin-left: auto; color: var(--ink-subtle); }
-
-    .placeholder {
-      text-align: center;
-      padding: var(--space-2xl) var(--space-md);
-      color: var(--ink-subtle);
-      border: 1px solid var(--line);
-      background: var(--bg-elevated);
-    }
-    .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
-    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
-
-    @media (max-width: 600px) {
-      .container { padding: var(--space-md) var(--space-sm); }
-      .page-actions { gap: var(--space-xs); }
-    }
-
-    /* Share modal — mirrors .levels-modal pattern from map-editor.html */
-    .share-modal-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(13, 13, 13, 0.55);
-      z-index: 2000;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: var(--space-md);
-    }
-    .share-modal-backdrop.visible { display: flex; }
-    .share-modal {
-      background: var(--bg-elevated);
-      border: 1px solid var(--line-strong);
+    .contact-form input {
       width: 100%;
-      max-width: 420px;
-      display: flex;
-      flex-direction: column;
-    }
-    .share-modal-header {
-      padding: var(--space-md);
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-sm);
-    }
-    .share-modal-header h3 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-weight: 600;
-      font-size: 1rem;
-      letter-spacing: -0.01em;
-    }
-    .share-modal-close {
-      background: none;
-      border: none;
-      color: var(--ink-subtle);
-      font-size: 1.25rem;
-      cursor: pointer;
-      padding: 0 4px;
-      line-height: 1;
-    }
-    .share-modal-close:hover { color: var(--ink); }
-    .share-modal-body { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
-    .share-modal-body label {
-      font-size: 0.75rem;
-      color: var(--ink-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .share-modal-body input {
-      padding: 8px 10px;
+      padding: 0.625rem 0.75rem;
       background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      border: 1px solid var(--line-strong);
       color: var(--ink);
+      font-family: var(--font-sans);
       font-size: 0.9rem;
       outline: none;
-      font-family: inherit;
+      transition: border-color var(--transition);
     }
-    .share-modal-body input:focus { border-color: var(--accent); }
-    .share-modal-target {
-      font-size: 0.8rem;
-      color: var(--ink-muted);
-      margin: 0 0 var(--space-xs);
+    .contact-form input:focus { border-color: var(--accent); }
+    /* Honeypot — invisible to humans, baited for spambots */
+    .hp-field {
+      position: absolute !important;
+      left: -9999px !important;
+      width: 1px !important;
+      height: 1px !important;
+      overflow: hidden !important;
     }
-    .share-modal-target strong { color: var(--ink); }
-    .share-modal-status {
-      font-size: 0.8rem;
-      min-height: 1.1em;
-    }
-    .share-modal-status.error { color: var(--danger); }
-    .share-modal-status.ok { color: var(--success); }
-    .share-modal-footer {
-      padding: var(--space-md);
-      border-top: 1px solid var(--line);
+    .modal-actions {
       display: flex;
-      justify-content: flex-end;
       gap: var(--space-sm);
+      margin-top: var(--space-md);
     }
+    .modal-actions .btn-primary { flex: 1; }
+    .platform-footer {
+      text-align: center;
+      padding: var(--space-md);
+      font-size: 0.78rem;
+      color: var(--ink-subtle);
+      border-top: 1px solid var(--line);
+    }
+    .platform-footer a { color: var(--ink-muted); text-decoration: none; }
+    .platform-footer a:hover { color: var(--ink); }
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <a class="logo" href="/">
-        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
-        Ground Truth <span>3D</span>
-      </a>
-      <nav class="nav-primary" aria-label="Primary">
-        <a href="/" class="is-active">Projects</a>
-        <a href="/new-project.html" id="newProjectNav" style="display:none;">New Project</a>
-      </nav>
-    </div>
-  </header>
-
-  <main class="container">
-    <div class="page-actions">
-      <h1>Projects</h1>
-      <a href="/new-project.html" class="btn btn-primary" id="newProjectBtn" style="display:none;">+ New Project</a>
-    </div>
-
-    <div id="projectList">
-      <div class="placeholder">
-        <p>Loading projects…</p>
+  <main class="landing-wrap">
+    <div class="landing">
+      <img class="landing-mark" src="https://gt3d.com/images/logo-mark.svg" alt="" decoding="async">
+      <h1>GTP Home</h1>
+      <p>The Ground Truth Platform (GTP) is an online resource for viewing and sharing project information including 360 images, 2D images, plans and 3D models.</p>
+      <p>Contact us to request access</p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="contactBtn">Contact us</button>
       </div>
     </div>
   </main>
 
-  <div class="share-modal-backdrop" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
-    <div class="share-modal">
-      <div class="share-modal-header">
-        <h3 id="shareModalTitle">Share project</h3>
-        <button class="share-modal-close" id="shareModalClose" aria-label="Close">&times;</button>
-      </div>
-      <div class="share-modal-body">
-        <p class="share-modal-target">Sharing <strong id="shareModalProject"></strong> as a viewer.</p>
-        <label for="shareModalName">Name</label>
-        <input type="text" id="shareModalName" autocomplete="name" placeholder="Recipient's name">
-        <label for="shareModalEmail">Email</label>
-        <input type="email" id="shareModalEmail" autocomplete="email" placeholder="recipient@example.com">
-        <div class="share-modal-status" id="shareModalStatus"></div>
-      </div>
-      <div class="share-modal-footer">
-        <button class="btn" id="shareModalCancel" type="button">Cancel</button>
-        <button class="btn btn-primary" id="shareModalSubmit" type="button">Share</button>
-      </div>
+  <footer class="platform-footer">
+    <a href="https://gt3d.com" target="_blank" rel="noopener">Ground Truth 3D</a>
+  </footer>
+
+  <!-- Contact / access-request modal -->
+  <div class="overlay" id="contactOverlay" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle">
+    <div class="modal">
+      <h3 id="contactModalTitle">Request access</h3>
+      <form class="contact-form" id="contactForm" novalidate>
+        <div class="field">
+          <label class="field-label" for="contactName">Name <span class="required-mark">*</span></label>
+          <input type="text" id="contactName" name="name" autocomplete="name" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="contactCompany">Company <span class="required-mark">*</span></label>
+          <input type="text" id="contactCompany" name="company" autocomplete="organization" required>
+        </div>
+        <div class="field">
+          <label class="field-label" for="contactEmail">Email <span class="required-mark">*</span></label>
+          <input type="email" id="contactEmail" name="email" autocomplete="email" required>
+        </div>
+        <!-- Honeypot — only bots fill this -->
+        <div class="hp-field" aria-hidden="true">
+          <label>Website<input type="text" id="contactHoneypot" name="website" autocomplete="off" tabindex="-1"></label>
+        </div>
+        <div class="status-message" id="contactStatus"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" id="contactCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="contactSubmit">Send Request</button>
+        </div>
+      </form>
     </div>
   </div>
 
   <script>
-    const projectList = document.getElementById("projectList");
-
-    async function loadProjects() {
-      try {
-        const res = await fetch("/api/projects");
-        if (!res.ok) throw new Error("Failed to load projects");
-        const projects = await res.json();
-
-        if (projects.length === 0) {
-          projectList.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128194;</div><p>No projects yet. <a href="/new-project.html" style="color:var(--accent)">Create your first project</a>.</p></div>';
-          return;
+    // Authorized users (admins / editors / viewers in the gt3d.com Workspace)
+    // get auto-forwarded to the project list. Anonymous visitors stay on this
+    // landing page and can submit the contact form.
+    if (window.me) {
+      window.me.getMe().then((profile) => {
+        if (profile && profile.authorized) {
+          window.location.replace("/projects");
         }
-
-        // Fetch metadata + optional fallback cover for each project in parallel
-        const infos = await Promise.all(projects.map(async (name) => {
-          let info = { name, address: null, coverPhoto: null };
-          try {
-            const r = await fetch(`/api/project-info?project=${encodeURIComponent(name)}`);
-            if (r.ok) info = await r.json();
-          } catch {}
-          if (!info.coverPhoto) {
-            try {
-              const r2 = await fetch(`/api/2d/files?project=${encodeURIComponent(name)}`);
-              if (r2.ok) {
-                const files = await r2.json();
-                const firstImage = files.find((f) => (f.contentType || "").startsWith("image/"));
-                if (firstImage) info.coverPhoto = firstImage.name;
-              }
-            } catch {}
-          }
-          return info;
-        }));
-
-        const grid = document.createElement("div");
-        grid.className = "projects-grid";
-
-        infos.forEach((info) => {
-          const name = info.name;
-          const coverHtml = info.coverPhoto
-            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${name}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;project-card-cover-placeholder&quot;&gt;&amp;#128194;&lt;/div&gt;'">`
-            : `<div class="project-card-cover-placeholder">&#128194;</div>`;
-
-          const addressHtml = info.address
-            ? `<div class="project-card-address" title="${info.address}">${info.address}</div>`
-            : "";
-
-          const card = document.createElement("div");
-          card.className = "project-card";
-          card.innerHTML = `
-            ${coverHtml}
-            <button type="button" class="share-icon-btn" data-project="${name}" title="Share project" aria-label="Share project">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="18" cy="5" r="3"/>
-                <circle cx="6" cy="12" r="3"/>
-                <circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-              </svg>
-            </button>
-            <div class="project-card-body">
-              <div class="project-card-name">${name}</div>
-              ${addressHtml}
-              <div class="project-card-actions">
-                <a href="/${encodeURIComponent(name)}">Home</a>
-                <a href="/map-viewer/${encodeURIComponent(name)}">Map</a>
-                <a href="/image-viewer.html?project=${encodeURIComponent(name)}">2D Images</a>
-                <a href="/plans/${encodeURIComponent(name)}">2D Plans</a>
-                <a href="/models/${encodeURIComponent(name)}">3D Models</a>
-                <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
-                <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
-              </div>
-            </div>
-          `;
-          card.addEventListener("click", (e) => {
-            const shareBtn = e.target.closest(".share-icon-btn");
-            if (shareBtn) {
-              e.preventDefault();
-              e.stopPropagation();
-              openShareModal(shareBtn.dataset.project);
-              return;
-            }
-            if (e.target.closest("a[href]")) return;
-            window.location.href = `/${encodeURIComponent(name)}`;
-          });
-          grid.appendChild(card);
-        });
-
-        projectList.innerHTML = "";
-        projectList.appendChild(grid);
-      } catch (err) {
-        projectList.innerHTML = `<div class="error-msg">${err.message}</div>`;
-      }
+      });
     }
 
-    loadProjects();
+    const overlay = document.getElementById("contactOverlay");
+    const form = document.getElementById("contactForm");
+    const submitBtn = document.getElementById("contactSubmit");
+    const cancelBtn = document.getElementById("contactCancel");
+    const status = document.getElementById("contactStatus");
+    const contactBtn = document.getElementById("contactBtn");
+    const nameInput = document.getElementById("contactName");
+    const companyInput = document.getElementById("contactCompany");
+    const emailInput = document.getElementById("contactEmail");
 
-    // ---- Share modal ----
-    const shareModal = document.getElementById("shareModal");
-    const shareProjectLabel = document.getElementById("shareModalProject");
-    const shareName = document.getElementById("shareModalName");
-    const shareEmail = document.getElementById("shareModalEmail");
-    const shareStatus = document.getElementById("shareModalStatus");
-    const shareSubmit = document.getElementById("shareModalSubmit");
-    let shareProject = null;
-
-    function openShareModal(project) {
-      shareProject = project;
-      shareProjectLabel.textContent = project;
-      shareName.value = "";
-      shareEmail.value = "";
-      shareStatus.textContent = "";
-      shareStatus.className = "share-modal-status";
-      shareSubmit.disabled = false;
-      shareModal.classList.add("visible");
-      setTimeout(() => shareName.focus(), 0);
+    function openContact() {
+      status.className = "status-message";
+      status.textContent = "";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Send Request";
+      overlay.classList.add("visible");
+      setTimeout(() => nameInput.focus(), 0);
+    }
+    function closeContact() {
+      overlay.classList.remove("visible");
+      form.reset();
     }
 
-    function closeShareModal() {
-      shareModal.classList.remove("visible");
-      shareProject = null;
-    }
-
-    document.getElementById("shareModalClose").addEventListener("click", closeShareModal);
-    document.getElementById("shareModalCancel").addEventListener("click", closeShareModal);
-    shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShareModal(); });
+    contactBtn.addEventListener("click", openContact);
+    cancelBtn.addEventListener("click", closeContact);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeContact(); });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && shareModal.classList.contains("visible")) closeShareModal();
+      if (e.key === "Escape" && overlay.classList.contains("visible")) closeContact();
     });
 
-    async function submitShare() {
-      const name = shareName.value.trim();
-      const email = shareEmail.value.trim();
-      if (!name) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Name is required."; return; }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { shareStatus.className = "share-modal-status error"; shareStatus.textContent = "Enter a valid email address."; return; }
-      shareSubmit.disabled = true;
-      shareStatus.className = "share-modal-status";
-      shareStatus.textContent = "Sharing…";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = nameInput.value.trim();
+      const company = companyInput.value.trim();
+      const email = emailInput.value.trim();
+      const website = document.getElementById("contactHoneypot").value;
+
+      if (!name) { status.className = "status-message visible error"; status.textContent = "Name is required."; return; }
+      if (!company) { status.className = "status-message visible error"; status.textContent = "Company is required."; return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        status.className = "status-message visible error"; status.textContent = "Please enter a valid email address."; return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Sending…";
+      status.className = "status-message";
+      status.textContent = "";
+
       try {
-        const res = await fetch("/api/share-project", {
+        const res = await fetch("/api/contact-request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({ project: shareProject, name, email }),
+          body: JSON.stringify({ name, company, email, website }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Share failed (${res.status})`);
-        shareStatus.className = "share-modal-status ok";
-        if (data.emailSent) {
-          shareStatus.textContent = `Invite sent to ${email}.`;
-          setTimeout(closeShareModal, 1500);
-        } else {
-          // Server isn't configured to send email — fall back to opening the
-          // sharer's mail client with the link prefilled.
-          const projectUrl = data.projectUrl || `${window.location.origin}/${encodeURIComponent(shareProject)}`;
-          const subject = `You have access to "${shareProject}" on Ground Truth 3D`;
-          const body = `Hi ${name},\n\nYou've been given viewer access to the "${shareProject}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
-          window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-          shareStatus.textContent = `Access granted. Opening your email client to send the invite…`;
-          setTimeout(closeShareModal, 2000);
-        }
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+
+        status.className = "status-message visible success";
+        status.textContent = "Thanks — we'll be in touch.";
+        setTimeout(closeContact, 1800);
       } catch (err) {
-        shareStatus.className = "share-modal-status error";
-        shareStatus.textContent = err.message;
-        shareSubmit.disabled = false;
+        status.className = "status-message visible error";
+        status.textContent = err.message || "Something went wrong. Please try again.";
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Send Request";
       }
-    }
-
-    shareSubmit.addEventListener("click", submitShare);
-    [shareName, shareEmail].forEach((el) => {
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter") submitShare(); });
     });
-
-    // Show admin-only "New Project" controls
-    (async () => {
-      if (window.me && await window.me.isAdmin()) {
-        document.getElementById("newProjectBtn").style.display = "";
-        document.getElementById("newProjectNav").style.display = "";
-      }
-    })();
   </script>
 </body>
 </html>

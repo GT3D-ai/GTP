@@ -46,9 +46,11 @@ app.get("/robots.txt", (req, res) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Backward-compat: /projects.html and /projects → / (index is now projects)
+// Project list (the editor/admin home). Used to live at /, but / now serves
+// a public landing page so anonymous visitors can request access. Authorized
+// users land at the welcome page and the JS auto-forwards them here.
 app.get(["/projects", "/projects.html"], (req, res) => {
-  res.redirect("/");
+  res.sendFile(path.join(__dirname, "public", "projects.html"));
 });
 
 // Pretty URL for map viewer: /map-viewer/<project-name>
@@ -1675,6 +1677,32 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
     });
   } catch (err) {
     console.error("Share project error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Anonymous "request access" form on the public landing page. Sends an email
+// to the platform owner (j@gt3d.com). No auth required — the form is the
+// front door for prospective users.
+app.post("/api/contact-request", async (req, res) => {
+  // Honeypot — bots fill all fields, humans don't see this one. Reply OK so
+  // we don't tip off the bot that it was rejected.
+  if (req.body && req.body.website) return res.json({ success: true });
+
+  const name = String((req.body && req.body.name) || "").trim();
+  const company = String((req.body && req.body.company) || "").trim();
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+  if (!name) return res.status(400).json({ error: "Name is required" });
+  if (!company) return res.status(400).json({ error: "Company is required" });
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Valid email is required" });
+  }
+
+  try {
+    const result = await emailService.sendContactRequest({ name, company, email });
+    res.json({ success: true, emailSent: result.sent, emailReason: result.sent ? undefined : result.reason });
+  } catch (err) {
+    console.error("Contact request error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
