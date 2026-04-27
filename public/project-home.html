@@ -162,6 +162,28 @@
       font-size: 0.78rem;
     }
 
+    /* Floating confirmation pill shown after the anonymous share button
+       copies the project URL to the clipboard. Auto-fades after ~2.8s. */
+    .share-toast {
+      position: fixed;
+      top: calc(var(--header-h) + 1rem);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.625rem 1rem;
+      background: var(--ink);
+      color: var(--bg-elevated);
+      font-size: 0.8125rem;
+      letter-spacing: 0.02em;
+      max-width: min(90vw, 28rem);
+      text-align: center;
+      z-index: 1000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.22s ease;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
+    .share-toast.visible { opacity: 0.96; }
+
     /* Main card spans both columns on wider layouts */
     @media (min-width: 720px) {
       .home-card.main { grid-column: 1 / -1; }
@@ -702,17 +724,15 @@
         document.querySelectorAll(".home-card").forEach((c) => c.classList.add("is-editor"));
         document.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
       }
-      // Sharing requires editor role and the /api/share-project endpoint sits
-      // on the IAP-protected backend — hide the button on the public mirror
-      // so anonymous viewers don't get bounced to a Google login screen.
       if (isPublicPath) {
-        const shareBtn = document.getElementById("shareProjectBtn");
-        if (shareBtn) shareBtn.style.display = "none";
         // Logo on the public mirror points to the same /public/<project>
         // page so anonymous viewers don't get bounced to IAP login when
         // they click the brand mark to "go home".
         const logo = document.querySelector(".site-header .logo");
         if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
+        // The share button stays visible, but its click handler is rebound
+        // below to a clipboard / Web-Share-API flow that doesn't touch the
+        // IAP-protected /api/share-project endpoint.
       }
 
       // Title + header nav
@@ -1238,7 +1258,60 @@
       shareModal.classList.remove("visible");
     }
 
-    shareProjectBtn.addEventListener("click", openShareModal);
+    // Click handler branches by path: anonymous viewers on /public/<project>
+    // get a lightweight share flow (Web Share API on mobile, clipboard copy
+    // on desktop) since the /api/share-project endpoint is IAP-protected and
+    // unreachable for them. Editors on /<project> still open the full modal.
+    shareProjectBtn.addEventListener("click", () => {
+      if (isPublicPath) shareAnonymous();
+      else openShareModal();
+    });
+
+    async function shareAnonymous() {
+      const shareUrl = `${window.location.origin}/public/${encodeURIComponent(project)}`;
+      const title = `${project} — Ground Truth 3D`;
+      const text = `View the ${project} project on Ground Truth 3D.`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text, url: shareUrl });
+          return;
+        } catch (err) {
+          // User cancelled the share sheet — bail without falling through to
+          // clipboard, which would feel like a second action they didn't ask for.
+          if (err && err.name === "AbortError") return;
+        }
+      }
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast("Link copied — anyone with this URL can view the project.");
+          return;
+        } catch (err) { /* fall through to prompt */ }
+      }
+
+      // Last resort for browsers without share or clipboard APIs
+      window.prompt("Copy this link to share:", shareUrl);
+    }
+
+    function showToast(message) {
+      let toast = document.getElementById("shareToast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "shareToast";
+        toast.className = "share-toast";
+        toast.setAttribute("role", "status");
+        toast.setAttribute("aria-live", "polite");
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      // Force reflow so the transition fires when we add the visible class
+      void toast.offsetWidth;
+      toast.classList.add("visible");
+      clearTimeout(toast._hideTimer);
+      toast._hideTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+    }
     document.getElementById("shareModalClose").addEventListener("click", closeShareModal);
     document.getElementById("shareModalCancel").addEventListener("click", closeShareModal);
     shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShareModal(); });
