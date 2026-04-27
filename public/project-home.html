@@ -622,6 +622,14 @@
     const projectRaw = decodeURIComponent(isPublicPath ? (segments[1] || "") : (segments[0] || ""));
     const project = projectRaw || "";
 
+    // Cached cardThumbnails overrides loaded from project-info, plus editor flag.
+    // These MUST be declared before initPage() is called: when isPublicPath is
+    // true, initPage assigns canEditProject synchronously (no await) and would
+    // otherwise hit a temporal-dead-zone ReferenceError.
+    let cardThumbnails = {};
+    let canEditProject = false;
+    let imageList = []; // cached 2D image list shared across cards/modal
+
     if (!project) {
       document.getElementById("homeWrap").innerHTML = '<div class="error-msg">No project specified in URL.</div>';
     } else {
@@ -639,11 +647,6 @@
       if (!iso) return "";
       return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
-
-    // Cached cardThumbnails overrides loaded from project-info, plus editor flag
-    let cardThumbnails = {};
-    let canEditProject = false;
-    let imageList = []; // cached 2D image list shared across cards/modal
 
     async function initPage() {
       const enc = encodeURIComponent(project);
