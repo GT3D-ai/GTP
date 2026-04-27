@@ -1446,7 +1446,12 @@ app.delete("/api/users/:email", requireAdmin, async (req, res) => {
 // invite anyone by name + email. If the recipient already has editor role we
 // leave it intact rather than downgrading.
 app.post("/api/share-project", requireProjectRole("editor"), async (req, res) => {
-  const project = req.projectName;
+  // requireProjectRole only sets req.projectName for non-admins (admins skip
+  // the project resolution path), so fall back to the request body. This
+  // prevents `undefined` from leaking into the roster, the email subject,
+  // and the share URL when an admin is the sharer.
+  const project = String((req.body && req.body.project) || req.projectName || "").trim();
+  if (!project) return res.status(400).json({ error: "project required" });
   const rawEmail = (req.body && req.body.email) || "";
   const rawName = (req.body && req.body.name) || "";
   const email = String(rawEmail).trim().toLowerCase();
