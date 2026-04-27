@@ -190,8 +190,8 @@
         <div class="control-row">
           <label for="upAxis">Up axis</label>
           <select id="upAxis">
-            <option value="Y">Y (default)</option>
-            <option value="Z">Z</option>
+            <option value="Z" selected>Z (default)</option>
+            <option value="Y">Y</option>
           </select>
         </div>
       </div>
@@ -463,11 +463,10 @@
       scene.add(root);
       currentRoot = root;
 
-      // Auto-detect Z-up for STL/PLY (typical CAD output)
-      if (ext === 'stl' || ext === 'ply') {
-        document.getElementById('upAxis').value = 'Z';
-        root.rotation.x = -Math.PI / 2;
-      }
+      // Apply the current up-axis choice. Default is Z-up — most models the
+      // platform handles come from CAD/Revit/STL pipelines where Z is up. For
+      // Y-up content (typical GLB/GLTF, Maya FBX) flip the dropdown to Y.
+      root.rotation.x = document.getElementById('upAxis').value === 'Z' ? -Math.PI / 2 : 0;
 
       frameObject(root);
       updateGeometryStats(root);
