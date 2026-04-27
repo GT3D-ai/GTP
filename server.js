@@ -978,9 +978,15 @@ app.get("/api/mappings", async (req, res) => {
   try {
     const file = bucket.file(`${project}/mappings.json`);
     const [exists] = await file.exists();
-    if (!exists) return res.json({ floorPlanImage: null, pins: [] });
+    // _generation is the GCS object generation. Editors send it back as
+    // `expectedGeneration` on save so concurrent edits can be detected via
+    // ifGenerationMatch — see the save handler below. 0 == "file does not
+    // exist yet"; ifGenerationMatch:0 makes the first save atomic.
+    if (!exists) return res.json({ floorPlanImage: null, pins: [], _generation: "0" });
     const [content] = await file.download();
-    res.json(JSON.parse(content.toString()));
+    const [metadata] = await file.getMetadata();
+    const data = JSON.parse(content.toString());
+    res.json({ ...data, _generation: String(metadata.generation || "0") });
   } catch (err) {
     console.error("Get mappings error:", err.message);
     res.status(500).json({ error: err.message });
@@ -991,14 +997,66 @@ app.get("/api/mappings", async (req, res) => {
 // /api/mappings path to the public (no-IAP) backend so the public map-viewer
 // can read pins anonymously; saves live at a separate path that routes through
 // the private (IAP-protected) backend.
+//
+// Optimistic concurrency control: clients send the generation they last saw
+// in `expectedGeneration`. We use GCS ifGenerationMatch so the write fails
+// atomically if another editor saved between load and save. On conflict we
+// return 409 with the current state so the client can merge and retry.
 const saveMappingsHandler = async (req, res) => {
-  const { project, data } = req.body;
+  const { project, data, expectedGeneration } = req.body;
   if (!project || !data) return res.status(400).json({ error: "project and data are required" });
+
+  // Strip the synthetic _generation field if a client accidentally echoed it
+  // back with the data — it's metadata, not part of the persisted document.
+  const toSave = { ...data };
+  delete toSave._generation;
+
   try {
     const file = bucket.file(`${project}/mappings.json`);
-    await file.save(JSON.stringify(data, null, 2), { contentType: "application/json" });
-    console.log(`Saved mappings: gs://${BUCKET_NAME}/${project}/mappings.json`);
-    res.json({ success: true });
+
+    // If the client supplied a generation, use it as a precondition. Older
+    // clients without the field fall back to the legacy blind-save path.
+    const saveOpts = { contentType: "application/json" };
+    if (expectedGeneration !== undefined && expectedGeneration !== null) {
+      saveOpts.preconditionOpts = { ifGenerationMatch: String(expectedGeneration) };
+    }
+
+    let savedGeneration;
+    try {
+      await file.save(JSON.stringify(toSave, null, 2), saveOpts);
+      const [metadata] = await file.getMetadata();
+      savedGeneration = String(metadata.generation || "0");
+    } catch (err) {
+      // GCS returns 412 Precondition Failed when ifGenerationMatch doesn't
+      // match (i.e., another editor's save landed in between). Surface the
+      // current state so the client can merge.
+      const status = err && (err.code || err.statusCode);
+      if (status === 412) {
+        try {
+          const [exists] = await file.exists();
+          if (!exists) {
+            return res.status(409).json({
+              error: "conflict",
+              current: { floorPlanImage: null, pins: [], _generation: "0" },
+            });
+          }
+          const [content] = await file.download();
+          const [metadata] = await file.getMetadata();
+          const current = JSON.parse(content.toString());
+          return res.status(409).json({
+            error: "conflict",
+            current: { ...current, _generation: String(metadata.generation || "0") },
+          });
+        } catch (innerErr) {
+          console.error("Conflict-recovery read failed:", innerErr.message);
+          return res.status(500).json({ error: "Conflict detected but could not read current state" });
+        }
+      }
+      throw err;
+    }
+
+    console.log(`Saved mappings: gs://${BUCKET_NAME}/${project}/mappings.json (gen ${savedGeneration})`);
+    res.json({ success: true, generation: savedGeneration });
   } catch (err) {
     console.error("Save mappings error:", err.message);
     res.status(500).json({ error: err.message });

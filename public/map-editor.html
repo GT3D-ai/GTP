@@ -1152,33 +1152,93 @@
       } catch {}
     }
 
+    // GCS object generation of the mappings.json we last loaded. Sent back to
+    // the server as `expectedGeneration` on save so concurrent edits can be
+    // detected — see the conflict-merge logic in saveMappings().
+    let mappingsGeneration = "0";
+
     async function loadMappings() {
       try {
         const res = await fetch(`/api/mappings?project=${encodeURIComponent(project)}`);
         if (!res.ok) return;
-        mappings = await res.json();
+        const payload = await res.json();
+        mappingsGeneration = payload._generation || "0";
+        delete payload._generation;
+        mappings = payload;
       } catch {}
     }
 
+    // Merge a local mappings doc with a fresher server doc after a 409
+    // conflict. Strategy:
+    //   - pins: union by image360. Local wins on duplicates so the editor's
+    //           own placement isn't undone, but the other editor's pins are
+    //           preserved. Caveat: this can re-add a pin that one editor
+    //           deleted if the other editor still had it locally — handling
+    //           that needs a 3-way diff which we haven't implemented.
+    //   - floorPlans: take server's, then layer local's on top so the editor's
+    //                 explicit assignments win for the levels they touched.
+    //   - floorPlanImage: prefer local if it's set; otherwise fall back to
+    //                     server's (handles the project-wide cover too).
+    function mergeMappings(local, current) {
+      const byKey = new Map();
+      (current.pins || []).forEach((p) => { if (p && p.image360) byKey.set(p.image360, p); });
+      (local.pins || []).forEach((p) => { if (p && p.image360) byKey.set(p.image360, p); });
+      return {
+        ...current,
+        ...local,
+        floorPlanImage: (local.floorPlanImage !== undefined && local.floorPlanImage !== null)
+          ? local.floorPlanImage
+          : current.floorPlanImage,
+        floorPlans: { ...(current.floorPlans || {}), ...(local.floorPlans || {}) },
+        pins: [...byKey.values()],
+      };
+    }
+
     async function saveMappings() {
+      saveStatus.style.color = "";
       saveStatus.textContent = "Saving...";
-      try {
-        // Note: save endpoint is /api/save-mappings (private, IAP-gated). The
-        // GET /api/mappings is public for the map-viewer; writes need auth and
-        // must not share a path with the public read.
-        const res = await fetch("/api/save-mappings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project, data: mappings }),
-        });
-        if (!res.ok) throw new Error();
-        saveStatus.textContent = "Saved";
-        setTimeout(() => { saveStatus.textContent = ""; }, 2000);
-      } catch {
-        saveStatus.textContent = "Save failed";
-        saveStatus.style.color = "var(--danger)";
-        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = "var(--success)"; }, 3000);
+      // Up to two attempts: first with our generation, second after merging
+      // in any newer server state. If we still conflict after a merge+retry,
+      // surface the failure so the editor knows to refresh manually.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          // Note: save endpoint is /api/save-mappings (private, IAP-gated). The
+          // GET /api/mappings is public for the map-viewer; writes need auth and
+          // must not share a path with the public read.
+          const res = await fetch("/api/save-mappings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project, data: mappings, expectedGeneration: mappingsGeneration }),
+          });
+
+          if (res.status === 409) {
+            // Another editor saved between our load and our save. Pull their
+            // state, merge, and try once more with the new generation.
+            const payload = await res.json().catch(() => ({}));
+            const current = payload.current || {};
+            const newGen = current._generation || "0";
+            delete current._generation;
+            mappings = mergeMappings(mappings, current);
+            mappingsGeneration = newGen;
+            // Re-render any UI that depends on mappings (pins, floor plan).
+            try { renderPins(); } catch {}
+            saveStatus.textContent = "Synced changes from another editor…";
+            continue; // retry the save
+          }
+
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const result = await res.json().catch(() => ({}));
+          if (result.generation) mappingsGeneration = result.generation;
+          saveStatus.textContent = "Saved";
+          setTimeout(() => { saveStatus.textContent = ""; }, 2000);
+          return;
+        } catch {
+          // Fall through to the failure branch below if we exhaust attempts.
+        }
       }
+      saveStatus.textContent = "Save failed — refresh the page to pick up other editors' changes.";
+      saveStatus.style.color = "var(--danger)";
+      setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = ""; }, 5000);
     }
 
     function render360List() {
