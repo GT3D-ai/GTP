@@ -45,9 +45,18 @@
       font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--ink-muted); margin-bottom: var(--space-sm);
     }
+    /* Each card: filename across the top-right, thumbnail + pencil stacked
+       on the left, action buttons mid-right, size+date pinned bottom-right. */
     .model-item {
-      display: flex; align-items: center; gap: var(--space-sm);
-      padding: 0.75rem 1rem;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-areas:
+        "name    name"
+        "thumb   actions"
+        "edit    date";
+      column-gap: var(--space-sm);
+      row-gap: 0.5rem;
+      padding: 0.875rem 1rem;
       background: var(--bg-elevated);
       border: 1px solid var(--line);
       border-top: none;
@@ -55,17 +64,62 @@
     }
     .model-item:first-child { border-top: 1px solid var(--line); }
     .model-item-icon {
-      width: 44px; height: 44px;
+      grid-area: thumb;
+      width: 64px; height: 64px;
       background: var(--bg);
       border: 1px solid var(--line);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
+      font-size: 1.4rem;
       flex-shrink: 0;
       overflow: hidden;
     }
     .model-item-icon img {
       width: 100%; height: 100%; object-fit: cover;
     }
+    .model-item-name {
+      grid-area: name;
+      font-weight: 500;
+      color: var(--ink);
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .model-item-actions {
+      grid-area: actions;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-self: start;
+    }
+    .model-item-date {
+      grid-area: date;
+      text-align: right;
+      font-size: 0.72rem;
+      color: var(--ink-subtle);
+      align-self: end;
+    }
+    .model-item-edit-thumb {
+      grid-area: edit;
+      width: 64px; /* match thumbnail width */
+      height: 28px;
+      padding: 0;
+      background: none;
+      border: 1px solid var(--line-strong);
+      color: var(--ink-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color var(--transition), border-color var(--transition);
+    }
+    .model-item-edit-thumb:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .model-item-edit-thumb svg { display: block; }
 
     /* Edit Thumbnail modal */
     .modal-dropzone {
@@ -101,9 +155,6 @@
       width: 56px; height: 56px; object-fit: cover;
       border: 1px solid var(--line);
     }
-    .model-item-info { flex: 1; min-width: 0; }
-    .model-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .model-item-meta { font-size: 0.72rem; color: var(--ink-subtle); margin-top: 2px; }
 
     .not-admin {
       background: var(--warning-bg);
@@ -463,15 +514,20 @@
             ? `<div class="model-item-icon"><img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust}" alt=""></div>`
             : `<div class="model-item-icon">&#127744;</div>`;
           row.innerHTML = `
+            <div class="model-item-name" title="${f.displayName}">${f.displayName}</div>
             ${iconHtml}
-            <div class="model-item-info">
-              <div class="model-item-name" title="${f.displayName}">${f.displayName}</div>
-              <div class="model-item-meta">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}</div>
+            <div class="model-item-actions">
+              ${isViewable(f.displayName) ? `<a class="btn btn-outline btn-sm" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" target="_blank" rel="noopener">View</a>` : ''}
+              <button class="btn btn-outline btn-sm download-btn" data-file="${f.name}">Download</button>
+              <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${f.name}" data-display="${f.displayName}">Delete</button>
             </div>
-            <a href="#" class="link-action edit-thumb-link" data-file="${f.name}" data-display="${f.displayName}" data-thumb="${f.thumbnail || ''}">Edit thumbnail</a>
-            ${isViewable(f.displayName) ? `<a class="btn btn-outline btn-sm" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" target="_blank" rel="noopener">View</a>` : ''}
-            <button class="btn btn-outline btn-sm download-btn" data-file="${f.name}">Download</button>
-            <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${f.name}" data-display="${f.displayName}">Delete</button>
+            <button class="model-item-edit-thumb edit-thumb-link" data-file="${f.name}" data-display="${f.displayName}" data-thumb="${f.thumbnail || ''}" title="Edit thumbnail" aria-label="Edit thumbnail">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+              </svg>
+            </button>
+            <div class="model-item-date">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}</div>
           `;
           list.appendChild(row);
         });
