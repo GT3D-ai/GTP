@@ -613,8 +613,13 @@
   </div>
 
   <script>
-    // The URL is /<project-name>; decode whatever comes after the first slash.
-    const projectRaw = decodeURIComponent(window.location.pathname.replace(/^\//, "").split("/")[0]);
+    // URL is either /<project> or /public/<project>. The /public/ prefix is the
+    // stable share URL routed to the no-IAP backend; when present we force a
+    // read-only view (no editor reveals, share button hidden) regardless of
+    // role so the page renders the same way for everyone who lands on it.
+    const segments = window.location.pathname.split("/").filter(Boolean);
+    const isPublicPath = segments[0] === "public";
+    const projectRaw = decodeURIComponent(isPublicPath ? (segments[1] || "") : (segments[0] || ""));
     const project = projectRaw || "";
 
     if (!project) {
@@ -643,11 +648,20 @@
     async function initPage() {
       const enc = encodeURIComponent(project);
 
-      // Editor flag — used to reveal Edit links on each card
-      canEditProject = window.me ? !!(await window.me.canEdit(project)) : false;
+      // Editor flag — used to reveal Edit links on each card. The /public/
+      // mirror always renders read-only, so we skip the role lookup and the
+      // reveal entirely when isPublicPath is true.
+      canEditProject = (!isPublicPath && window.me) ? !!(await window.me.canEdit(project)) : false;
       if (canEditProject) {
         document.querySelectorAll(".home-card").forEach((c) => c.classList.add("is-editor"));
         document.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
+      }
+      // Sharing requires editor role and the /api/share-project endpoint sits
+      // on the IAP-protected backend — hide the button on the public mirror
+      // so anonymous viewers don't get bounced to a Google login screen.
+      if (isPublicPath) {
+        const shareBtn = document.getElementById("shareProjectBtn");
+        if (shareBtn) shareBtn.style.display = "none";
       }
 
       // Title + header nav
@@ -1203,7 +1217,7 @@
           shareStatus.textContent = `Invite sent to ${email}.`;
           setTimeout(closeShareModal, 1500);
         } else {
-          const projectUrl = data.projectUrl || `${window.location.origin}/${encodeURIComponent(project)}`;
+          const projectUrl = data.projectUrl || `${window.location.origin}/public/${encodeURIComponent(project)}`;
           const subject = `You have access to "${project}" on Ground Truth 3D`;
           const body = `Hi ${name},\n\nYou've been given viewer access to the "${project}" project on Ground Truth 3D.\n\nOpen the project home page: ${projectUrl}\n`;
           window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;

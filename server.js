@@ -65,6 +65,16 @@ app.get("/images/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-images.html"));
 });
 
+// Public-view mirror of the project home page at /public/<project-name>.
+// This is the stable share URL the URL map routes to the no-IAP backend so
+// invited viewers can land on it without passing IAP. Serves the same
+// project-home.html — the page detects the /public/ prefix client-side and
+// forces a read-only view (no editor reveals, share button hidden) regardless
+// of who's visiting.
+app.get("/public/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "project-home.html"));
+});
+
 // Legacy /models(.html) → admin uploader
 app.get(["/models", "/models.html"], (req, res) => {
   res.redirect(301, "/model-upload.html");
@@ -1549,7 +1559,10 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
 
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
     const host = req.get("x-forwarded-host") || req.get("host");
-    const projectUrl = `${proto}://${host}/${encodeURIComponent(project)}`;
+    // Send invitees to the /public/<project> mirror — that path is routed to
+    // the no-IAP backend in the URL map so the recipient can land on it
+    // without being on the IAP allow-list.
+    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(project)}`;
     const coverPath = await resolveProjectCover(project);
     // Cloud Run is fronted by IAP, so the /api/2d/image proxy isn't reachable
     // from an email client without a Google login. Sign a short-lived URL
@@ -1604,8 +1617,8 @@ app.get("/:project", (req, res, next) => {
   if (!project || project.includes(".") || project.startsWith("_")) return next();
   // Reserved top-level words that are not projects
   const reserved = new Set([
-    "api", "map-viewer", "models", "plans", "images", "projects", "robots.txt",
-    "tokens.css", "app.css", "me.js",
+    "api", "map-viewer", "models", "plans", "images", "projects", "public",
+    "robots.txt", "tokens.css", "app.css", "me.js",
   ]);
   if (reserved.has(project)) return next();
   res.sendFile(path.join(__dirname, "public", "project-home.html"));
