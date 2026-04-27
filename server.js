@@ -21,6 +21,12 @@ const imageBucket = storage.bucket(IMAGE_BUCKET_NAME);
 const MODEL_BUCKET_NAME = "gt_platform_model_storage";
 const modelBucket = storage.bucket(MODEL_BUCKET_NAME);
 
+// Point clouds (LAZ, RCS, RCP, E57, etc.) — typically multi-GB scans.
+// Same upload pattern as models: signed URL → direct PUT to GCS to bypass
+// the Cloud Run request-size cap and to handle large files.
+const POINTCLOUD_BUCKET_NAME = "gt_platform_pointcloud_storage";
+const pointcloudBucket = storage.bucket(POINTCLOUD_BUCKET_NAME);
+
 const userService = createUserService({ bucket });
 
 // Body parsing (JSON only; multer handles multipart routes)
@@ -709,10 +715,10 @@ app.post("/api/upload-url", async (req, res) => {
   if (!project) return res.status(400).json({ error: "project is required" });
 
   // Authorization
-  if (bucketKind === "model" || bucketKind === "plan") {
+  if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud") {
     // Model thumbnails (<file>.thumb.jpg) pair with files editors already
     // manage on the project models page, so they're editor-gated. Everything
-    // else in the model/plan buckets stays admin-only.
+    // else in the model/plan/pointcloud buckets stays admin-only.
     const isModelThumbnail = bucketKind === "model" && fileName.endsWith(".thumb.jpg");
     if (isModelThumbnail) {
       if (!req.user?.isAdmin) {
@@ -733,6 +739,7 @@ app.post("/api/upload-url", async (req, res) => {
   if (bucketKind === "2d") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else if (bucketKind === "model") { target = modelBucket; bucketName = MODEL_BUCKET_NAME; }
   else if (bucketKind === "plan") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
+  else if (bucketKind === "pointcloud") { target = pointcloudBucket; bucketName = POINTCLOUD_BUCKET_NAME; }
   else { target = bucket; bucketName = BUCKET_NAME; }
 
   let dest = fileName;
@@ -1434,6 +1441,70 @@ app.post("/api/model/delete", requireProjectRole("editor"), async (req, res) => 
     res.json({ success: true });
   } catch (err) {
     console.error("Model delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Point cloud endpoints (gt_platform_pointcloud_storage) ----
+// Same access pattern as models: list/thumbnail/download are PUBLIC (anyone
+// with the project name can see), uploads are admin-only via /api/upload-url
+// with bucket=pointcloud, deletes are editor-gated.
+
+app.get("/api/pointcloud/files", async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = project + "/";
+    const [files] = await pointcloudBucket.getFiles({ prefix });
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+      }));
+    res.json(list);
+  } catch (err) {
+    console.error("List point clouds error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate a signed download URL for a point cloud — PUBLIC (15-min expiry).
+// Long-lived enough for big-file downloads but short enough that a leaked URL
+// stops working quickly.
+app.get("/api/pointcloud/download-url", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    const [url] = await pointcloudBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Point cloud download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a point cloud — admins + project editors.
+app.post("/api/pointcloud/delete", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const f = pointcloudBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await f.delete();
+    console.log(`Deleted point cloud: gs://${POINTCLOUD_BUCKET_NAME}/${filePath}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Point cloud delete error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
