@@ -233,6 +233,12 @@
 
     let selectedFiles = [];
 
+    const VIEWABLE_EXT = new Set(["glb", "gltf", "obj", "stl", "ply", "fbx", "dae"]);
+    function isViewable(name) {
+      const ext = (name.split(".").pop() || "").toLowerCase();
+      return VIEWABLE_EXT.has(ext);
+    }
+
     function formatSize(bytes) {
       if (bytes < 1024) return bytes + " B";
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
@@ -463,6 +469,7 @@
               <div class="model-item-meta">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}</div>
             </div>
             <a href="#" class="link-action edit-thumb-link" data-file="${f.name}" data-display="${f.displayName}" data-thumb="${f.thumbnail || ''}">Edit thumbnail</a>
+            ${isViewable(f.displayName) ? `<a class="btn btn-outline btn-sm" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" target="_blank" rel="noopener">View</a>` : ''}
             <button class="btn btn-outline btn-sm download-btn" data-file="${f.name}">Download</button>
             <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${f.name}" data-display="${f.displayName}">Delete</button>
           `;

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Model Viewer — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    .main { display: flex; flex: 1; min-height: 0; }
+
+    .sidebar {
+      width: 280px;
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      padding: 0.875rem var(--space-sm);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--line);
+    }
+    .sidebar-section {
+      padding: var(--space-sm);
+      border-bottom: 1px solid var(--line);
+    }
+    .sidebar-section h4 {
+      margin: 0 0 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+    .meta-row {
+      display: flex; justify-content: space-between; gap: 0.75rem;
+      font-size: 0.8125rem;
+      padding: 3px 0;
+    }
+    .meta-row .k { color: var(--ink-subtle); }
+    .meta-row .v { color: var(--ink); font-weight: 500; word-break: break-word; text-align: right; }
+
+    .control-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.5rem; padding: 4px 0;
+      font-size: 0.8125rem;
+    }
+    .control-row label { color: var(--ink); }
+    .control-row input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+    .control-row input[type=color] {
+      width: 32px; height: 22px; padding: 0; border: 1px solid var(--line-strong);
+      background: none; cursor: pointer;
+    }
+    .control-row select {
+      padding: 2px 6px; background: var(--bg); border: 1px solid var(--line-strong);
+      color: var(--ink); font-family: var(--font-sans); font-size: 0.78rem; outline: none; cursor: pointer;
+    }
+
+    .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .toolbar .btn { flex: 1 1 auto; }
+
+    .viewer-area {
+      flex: 1;
+      position: relative;
+      background: var(--secondary-block);
+      min-width: 0;
+    }
+    #canvas-host { position: absolute; inset: 0; }
+    #canvas-host canvas { display: block; }
+
+    .overlay-msg {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(42, 47, 54, 0.85);
+      color: rgba(255,255,255,0.85);
+      font-size: 0.875rem;
+      letter-spacing: 0.06em;
+      text-align: center;
+      padding: var(--space-md);
+      z-index: 10;
+    }
+    .overlay-msg .icon { font-size: 2.5rem; margin-bottom: var(--space-sm); display: block; }
+    .overlay-msg.hidden { display: none; }
+    .overlay-msg .progress {
+      margin-top: 0.75rem;
+      width: 240px; height: 2px;
+      background: rgba(255,255,255,0.12);
+      overflow: hidden;
+    }
+    .overlay-msg .progress-fill {
+      height: 100%; width: 0%;
+      background: var(--accent);
+      transition: width 0.15s;
+    }
+    .overlay-msg.error { color: #ff8a7a; }
+    .overlay-msg .download-link {
+      display: inline-block;
+      margin-top: var(--space-sm);
+      padding: 0.5rem 1rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    .overlay-msg .download-link:hover { background: var(--accent-hover); }
+
+    .hud {
+      position: absolute;
+      bottom: 12px; right: 12px;
+      background: rgba(0,0,0,0.55);
+      color: rgba(255,255,255,0.78);
+      font-size: 0.7rem;
+      padding: 6px 10px;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      font-feature-settings: "tnum";
+    }
+
+    @media (max-width: 720px) {
+      .main { flex-direction: column; }
+      .sidebar { width: 100%; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--line); overflow-y: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a id="modelsLink" href="#">All Models</a>
+        <a id="mapLink" href="#">Map</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="sidebar">
+      <div class="sidebar-header">Model</div>
+
+      <div class="sidebar-section">
+        <h4>File</h4>
+        <div class="meta-row"><span class="k">Name</span><span class="v" id="metaName">—</span></div>
+        <div class="meta-row"><span class="k">Format</span><span class="v" id="metaFormat">—</span></div>
+        <div class="meta-row"><span class="k">Size</span><span class="v" id="metaSize">—</span></div>
+        <div class="meta-row"><span class="k">Project</span><span class="v" id="metaProject">—</span></div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Geometry</h4>
+        <div class="meta-row"><span class="k">Meshes</span><span class="v" id="metaMeshes">—</span></div>
+        <div class="meta-row"><span class="k">Vertices</span><span class="v" id="metaVerts">—</span></div>
+        <div class="meta-row"><span class="k">Triangles</span><span class="v" id="metaTris">—</span></div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Display</h4>
+        <div class="control-row">
+          <label for="bgColor">Background</label>
+          <input type="color" id="bgColor" value="#2a2f36">
+        </div>
+        <div class="control-row">
+          <label for="wireframe">Wireframe</label>
+          <input type="checkbox" id="wireframe">
+        </div>
+        <div class="control-row">
+          <label for="showGrid">Ground grid</label>
+          <input type="checkbox" id="showGrid" checked>
+        </div>
+        <div class="control-row">
+          <label for="autoRotate">Auto-rotate</label>
+          <input type="checkbox" id="autoRotate">
+        </div>
+        <div class="control-row">
+          <label for="upAxis">Up axis</label>
+          <select id="upAxis">
+            <option value="Y">Y (default)</option>
+            <option value="Z">Z</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Actions</h4>
+        <div class="toolbar">
+          <button class="btn btn-outline btn-sm" id="resetViewBtn">Reset view</button>
+          <button class="btn btn-outline btn-sm" id="downloadBtn">Download</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="viewer-area">
+      <div id="canvas-host"></div>
+      <div class="overlay-msg" id="overlay">
+        <div>
+          <span class="icon">&#127744;</span>
+          <div id="overlayText">Loading…</div>
+          <div class="progress" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+      </div>
+      <div class="hud" id="hud" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    // ---------- URL params ----------
+    const params = new URLSearchParams(window.location.search);
+    const filePath = params.get('file');           // e.g. "myproject/scene.glb"
+    if (!filePath) {
+      showError("No file specified. URL must include ?file=<gcs-path>.");
+      throw new Error("missing file param");
+    }
+    const project = filePath.split('/')[0];
+    const displayName = filePath.split('/').slice(1).join('/') || filePath;
+    const ext = (filePath.split('.').pop() || '').toLowerCase();
+
+    document.getElementById('modelsLink').href = `/models/${encodeURIComponent(project)}`;
+    document.getElementById('mapLink').href = `/map-viewer/${encodeURIComponent(project)}`;
+    document.title = `${displayName} — GT Platform`;
+
+    document.getElementById('metaName').textContent = displayName;
+    document.getElementById('metaFormat').textContent = '.' + ext;
+    document.getElementById('metaProject').textContent = project;
+
+    // ---------- Three.js setup ----------
+    const host = document.getElementById('canvas-host');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x2a2f36);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(host.clientWidth, host.clientHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    host.appendChild(renderer.domElement);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    const camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 0.1, 1000);
+    camera.position.set(3, 2, 5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.4);
+    dir.position.set(5, 10, 7);
+    scene.add(dir);
+
+    let grid = new THREE.GridHelper(20, 20, 0x666666, 0x333333);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.5;
+    scene.add(grid);
+
+    // Resize
+    const ro = new ResizeObserver(() => {
+      const w = host.clientWidth, h = host.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    });
+    ro.observe(host);
+
+    // Render loop
+    const hud = document.getElementById('hud');
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ---------- Controls wiring ----------
+    let currentRoot = null;
+    let originalMaterials = new WeakMap(); // mesh -> { wireframe }
+
+    document.getElementById('bgColor').addEventListener('input', (e) => {
+      scene.background = new THREE.Color(e.target.value);
+    });
+    document.getElementById('wireframe').addEventListener('change', (e) => {
+      const on = e.target.checked;
+      if (!currentRoot) return;
+      currentRoot.traverse((obj) => {
+        if (obj.isMesh && obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          mats.forEach((m) => { if ('wireframe' in m) m.wireframe = on; });
+        }
+      });
+    });
+    document.getElementById('showGrid').addEventListener('change', (e) => {
+      grid.visible = e.target.checked;
+    });
+    document.getElementById('autoRotate').addEventListener('change', (e) => {
+      controls.autoRotate = e.target.checked;
+      controls.autoRotateSpeed = 1.5;
+    });
+    document.getElementById('upAxis').addEventListener('change', (e) => {
+      if (!currentRoot) return;
+      // Z-up models (common in CAD/STL) need a -90° X rotation to look right with Y-up cameras
+      currentRoot.rotation.x = e.target.value === 'Z' ? -Math.PI / 2 : 0;
+      frameObject(currentRoot);
+    });
+    document.getElementById('resetViewBtn').addEventListener('click', () => {
+      if (currentRoot) frameObject(currentRoot);
+    });
+    document.getElementById('downloadBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('downloadBtn');
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '…';
+      try {
+        const r = await fetch(`/api/model/download-url?file=${encodeURIComponent(filePath)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const { downloadUrl } = await r.json();
+        window.location.href = downloadUrl;
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
+      } catch (err) {
+        alert('Download failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+
+    // ---------- Loading ----------
+    const overlay = document.getElementById('overlay');
+    const overlayText = document.getElementById('overlayText');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressFill = document.getElementById('progressFill');
+
+    function showOverlay(text, { showProgress = false, isError = false } = {}) {
+      overlay.classList.remove('hidden');
+      overlay.classList.toggle('error', isError);
+      overlayText.textContent = text;
+      progressWrap.style.display = showProgress ? 'block' : 'none';
+      if (!showProgress) progressFill.style.width = '0%';
+    }
+    function hideOverlay() { overlay.classList.add('hidden'); }
+    function setProgress(loaded, total) {
+      if (!total) return;
+      progressFill.style.width = ((loaded / total) * 100).toFixed(1) + '%';
+    }
+    function showError(msg, withDownload = false) {
+      overlay.classList.remove('hidden');
+      overlay.classList.add('error');
+      progressWrap.style.display = 'none';
+      const dl = withDownload
+        ? `<a class="download-link" href="#" id="errDownload">Download to view in Blender</a>`
+        : '';
+      overlay.querySelector('div').innerHTML = `
+        <span class="icon">&#9888;&#65039;</span>
+        <div>${msg}</div>
+        ${dl}
+      `;
+      if (withDownload) {
+        document.getElementById('errDownload').addEventListener('click', async (e) => {
+          e.preventDefault();
+          const r = await fetch(`/api/model/download-url?file=${encodeURIComponent(filePath)}`);
+          const { downloadUrl } = await r.json();
+          window.location.href = downloadUrl;
+        });
+      }
+    }
+
+    const SUPPORTED = new Set(['glb', 'gltf', 'obj', 'stl', 'ply', 'fbx', 'dae']);
+
+    if (!SUPPORTED.has(ext)) {
+      showError(
+        `<strong>.${ext}</strong> isn't supported in the browser viewer.<br>
+        Common files like .glb, .gltf, .obj, .stl, .ply, .fbx, and .dae work.`,
+        true
+      );
+    } else {
+      showOverlay('Requesting signed URL…', { showProgress: false });
+      loadAndDisplay().catch((err) => {
+        console.error(err);
+        showError(`Failed to load model: ${err.message || err}`, true);
+      });
+    }
+
+    async function getSignedUrl(path) {
+      const r = await fetch(`/api/model/download-url?file=${encodeURIComponent(path)}`);
+      if (!r.ok) throw new Error(`Could not get signed URL for ${path} (HTTP ${r.status})`);
+      const { downloadUrl } = await r.json();
+      return downloadUrl;
+    }
+
+    async function listProjectFiles() {
+      const r = await fetch(`/api/model/files?project=${encodeURIComponent(project)}`);
+      if (!r.ok) return [];
+      return await r.json();
+    }
+
+    async function loadAndDisplay() {
+      const url = await getSignedUrl(filePath);
+
+      // Fetch the project file listing once — used for the sidebar size
+      // and to pass companion info (e.g. OBJ → MTL) into the loader.
+      let myEntry = null;
+      try {
+        const list = await listProjectFiles();
+        myEntry = list.find((f) => f.name === filePath) || null;
+        if (myEntry?.size) document.getElementById('metaSize').textContent = formatBytes(myEntry.size);
+      } catch {}
+
+      showOverlay('Downloading model…', { showProgress: true });
+
+      let root;
+      switch (ext) {
+        case 'glb':
+        case 'gltf':
+          root = await loadGLTF(url);
+          break;
+        case 'obj':
+          root = await loadOBJ(url, myEntry);
+          break;
+        case 'stl':
+          root = await loadSTL(url);
+          break;
+        case 'ply':
+          root = await loadPLY(url);
+          break;
+        case 'fbx':
+          root = await loadFBX(url);
+          break;
+        case 'dae':
+          root = await loadDAE(url);
+          break;
+      }
+
+      scene.add(root);
+      currentRoot = root;
+
+      // Auto-detect Z-up for STL/PLY (typical CAD output)
+      if (ext === 'stl' || ext === 'ply') {
+        document.getElementById('upAxis').value = 'Z';
+        root.rotation.x = -Math.PI / 2;
+      }
+
+      frameObject(root);
+      updateGeometryStats(root);
+      hideOverlay();
+      hud.style.display = 'block';
+      hud.textContent = 'Drag = orbit · Right-drag = pan · Scroll = zoom';
+      setTimeout(() => { hud.style.display = 'none'; }, 4000);
+    }
+
+    // ---------- Loaders (lazy) ----------
+    function progressOf(evt) {
+      if (evt && evt.lengthComputable) setProgress(evt.loaded, evt.total);
+    }
+
+    // Pre-sign every file in the same project directory (and any hidden
+    // companions surfaced on the listing entries) so loaders that follow
+    // relative references (.gltf → .bin/textures, .mtl → textures) can fetch
+    // sibling files through GCS auth. Returns the rewriter manager + dir.
+    async function presignSiblings(mainPath) {
+      const dir = mainPath.includes('/') ? mainPath.substring(0, mainPath.lastIndexOf('/')) : '';
+      const list = await listProjectFiles().catch(() => []);
+
+      const siblingNames = new Set();
+      for (const f of list) {
+        if (f.name !== mainPath && !f.name.endsWith('.thumb.jpg') && f.name.startsWith(dir + '/')) {
+          siblingNames.add(f.name);
+        }
+        // Hidden companions on listing entries (e.g. an OBJ's paired MTL) are
+        // filtered out of the visible list but still need signed URLs.
+        if (f.companions) {
+          for (const v of Object.values(f.companions)) {
+            if (typeof v === 'string') siblingNames.add(v);
+          }
+        }
+      }
+
+      const urlMap = new Map();
+      await Promise.all([...siblingNames].map(async (name) => {
+        try {
+          const u = await getSignedUrl(name);
+          const rel = name.substring(dir.length + 1);
+          urlMap.set(rel, u);
+        } catch {}
+      }));
+
+      return { urlMap, dir };
+    }
+
+    function makeSiblingManager(urlMap, dir) {
+      const manager = new THREE.LoadingManager();
+      manager.setURLModifier((reqUrl) => {
+        // Loaders resolve siblings against the main URL's directory, producing
+        // unsigned absolute URLs like ".../<bucket>/<dir>/<rel>". Match against
+        // our pre-signed map by relative-from-dir, then by basename.
+        try {
+          const u = new URL(reqUrl, window.location.href);
+          const path = decodeURIComponent(u.pathname);
+          const marker = dir ? '/' + dir + '/' : '/';
+          const idx = path.lastIndexOf(marker);
+          if (idx !== -1) {
+            const rel = path.substring(idx + marker.length);
+            if (urlMap.has(rel)) return urlMap.get(rel);
+          }
+          const last = path.split('/').pop();
+          if (last && urlMap.has(last)) return urlMap.get(last);
+        } catch {}
+        return reqUrl;
+      });
+      return manager;
+    }
+
+    async function loadGLTF(url) {
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+
+      // .glb is a single self-contained binary — no sibling resolution needed.
+      // .gltf references external .bin/textures by relative path; pre-sign them.
+      let manager;
+      if (ext === 'gltf') {
+        const { urlMap, dir } = await presignSiblings(filePath);
+        manager = makeSiblingManager(urlMap, dir);
+      }
+
+      const loader = manager ? new GLTFLoader(manager) : new GLTFLoader();
+      const gltf = await loader.loadAsync(url, progressOf);
+      return gltf.scene || gltf.scenes[0];
+    }
+
+    async function loadOBJ(url, entry) {
+      const { OBJLoader } = await import('three/addons/loaders/OBJLoader.js');
+
+      // If the listing reports a companion .mtl, load materials first so the
+      // OBJ comes in with proper materials and texture references resolve.
+      let manager;
+      let materials = null;
+      if (entry?.companions?.mtl) {
+        try {
+          const { MTLLoader } = await import('three/addons/loaders/MTLLoader.js');
+          const { urlMap, dir } = await presignSiblings(filePath);
+          manager = makeSiblingManager(urlMap, dir);
+
+          const mtlRel = entry.companions.mtl.substring(dir.length + 1);
+          const mtlUrl = urlMap.get(mtlRel);
+          if (mtlUrl) {
+            const mtlLoader = new MTLLoader(manager);
+            materials = await mtlLoader.loadAsync(mtlUrl);
+            materials.preload();
+          }
+        } catch (err) {
+          console.warn('Companion MTL failed to load — falling back to default material:', err);
+          materials = null;
+        }
+      }
+
+      const loader = manager ? new OBJLoader(manager) : new OBJLoader();
+      if (materials) loader.setMaterials(materials);
+      const obj = await loader.loadAsync(url, progressOf);
+
+      // OBJLoader leaves meshes without a material when there's no MTL.
+      // Apply a neutral standard material in that case.
+      obj.traverse((c) => {
+        if (c.isMesh && (!c.material || (Array.isArray(c.material) && c.material.length === 0))) {
+          c.material = new THREE.MeshStandardMaterial({ color: 0xb0b0b0, metalness: 0.05, roughness: 0.75 });
+        }
+      });
+      return obj;
+    }
+
+    async function loadSTL(url) {
+      const { STLLoader } = await import('three/addons/loaders/STLLoader.js');
+      const loader = new STLLoader();
+      const geom = await loader.loadAsync(url, progressOf);
+      if (!geom.hasAttribute('normal')) geom.computeVertexNormals();
+      const hasColor = geom.hasAttribute('color');
+      const mat = new THREE.MeshStandardMaterial({
+        color: hasColor ? 0xffffff : 0xb85c38,
+        metalness: 0.1,
+        roughness: 0.6,
+        vertexColors: hasColor,
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      const group = new THREE.Group();
+      group.add(mesh);
+      return group;
+    }
+
+    async function loadPLY(url) {
+      const { PLYLoader } = await import('three/addons/loaders/PLYLoader.js');
+      const loader = new PLYLoader();
+      const geom = await loader.loadAsync(url, progressOf);
+      const hasColor = geom.hasAttribute('color');
+      let object;
+      if (geom.index || geom.hasAttribute('normal') || geom.attributes.position?.count > 0 && geom.index !== null) {
+        if (!geom.hasAttribute('normal')) geom.computeVertexNormals();
+        const mat = new THREE.MeshStandardMaterial({
+          color: hasColor ? 0xffffff : 0xb0b0b0,
+          vertexColors: hasColor,
+          roughness: 0.7,
+        });
+        object = new THREE.Mesh(geom, mat);
+      } else {
+        // Point cloud
+        const mat = new THREE.PointsMaterial({
+          size: 0.01,
+          vertexColors: hasColor,
+          color: hasColor ? 0xffffff : 0xb0b0b0,
+        });
+        object = new THREE.Points(geom, mat);
+      }
+      const group = new THREE.Group();
+      group.add(object);
+      return group;
+    }
+
+    async function loadFBX(url) {
+      const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+      const loader = new FBXLoader();
+      return await loader.loadAsync(url, progressOf);
+    }
+
+    async function loadDAE(url) {
+      const { ColladaLoader } = await import('three/addons/loaders/ColladaLoader.js');
+      const loader = new ColladaLoader();
+      const collada = await loader.loadAsync(url, progressOf);
+      return collada.scene;
+    }
+
+    // ---------- Helpers ----------
+    function frameObject(object) {
+      const box = new THREE.Box3().setFromObject(object);
+      if (box.isEmpty()) return;
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+
+      const fov = camera.fov * (Math.PI / 180);
+      let distance = (maxDim / 2) / Math.tan(fov / 2);
+      distance *= 2.0; // a little breathing room
+
+      // Place the camera at a 3/4 angle
+      camera.position.copy(center).add(new THREE.Vector3(distance * 0.9, distance * 0.6, distance * 0.9));
+      camera.near = Math.max(distance / 1000, 0.001);
+      camera.far = distance * 1000;
+      camera.updateProjectionMatrix();
+
+      controls.target.copy(center);
+      controls.minDistance = distance / 100;
+      controls.maxDistance = distance * 10;
+      controls.update();
+
+      // Rescale grid roughly to model footprint
+      const gridSize = Math.max(maxDim * 4, 2);
+      scene.remove(grid);
+      grid = new THREE.GridHelper(gridSize, 20, 0x666666, 0x333333);
+      grid.material.transparent = true;
+      grid.material.opacity = 0.4;
+      grid.position.y = box.min.y;
+      grid.visible = document.getElementById('showGrid').checked;
+      scene.add(grid);
+    }
+
+    function updateGeometryStats(root) {
+      let meshes = 0, verts = 0, tris = 0;
+      root.traverse((o) => {
+        if (o.isMesh && o.geometry) {
+          meshes++;
+          const g = o.geometry;
+          const posCount = g.attributes.position?.count || 0;
+          verts += posCount;
+          if (g.index) tris += g.index.count / 3;
+          else tris += posCount / 3;
+        }
+      });
+      document.getElementById('metaMeshes').textContent = meshes.toLocaleString();
+      document.getElementById('metaVerts').textContent = verts.toLocaleString();
+      document.getElementById('metaTris').textContent = Math.floor(tris).toLocaleString();
+    }
+
+    function formatBytes(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+      if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(2) + ' MB';
+      return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+  </script>
+</body>
+</html>

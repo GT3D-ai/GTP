@@ -204,6 +204,12 @@
       loadModels(project);
     }
 
+    const VIEWABLE_EXT = new Set(["glb", "gltf", "obj", "stl", "ply", "fbx", "dae"]);
+    function isViewable(name) {
+      const ext = (name.split(".").pop() || "").toLowerCase();
+      return VIEWABLE_EXT.has(ext);
+    }
+
     function formatSize(bytes) {
       if (!bytes && bytes !== 0) return "";
       if (bytes < 1024) return bytes + " B";
@@ -250,6 +256,7 @@
                 <span>${formatSize(f.size)}</span>
               </div>
               <div class="model-card-actions">
+                ${isViewable(f.displayName) ? `<a class="btn btn-outline btn-sm" href="/model-viewer.html?file=${encodeURIComponent(f.name)}">View</a>` : ''}
                 <button class="btn btn-outline btn-sm download-btn" data-file="${escapeAttr(f.name)}">Download</button>
                 <button class="btn btn-outline btn-sm btn-danger delete-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" style="display:none;">Delete</button>
               </div>

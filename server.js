@@ -1282,6 +1282,11 @@ app.post("/api/plan/delete", requireProjectRole("editor"), async (req, res) => {
 // project/foo.glb.thumb.jpg (any image type, but we always store with the
 // .thumb.jpg suffix on the model's filename). Thumbnails are hidden from the
 // main list and surfaced as the `thumbnail` field on the associated model.
+//
+// OBJ↔MTL pairing: an OBJ at project/foo.obj is paired with project/foo.mtl
+// when both exist. The MTL is hidden from the listing and surfaced as
+// `companions.mtl` on the OBJ entry — the 3D viewer uses this to load
+// materials/textures alongside the geometry.
 app.get("/api/model/files", async (req, res) => {
   try {
     const project = req.query.project;
@@ -1289,12 +1294,24 @@ app.get("/api/model/files", async (req, res) => {
     const prefix = project + "/";
     const [files] = await modelBucket.getFiles({ prefix });
     const allNames = new Set(files.map((f) => f.name));
+
+    // Identify MTL files paired to a same-basename OBJ — they get hidden from
+    // the visible list and attached as a companion to the OBJ entry instead.
+    const pairedMtl = new Set();
+    for (const name of allNames) {
+      if (name.endsWith(".obj")) {
+        const mtl = name.slice(0, -4) + ".mtl";
+        if (allNames.has(mtl)) pairedMtl.add(mtl);
+      }
+    }
+
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !pairedMtl.has(f.name))
       .map((f) => {
         const thumbName = f.name + ".thumb.jpg";
-        return {
+        const entry = {
           name: f.name,
           displayName: f.name.replace(prefix, ""),
           size: Number(f.metadata.size),
@@ -1302,6 +1319,11 @@ app.get("/api/model/files", async (req, res) => {
           contentType: f.metadata.contentType,
           thumbnail: allNames.has(thumbName) ? thumbName : null,
         };
+        if (f.name.endsWith(".obj")) {
+          const mtl = f.name.slice(0, -4) + ".mtl";
+          if (allNames.has(mtl)) entry.companions = { mtl };
+        }
+        return entry;
       });
     res.json(list);
   } catch (err) {
@@ -1372,6 +1394,21 @@ app.post("/api/model/delete", requireProjectRole("editor"), async (req, res) => 
         console.log(`Deleted thumbnail: gs://${MODEL_BUCKET_NAME}/${filePath}.thumb.jpg`);
       }
     } catch (e) { /* non-fatal */ }
+
+    // Best-effort: remove companion MTL when deleting an OBJ. The MTL is
+    // hidden from the listing and only useful alongside its OBJ, so the
+    // pairing implies shared lifecycle.
+    if (filePath.endsWith(".obj")) {
+      try {
+        const mtlPath = filePath.slice(0, -4) + ".mtl";
+        const mtl = modelBucket.file(mtlPath);
+        const [mtlExists] = await mtl.exists();
+        if (mtlExists) {
+          await mtl.delete();
+          console.log(`Deleted companion MTL: gs://${MODEL_BUCKET_NAME}/${mtlPath}`);
+        }
+      } catch (e) { /* non-fatal */ }
+    }
 
     res.json({ success: true });
   } catch (err) {
