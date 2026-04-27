@@ -152,6 +152,16 @@
     .home-card-actions a:hover { color: var(--accent); }
     .home-card-actions a.primary { color: var(--accent); }
 
+    /* Main card has its own quick-jump links list — stack vertically with
+       a slightly larger label since the name/address rows were removed. */
+    .home-card.main .home-card-actions {
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .home-card.main .home-card-actions a {
+      font-size: 0.78rem;
+    }
+
     /* Main card spans both columns on wider layouts */
     @media (min-width: 720px) {
       .home-card.main { grid-column: 1 / -1; }
@@ -499,14 +509,11 @@
           </button>
           <div class="home-card-thumb is-placeholder" id="mainCardThumb"><span class="glyph">&#128194;</span></div>
           <div class="home-card-body">
-            <div class="home-card-eyebrow">Project</div>
-            <div class="home-card-title" id="mainCardTitle">—</div>
-            <div class="home-card-meta" id="mainCardAddress"></div>
             <div class="home-card-actions">
-              <a href="#" class="primary" id="mainMapLink">Map</a>
-              <a href="#" id="mainImagesLink">2D Images</a>
-              <a href="#" id="mainPlansLink">2D Plans</a>
-              <a href="#" id="mainModelsLink">3D Models</a>
+              <a href="#" class="primary" id="mainMapLink">360 Image Map &mdash; View 360s</a>
+              <a href="#" id="mainImagesLink">2D Images &mdash; Click to View</a>
+              <a href="#" id="mainPlansLink">2D Plans &mdash; View / Download</a>
+              <a href="#" id="mainModelsLink">3D Models &mdash; View / Download</a>
             </div>
           </div>
         </div>
@@ -749,7 +756,9 @@
       ]);
     }
 
-    // ---- Main card: cover + address ----
+    // ---- Main card: cover (project name + address now live solely in the
+    // page header above; the main card just shows the cover image and the
+    // four quick-jump links) ----
     async function loadProjectInfo() {
       try {
         const res = await fetch(`/api/project-info?project=${encodeURIComponent(project)}`);
@@ -757,17 +766,10 @@
         const info = await res.json();
         cardThumbnails = info.cardThumbnails || {};
 
-        document.getElementById("mainCardTitle").textContent = info.name || project;
-
-        const address = info.address || "";
-        const addrEl = document.getElementById("mainCardAddress");
+        // Address renders in the page header (#projectAddress) only — the
+        // main card's duplicate copy was removed for a cleaner layout.
         const headerAddrEl = document.getElementById("projectAddress");
-        if (address) {
-          addrEl.textContent = address;
-          headerAddrEl.textContent = address;
-        } else {
-          addrEl.innerHTML = '<span class="skeleton">No address set</span>';
-        }
+        if (info.address) headerAddrEl.textContent = info.address;
 
         // Editor override takes precedence over the project-level coverPhoto
         const mainSrc = cardThumbnails.main || info.coverPhoto || null;
