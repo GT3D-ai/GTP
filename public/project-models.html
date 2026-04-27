@@ -92,6 +92,63 @@
       object-fit: cover;
     }
 
+    /* Pencil overlay — editor-only, shown after canEdit() resolves */
+    .thumb-edit-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      background: rgba(0, 0, 0, 0.5);
+      border: none;
+      color: rgba(255, 255, 255, 0.95);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      transition: background var(--transition);
+    }
+    .thumb-edit-btn:hover { background: rgba(0, 0, 0, 0.78); }
+    .thumb-edit-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .thumb-edit-btn svg { display: block; }
+
+    /* Edit Thumbnail modal — ported from the admin upload page */
+    .modal-dropzone {
+      border: 1px dashed var(--line-strong);
+      background: var(--bg);
+      padding: var(--space-md);
+      text-align: center;
+      cursor: pointer;
+      min-height: 180px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .modal-dropzone:hover, .modal-dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--warning-bg);
+    }
+    .modal-dropzone p { margin: 0; font-size: 0.9rem; color: var(--ink-muted); }
+    .modal-dropzone strong { color: var(--accent); font-weight: 600; }
+    .modal-dropzone img {
+      max-width: 100%; max-height: 220px; object-fit: contain;
+      display: none;
+    }
+    .modal-dropzone img.visible { display: block; }
+    .modal-current-thumb {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.75rem;
+      background: var(--bg); border: 1px solid var(--line);
+      margin-bottom: var(--space-sm);
+      font-size: 0.8125rem; color: var(--ink-muted);
+    }
+    .modal-current-thumb img {
+      width: 56px; height: 56px; object-fit: cover;
+      border: 1px solid var(--line);
+    }
+
     .model-card-body {
       padding: var(--space-md);
       display: flex;
@@ -171,6 +228,32 @@
     </div>
   </main>
 
+  <!-- Edit Thumbnail modal — editor-only, opened via the pencil overlay -->
+  <div class="overlay" id="thumbOverlay">
+    <div class="modal">
+      <h3 id="thumbModalTitle">Edit Thumbnail</h3>
+      <div id="thumbCurrent" class="modal-current-thumb" style="display:none;">
+        <img id="thumbCurrentImg" alt="Current thumbnail">
+        <div>Current thumbnail — drop a new image to replace.</div>
+      </div>
+      <div class="modal-dropzone" id="thumbDropzone">
+        <div id="thumbPrompt">
+          <p>Drag &amp; drop an image here, or <strong>browse</strong></p>
+          <p style="font-size: 0.72rem; color: var(--ink-subtle); margin-top: 6px;">
+            Stored alongside the model as <code>.thumb.jpg</code>. Any image type accepted.
+          </p>
+        </div>
+        <img id="thumbPreview" alt="">
+      </div>
+      <input type="file" id="thumbFileInput" accept="image/*" style="display:none;">
+      <div style="display:flex; gap: var(--space-sm); margin-top: var(--space-md);">
+        <button type="button" class="btn btn-outline" id="thumbCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="thumbSaveBtn" style="flex:1;" disabled>Save Thumbnail</button>
+      </div>
+      <div class="status-message" id="thumbStatus"></div>
+    </div>
+  </div>
+
   <script>
     // Extract project from URL: /models/<project-name>
     let project = null;
@@ -244,9 +327,15 @@
         files.forEach((f) => {
           const card = document.createElement("div");
           card.className = "model-card";
+          const editBtn = `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+              </svg>
+            </button>`;
           const thumbHtml = f.thumbnail
-            ? `<div class="model-card-thumb"><img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.parentElement.classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#127744;&lt;/span&gt;'"></div>`
-            : `<div class="model-card-thumb placeholder"><span class="glyph">&#127744;</span></div>`;
+            ? `<div class="model-card-thumb">${editBtn}<img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.parentElement.classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#127744;&lt;/span&gt;'"></div>`
+            : `<div class="model-card-thumb placeholder">${editBtn}<span class="glyph">&#127744;</span></div>`;
           card.innerHTML = `
             ${thumbHtml}
             <div class="model-card-body">
@@ -284,6 +373,17 @@
               btn.disabled = false;
               btn.textContent = orig;
             }
+          });
+        });
+
+        grid.querySelectorAll(".thumb-edit-btn").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openThumbModal({
+              modelPath: btn.dataset.editFile,
+              displayName: btn.dataset.editDisplay,
+              existingThumb: btn.dataset.editThumb || null,
+            });
           });
         });
 
@@ -325,6 +425,135 @@
       }[c]));
     }
     function escapeAttr(s) { return escapeHtml(s); }
+
+    // ---- Edit Thumbnail modal ----
+    const thumbOverlay = document.getElementById("thumbOverlay");
+    const thumbModalTitle = document.getElementById("thumbModalTitle");
+    const thumbCurrent = document.getElementById("thumbCurrent");
+    const thumbCurrentImg = document.getElementById("thumbCurrentImg");
+    const thumbDropzone = document.getElementById("thumbDropzone");
+    const thumbPrompt = document.getElementById("thumbPrompt");
+    const thumbPreview = document.getElementById("thumbPreview");
+    const thumbFileInput = document.getElementById("thumbFileInput");
+    const thumbSaveBtn = document.getElementById("thumbSaveBtn");
+    const thumbCancelBtn = document.getElementById("thumbCancelBtn");
+    const thumbStatus = document.getElementById("thumbStatus");
+
+    let thumbCtx = null; // { modelPath, displayName, existingThumb, file }
+
+    function openThumbModal(ctx) {
+      thumbCtx = { ...ctx, file: null };
+      thumbModalTitle.textContent = `Thumbnail — ${ctx.displayName}`;
+      thumbStatus.className = "status-message";
+      thumbStatus.textContent = "";
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Save Thumbnail";
+      thumbPreview.classList.remove("visible");
+      thumbPreview.src = "";
+      thumbPrompt.style.display = "";
+      if (ctx.existingThumb) {
+        thumbCurrent.style.display = "flex";
+        thumbCurrentImg.src = `/api/model/thumbnail?file=${encodeURIComponent(ctx.existingThumb)}&t=${Date.now()}`;
+      } else {
+        thumbCurrent.style.display = "none";
+      }
+      thumbOverlay.classList.add("visible");
+    }
+
+    function closeThumbModal() {
+      thumbOverlay.classList.remove("visible");
+      thumbCtx = null;
+      thumbFileInput.value = "";
+    }
+
+    function setThumbFile(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      thumbCtx.file = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        thumbPreview.src = e.target.result;
+        thumbPreview.classList.add("visible");
+        thumbPrompt.style.display = "none";
+      };
+      reader.readAsDataURL(file);
+      thumbSaveBtn.disabled = false;
+    }
+
+    thumbDropzone.addEventListener("click", () => thumbFileInput.click());
+    thumbDropzone.addEventListener("dragover", (e) => { e.preventDefault(); thumbDropzone.classList.add("drag-over"); });
+    thumbDropzone.addEventListener("dragleave", () => thumbDropzone.classList.remove("drag-over"));
+    thumbDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      thumbDropzone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) setThumbFile(e.dataTransfer.files[0]);
+    });
+    thumbFileInput.addEventListener("change", () => {
+      if (thumbFileInput.files.length > 0) setThumbFile(thumbFileInput.files[0]);
+    });
+    thumbCancelBtn.addEventListener("click", closeThumbModal);
+    thumbOverlay.addEventListener("click", (e) => {
+      if (e.target === thumbOverlay) closeThumbModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && thumbOverlay.classList.contains("visible")) closeThumbModal();
+    });
+
+    thumbSaveBtn.addEventListener("click", async () => {
+      if (!thumbCtx?.file) return;
+      thumbSaveBtn.disabled = true;
+      thumbSaveBtn.textContent = "Uploading…";
+      thumbStatus.textContent = "";
+      thumbStatus.className = "status-message";
+
+      // modelPath is "project/<rel-name>". The thumbnail is stored as
+      // "<modelPath>.thumb.jpg" — derived by adding the suffix to the rel name.
+      const parts = thumbCtx.modelPath.split("/");
+      const proj = parts.shift();
+      const rel = parts.join("/");
+      const thumbFileName = rel + ".thumb.jpg";
+
+      try {
+        const res = await fetch("/api/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: "model",
+            project: proj,
+            fileName: thumbFileName,
+            contentType: "image/jpeg",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+        }
+        const { uploadUrl } = await res.json();
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", "image/jpeg");
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+          });
+          xhr.addEventListener("error", () => reject(new Error("Network error")));
+          xhr.send(thumbCtx.file);
+        });
+
+        thumbStatus.textContent = "Thumbnail saved.";
+        thumbStatus.className = "status-message visible success";
+        setTimeout(() => {
+          closeThumbModal();
+          loadModels(project);
+        }, 600);
+      } catch (err) {
+        thumbStatus.textContent = "Error: " + err.message;
+        thumbStatus.className = "status-message visible error";
+        thumbSaveBtn.disabled = false;
+        thumbSaveBtn.textContent = "Save Thumbnail";
+      }
+    });
   </script>
 </body>
 </html>

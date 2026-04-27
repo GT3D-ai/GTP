@@ -700,7 +700,18 @@ app.post("/api/upload-url", async (req, res) => {
 
   // Authorization
   if (bucketKind === "model" || bucketKind === "plan") {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: `Admin required for ${bucketKind} uploads` });
+    // Model thumbnails (<file>.thumb.jpg) pair with files editors already
+    // manage on the project models page, so they're editor-gated. Everything
+    // else in the model/plan buckets stays admin-only.
+    const isModelThumbnail = bucketKind === "model" && fileName.endsWith(".thumb.jpg");
+    if (isModelThumbnail) {
+      if (!req.user?.isAdmin) {
+        const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
+        if (!ok) return res.status(403).json({ error: `editor access to ${project} required` });
+      }
+    } else if (!req.user?.isAdmin) {
+      return res.status(403).json({ error: `Admin required for ${bucketKind} uploads` });
+    }
   } else {
     if (!req.user?.isAdmin) {
       const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
