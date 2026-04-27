@@ -383,7 +383,10 @@
           document.querySelectorAll(".editor-only").forEach((el) => el.style.display = "");
         } else {
           const logo = document.querySelector(".site-header .logo");
-          if (logo) logo.href = `/${enc}`;
+          // Non-editors land on the no-IAP /public/<project> mirror so the
+          // logo is a working "back to project home" link for anonymous
+          // viewers (the previous /<project> target hits IAP and bounces).
+          if (logo) logo.href = `/public/${enc}`;
         }
       })();
 

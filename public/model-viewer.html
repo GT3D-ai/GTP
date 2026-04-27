@@ -266,6 +266,17 @@
     document.getElementById('plansMenuItem').href = `/plans/${_enc}`;
     document.getElementById('modelsMenuItem').href = `/models/${_enc}`;
 
+    // Non-editors (anonymous viewers + project viewers) get a logo that
+    // points to the no-IAP /public/<project> mirror — the previous "/"
+    // target hits IAP and bounces them to a Google login screen.
+    (async () => {
+      const isEditor = window.me ? await window.me.canEdit(project) : false;
+      if (!isEditor) {
+        const logo = document.querySelector('.site-header .logo');
+        if (logo) logo.href = `/public/${_enc}`;
+      }
+    })();
+
     // Mobile hamburger menu — toggle, click-outside, and Escape to close
     (function () {
       const btn = document.getElementById("menuBtn");

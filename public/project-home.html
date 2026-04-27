@@ -701,6 +701,11 @@
       if (isPublicPath) {
         const shareBtn = document.getElementById("shareProjectBtn");
         if (shareBtn) shareBtn.style.display = "none";
+        // Logo on the public mirror points to the same /public/<project>
+        // page so anonymous viewers don't get bounced to IAP login when
+        // they click the brand mark to "go home".
+        const logo = document.querySelector(".site-header .logo");
+        if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
       }
 
       // Title + header nav
