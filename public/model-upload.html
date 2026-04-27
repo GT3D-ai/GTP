@@ -76,6 +76,15 @@
     .model-item-icon img {
       width: 100%; height: 100%; object-fit: cover;
     }
+    /* When the thumbnail box is rendered as an anchor (viewable file types),
+       reset link styling and add a hover hint that it's clickable. */
+    a.model-item-icon {
+      text-decoration: none;
+      color: var(--ink-subtle);
+      cursor: pointer;
+      transition: border-color var(--transition);
+    }
+    a.model-item-icon:hover { border-color: var(--ink-muted); }
     .model-item-name {
       grid-area: name;
       font-weight: 500;
@@ -510,9 +519,12 @@
           row.className = "model-item";
           // Cache-bust so the thumbnail refreshes after re-upload
           const thumbBust = `&t=${Date.now()}`;
-          const iconHtml = f.thumbnail
-            ? `<div class="model-item-icon"><img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust}" alt=""></div>`
-            : `<div class="model-item-icon">&#127744;</div>`;
+          const innerIcon = f.thumbnail
+            ? `<img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust}" alt="">`
+            : `&#127744;`;
+          const iconHtml = isViewable(f.displayName)
+            ? `<a class="model-item-icon" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" target="_blank" rel="noopener" aria-label="View ${f.displayName} in 3D viewer">${innerIcon}</a>`
+            : `<div class="model-item-icon">${innerIcon}</div>`;
           row.innerHTML = `
             <div class="model-item-name" title="${f.displayName}">${f.displayName}</div>
             ${iconHtml}
