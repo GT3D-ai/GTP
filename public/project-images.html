@@ -53,6 +53,49 @@
       transition: background var(--transition);
       position: relative;
     }
+    /* Editor hide/unhide eye in the upper-right of each thumbnail. The
+       button is only added to the DOM for editors, so non-editors don't
+       even see it in inspector. Hidden images get a "Hidden" badge plus
+       reduced opacity on the thumbnail so the editor can spot them at
+       a glance. */
+    .image-card .hide-toggle-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 6;
+      padding: 0;
+      transition: background var(--transition), transform 0.1s;
+    }
+    .image-card .hide-toggle-btn:hover { background: var(--accent); }
+    .image-card .hide-toggle-btn:active { transform: scale(0.94); }
+    .image-card .hide-toggle-btn:disabled { opacity: 0.55; cursor: progress; }
+    .image-card .hide-toggle-btn svg { display: block; }
+    .image-card.is-hidden .image-card-thumb { opacity: 0.45; }
+    .image-card.is-hidden .image-card-thumb::after {
+      content: "Hidden";
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(13, 13, 13, 0.82);
+      color: #fff;
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border-radius: 3px;
+      pointer-events: none;
+    }
     /* Editor reorder affordances. The drag handle is only revealed for
        editors via .can-reorder on the grid; viewers see the original
        static layout. */
@@ -378,10 +421,28 @@
       return ordered.concat(remaining);
     }
 
+    // SVG strings for the hide / unhide eye toggle. Visible image shows
+    // an open eye (click to hide); hidden image shows a slashed eye
+    // (click to unhide). Inlined so the icon swap doesn't refetch.
+    const EYE_OPEN_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const EYE_OFF_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.5 19.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a19.5 19.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
     async function loadImages(project) {
       try {
+        // Resolve editor status first so we can pick the right listing
+        // endpoint (editors see hidden files plus the hidden flag and
+        // load images through the editor proxy that doesn't 404 on
+        // hidden objects).
+        const isEditor = !!(window.me && await window.me.canEdit(project));
+        const listUrl = isEditor
+          ? `/api/2d/files-with-hidden?project=${encodeURIComponent(project)}`
+          : `/api/2d/files?project=${encodeURIComponent(project)}`;
+        const imageProxy = (name) => isEditor
+          ? `/api/2d/image-with-hidden?file=${encodeURIComponent(name)}`
+          : `/api/2d/image?file=${encodeURIComponent(name)}`;
+
         const [filesRes, infoRes] = await Promise.all([
-          fetch(`/api/2d/files?project=${encodeURIComponent(project)}`),
+          fetch(listUrl, { credentials: "same-origin" }),
           fetch(`/api/project-info?project=${encodeURIComponent(project)}`),
         ]);
         if (!filesRes.ok) throw new Error(`HTTP ${filesRes.status}`);
@@ -401,14 +462,21 @@
 
         ordered.forEach((f) => {
           const card = document.createElement("div");
-          card.className = "image-card";
+          card.className = "image-card" + (f.hidden ? " is-hidden" : "");
           card.dataset.file = f.name;
-          const src = `/api/2d/image?file=${encodeURIComponent(f.name)}`;
+          const src = imageProxy(f.name);
+          // Editor-only hide/unhide eye in the corner of the thumbnail.
+          // Title flips with the current state so the action label is
+          // always meaningful.
+          const hideBtnHtml = isEditor
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${f.hidden ? "1" : "0"}" title="${f.hidden ? "Unhide image" : "Hide image"}" aria-label="${f.hidden ? "Unhide image" : "Hide image"}">${f.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+            : "";
           card.innerHTML = `
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="image-card-thumb" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
               <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy" draggable="false">
             </div>
+            ${hideBtnHtml}
             <div class="image-card-body">
               <div class="image-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
               <div class="image-card-meta">
@@ -427,7 +495,7 @@
         // Click a thumbnail → open full-screen modal
         grid.querySelectorAll(".image-card-thumb").forEach((el) => {
           el.addEventListener("click", () => {
-            openPreview(el.dataset.file, el.dataset.display);
+            openPreview(el.dataset.file, el.dataset.display, isEditor);
           });
         });
 
@@ -458,8 +526,29 @@
           });
         });
 
-        // Editors get drag-to-reorder + the "Reset to chronological" button.
-        if (window.me && await window.me.canEdit(project)) {
+        // Hide / unhide toggle — flips the GCS custom-metadata flag and
+        // re-renders so the badge + opacity update with the new state.
+        grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const wasHidden = btn.dataset.hidden === "1";
+            btn.disabled = true;
+            try {
+              const r = await fetch("/api/2d/visibility", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadImages(project);
+            } catch (err) {
+              alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);
+              btn.disabled = false;
+            }
+          });
+        });
+
+        if (isEditor) {
           grid.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
           enableReorder(grid);
           const resetBtn = document.getElementById("resetOrderBtn");
@@ -635,9 +724,13 @@
     const imageClose = document.getElementById("imageClose");
     const imageDownload = document.getElementById("imageDownload");
 
-    function openPreview(filePath, displayName) {
+    function openPreview(filePath, displayName, isEditor) {
       imageTitle.textContent = displayName;
-      const src = `/api/2d/image?file=${encodeURIComponent(filePath)}`;
+      // Editors get the proxy that streams hidden images too — without
+      // this, opening a hidden thumbnail's full-screen view would 404.
+      const src = isEditor
+        ? `/api/2d/image-with-hidden?file=${encodeURIComponent(filePath)}`
+        : `/api/2d/image?file=${encodeURIComponent(filePath)}`;
       imageBody.innerHTML = `<img src="${escapeAttr(src)}" alt="${escapeAttr(displayName)}">`;
       imageDownload.href = src;
       imageDownload.setAttribute("download", displayName);

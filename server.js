@@ -1391,6 +1391,74 @@ app.post("/api/admin/2d/visibility", requireAdmin, async (req, res) => {
   }
 });
 
+// Editor: list 2D images for a project including hidden ones, plus the
+// hidden flag — used by project-images.html so editors can see what
+// they've hidden and unhide it without bouncing to the admin uploader.
+// Same shape as /api/admin/2d/files but project-scoped (the editor must
+// have rights on the named project).
+app.get("/api/2d/files-with-hidden", requireProjectRole("editor"), async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = project + "/";
+    const [files] = await imageBucket.getFiles({ prefix });
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/"))
+      .filter((f) => !f.name.includes("/_documents/"))
+      .filter((f) => !f.name.includes("/_videos/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+      }));
+    res.json(list);
+  } catch (err) {
+    console.error("List 2D editor files error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: toggle the hidden flag on a 2D image. Same handler as the
+// admin endpoint above, gated to project editors so they can manage
+// what shows on /images/<project> directly from that page.
+app.post("/api/2d/visibility", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  try {
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("2D editor visibility toggle error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: proxy any 2D image including hidden ones, so the editor view
+// can render hidden thumbnails (the public /api/2d/image returns 404 for
+// hidden files by design).
+app.get("/api/2d/image-with-hidden", requireProjectRole("editor"), async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).send("file is required");
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).send("File not found");
+    const [metadata] = await file.getMetadata();
+    res.set("Content-Type", metadata.contentType || "application/octet-stream");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    console.error("2D editor image proxy error:", err.message);
+    res.status(500).send(err.message);
+  }
+});
+
 // Upload 2D image
 app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
   if (!req.file) {
