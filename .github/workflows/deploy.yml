@@ -21,6 +21,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need at least 2 commits so we can diff against the parent to
+          # detect whether url-map.yaml changed in this push.
+          fetch-depth: 2
 
       - name: Authenticate to Google Cloud
         id: auth
@@ -70,3 +74,26 @@ jobs:
           URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')
           echo "Deployed: $URL"
           echo "::notice title=Deployed URL::$URL"
+
+      # The load-balancer URL map is a separate GCP resource from Cloud
+      # Run; updates to url-map.yaml only take effect after a `gcloud
+      # compute url-maps import`. Detect a change in this push and
+      # re-import automatically so we don't have to remember.
+      - name: Detect url-map.yaml change
+        id: urlmap
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qx 'url-map.yaml'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=URL map changed::url-map.yaml differs from previous commit; will re-import."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-import URL map
+        if: steps.urlmap.outputs.changed == 'true'
+        run: |
+          gcloud compute url-maps import gt-platform-map \
+            --source url-map.yaml \
+            --global \
+            --quiet
+          echo "::notice title=URL map imported::gt-platform-map updated from url-map.yaml"
