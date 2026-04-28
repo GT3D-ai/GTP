@@ -328,6 +328,22 @@
       transform: translate(-50%, -50%) scale(1.6);
     }
 
+    /* Highlight applied when an editor clicks a placed item in the sidebar
+       — pulses the matching pin so it's easy to spot on the floor plan. */
+    .pin.highlighted {
+      width: 18px;
+      height: 18px;
+      background: var(--accent);
+      border-color: var(--accent);
+      z-index: 15;
+      animation: pin-highlight-pulse 0.7s ease-out 3;
+    }
+    @keyframes pin-highlight-pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7), 0 0 12px rgba(255, 255, 255, 0.6); transform: translate(-50%, -50%) scale(1.0); }
+      60%  { box-shadow: 0 0 0 16px rgba(220, 38, 38, 0), 0 0 18px rgba(255, 255, 255, 0.9); transform: translate(-50%, -50%) scale(1.5); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0), 0 0 12px rgba(255, 255, 255, 0.6); transform: translate(-50%, -50%) scale(1.0); }
+    }
+
     .pin-tooltip {
       position: absolute;
       bottom: calc(100% + 8px);
@@ -1552,6 +1568,23 @@
       setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = ""; }, 5000);
     }
 
+    // Briefly flash the pin matching the given image360 path. Used by the
+    // sidebar to surface a placed photo's location on the floor plan when
+    // the editor clicks its row.
+    let highlightTimer = null;
+    function highlightPin(image360) {
+      mapContainer.querySelectorAll(".pin.highlighted").forEach((el) => el.classList.remove("highlighted"));
+      const el = mapContainer.querySelector(`.pin[data-image360="${CSS.escape(image360)}"]`);
+      if (!el) return;
+      // Force a reflow so re-clicking the same item restarts the animation
+      // instead of doing nothing (the .highlighted class would otherwise
+      // stay applied without a fresh keyframe trigger).
+      void el.offsetWidth;
+      el.classList.add("highlighted");
+      clearTimeout(highlightTimer);
+      highlightTimer = setTimeout(() => el.classList.remove("highlighted"), 2300);
+    }
+
     function render360List() {
       const placedSet = new Set(mappings.pins.map((p) => p.image360));
       fileList.innerHTML = "";
@@ -1619,6 +1652,18 @@
           e.stopPropagation();
           showThumbPopover(file.name, baseName, nameEl);
         });
+
+        // Click anywhere on a placed (lowlighted) row → flash the matching
+        // pin on the floor plan so the editor can find it. Capture phase so
+        // the name's stopPropagation doesn't suppress us when the click
+        // lands on the filename. Action controls (level select, delete) are
+        // excluded so their own behavior isn't muddied.
+        if (placedSet.has(file.name)) {
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".drag-item-actions")) return;
+            highlightPin(file.name);
+          }, true);
+        }
 
         item.addEventListener("dragstart", (e) => {
           if (e.target.closest(".drag-item-actions")) { e.preventDefault(); return; }
@@ -2570,6 +2615,7 @@
       visiblePins.forEach((pin) => {
         const el = document.createElement("div");
         el.className = "pin";
+        el.dataset.image360 = pin.image360;
         el.style.left = (pin.x * 100) + "%";
         el.style.top = (pin.y * 100) + "%";
 
