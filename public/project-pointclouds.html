@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Models — GT Platform</title>
+  <title>Point Clouds — GT Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -36,25 +36,24 @@
       margin: 0;
     }
 
-    .models-grid {
+    .pointclouds-grid {
       display: grid;
       grid-template-columns: 1fr;
       gap: 1px;
       background: var(--line);
       border: 1px solid var(--line);
     }
-    @media (min-width: 640px) { .models-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 980px) { .models-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 640px) { .pointclouds-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 980px) { .pointclouds-grid { grid-template-columns: repeat(3, 1fr); } }
 
-    .model-card {
+    .pointcloud-card {
       background: var(--bg-elevated);
       display: flex;
       flex-direction: column;
       transition: background var(--transition);
     }
 
-    /* Placeholder thumbnail — subtle tinted panel with a 3D-ish model icon */
-    .model-card-thumb {
+    .pointcloud-card-thumb {
       width: 100%;
       aspect-ratio: 4 / 3;
       background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
@@ -67,51 +66,30 @@
       position: relative;
       overflow: hidden;
     }
-    .model-card-thumb.placeholder::after {
-      /* Subtle wireframe overlay — only on the placeholder style */
+    .pointcloud-card-thumb.placeholder::after {
       content: "";
       position: absolute;
       inset: 12%;
       border: 1px solid rgba(13, 13, 13, 0.12);
       transform: rotate(3deg);
     }
-    .model-card-thumb.placeholder::before {
+    .pointcloud-card-thumb.placeholder::before {
       content: "";
       position: absolute;
       inset: 18%;
       border: 1px solid rgba(13, 13, 13, 0.08);
       transform: rotate(-4deg);
     }
-    .model-card-thumb .glyph {
+    .pointcloud-card-thumb .glyph {
       position: relative;
       z-index: 1;
     }
-    .model-card-thumb img {
+    .pointcloud-card-thumb img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
 
-    /* Thumbnail-as-link overlay — covers the whole thumb so clicking the
-       image (or placeholder glyph) opens the 3D viewer. Sits below the
-       pencil button (z-index 2) so the edit affordance still wins on click. */
-    .model-card-thumb-link {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-      color: inherit;
-    }
-    .model-card-thumb-link img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    /* Pencil overlay — editor-only, shown after canEdit() resolves */
     .thumb-edit-btn {
       position: absolute;
       top: 8px;
@@ -133,7 +111,6 @@
     .thumb-edit-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .thumb-edit-btn svg { display: block; }
 
-    /* Edit Thumbnail modal — ported from the admin upload page */
     .modal-dropzone {
       border: 1px dashed var(--line-strong);
       background: var(--bg);
@@ -168,14 +145,14 @@
       border: 1px solid var(--line);
     }
 
-    .model-card-body {
+    .pointcloud-card-body {
       padding: var(--space-md);
       display: flex;
       flex-direction: column;
       gap: 8px;
       flex: 1;
     }
-    .model-card-name {
+    .pointcloud-card-name {
       font-family: var(--font-display);
       font-weight: 600;
       font-size: 1rem;
@@ -183,27 +160,27 @@
       color: var(--ink);
       word-break: break-word;
     }
-    .model-card-meta {
+    .pointcloud-card-meta {
       font-size: 0.75rem;
       color: var(--ink-muted);
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
     }
-    .model-card-meta span:first-child { color: var(--ink); font-weight: 500; }
+    .pointcloud-card-meta span:first-child { color: var(--ink); font-weight: 500; }
 
-    .model-card-actions {
+    .pointcloud-card-actions {
       margin-top: auto;
       padding-top: 8px;
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
     }
-    .model-card-actions .btn-danger {
+    .pointcloud-card-actions .btn-danger {
       color: var(--danger);
       border-color: var(--danger);
     }
-    .model-card-actions .btn-danger:hover {
+    .pointcloud-card-actions .btn-danger:hover {
       background: var(--danger);
       color: #fff;
       border-color: var(--danger);
@@ -227,7 +204,7 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <span class="project-headline" id="projectHeadline">Models</span>
+      <span class="project-headline" id="projectHeadline">Point Clouds</span>
       <nav class="nav-primary" aria-label="Primary">
         <a id="mapViewerLink" href="#">Map</a>
       </nav>
@@ -250,18 +227,17 @@
 
   <main class="container">
     <div class="page-head">
-      <h1>Models</h1>
-      <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload model</a>
+      <h1>Point Clouds</h1>
+      <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload point cloud</a>
     </div>
 
-    <div id="modelsWrap">
+    <div id="pointcloudsWrap">
       <div class="placeholder">
         <p>Loading…</p>
       </div>
     </div>
   </main>
 
-  <!-- Edit Thumbnail modal — editor-only, opened via the pencil overlay -->
   <div class="overlay" id="thumbOverlay">
     <div class="modal">
       <h3 id="thumbModalTitle">Edit Thumbnail</h3>
@@ -273,7 +249,7 @@
         <div id="thumbPrompt">
           <p>Drag &amp; drop an image here, or <strong>browse</strong></p>
           <p style="font-size: 0.72rem; color: var(--ink-subtle); margin-top: 6px;">
-            Stored alongside the model as <code>.thumb.jpg</code>. Any image type accepted.
+            Stored alongside the point cloud as <code>.thumb.jpg</code>. Any image type accepted.
           </p>
         </div>
         <img id="thumbPreview" alt="">
@@ -288,21 +264,19 @@
   </div>
 
   <script>
-    // Extract project from URL: /models/<project-name>
     let project = null;
-    const pathMatch = window.location.pathname.match(/^\/models\/(.+?)\/?$/);
+    const pathMatch = window.location.pathname.match(/^\/pointclouds\/(.+?)\/?$/);
     if (pathMatch) project = decodeURIComponent(pathMatch[1]);
 
-    const wrap = document.getElementById("modelsWrap");
+    const wrap = document.getElementById("pointcloudsWrap");
     const projectHeadline = document.getElementById("projectHeadline");
 
     if (!project) {
-      wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /models/&lt;project-name&gt;.</div>';
+      wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /pointclouds/&lt;project-name&gt;.</div>';
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
       document.getElementById("mapViewerLink").href = `/map-viewer/${enc}`;
-      // Mobile dropdown menu — let viewers jump between project sections
       document.getElementById("homeMenuItem").href = `/public/${enc}`;
       document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
       document.getElementById("imagesMenuItem").href = `/images/${enc}`;
@@ -310,31 +284,20 @@
       document.getElementById("modelsMenuItem").href = `/models/${enc}`;
       document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
 
-      // Admin "+ Upload model" shortcut when applicable; for non-editors,
-      // re-route the GT3D logo home target to the project home page.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
         if (window.me && await window.me.isAdmin()) {
           const a = document.getElementById("adminUploadLink");
-          a.href = `/model-upload.html?project=${encodeURIComponent(project)}`;
+          a.href = `/pointcloud-upload.html?project=${encodeURIComponent(project)}`;
           a.style.display = "";
         }
         if (!isEditor) {
           const logo = document.querySelector(".site-header .logo");
-          // Non-editors land on the no-IAP /public/<project> mirror so the
-          // logo is a working "back to project home" link for anonymous
-          // viewers (the previous /<project> target hits IAP and bounces).
           if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
         }
       })();
 
-      loadModels(project);
-    }
-
-    const VIEWABLE_EXT = new Set(["glb", "gltf", "obj", "stl", "ply", "fbx", "dae"]);
-    function isViewable(name) {
-      const ext = (name.split(".").pop() || "").toLowerCase();
-      return VIEWABLE_EXT.has(ext);
+      loadPointclouds(project);
     }
 
     function formatSize(bytes) {
@@ -351,26 +314,25 @@
       return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
 
-    async function loadModels(project) {
+    async function loadPointclouds(project) {
       try {
-        const res = await fetch(`/api/model/files?project=${encodeURIComponent(project)}`);
+        const res = await fetch(`/api/pointcloud/files?project=${encodeURIComponent(project)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const files = await res.json();
 
         if (files.length === 0) {
-          wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#127744;</div><p>No models uploaded for this project yet.</p></div>';
+          wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#9729;</div><p>No point clouds uploaded for this project yet.</p></div>';
           return;
         }
 
-        // Sort newest first
         files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
 
         const grid = document.createElement("div");
-        grid.className = "models-grid";
+        grid.className = "pointclouds-grid";
 
         files.forEach((f) => {
           const card = document.createElement("div");
-          card.className = "model-card";
+          card.className = "pointcloud-card";
           const editBtn = `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 20h9"/>
@@ -378,22 +340,18 @@
               </svg>
             </button>`;
           const innerThumb = f.thumbnail
-            ? `<img src="/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.closest('.model-card-thumb').classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#127744;&lt;/span&gt;'">`
-            : `<span class="glyph">&#127744;</span>`;
-          const thumbClass = f.thumbnail ? "model-card-thumb" : "model-card-thumb placeholder";
-          const thumbHtml = isViewable(f.displayName)
-            ? `<div class="${thumbClass}">${editBtn}<a class="model-card-thumb-link" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" aria-label="View ${escapeAttr(f.displayName)} in 3D viewer">${innerThumb}</a></div>`
-            : `<div class="${thumbClass}">${editBtn}${innerThumb}</div>`;
+            ? `<img src="/api/pointcloud/thumbnail?file=${encodeURIComponent(f.thumbnail)}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.closest('.pointcloud-card-thumb').classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#9729;&lt;/span&gt;'">`
+            : `<span class="glyph">&#9729;</span>`;
+          const thumbClass = f.thumbnail ? "pointcloud-card-thumb" : "pointcloud-card-thumb placeholder";
           card.innerHTML = `
-            ${thumbHtml}
-            <div class="model-card-body">
-              <div class="model-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
-              <div class="model-card-meta">
+            <div class="${thumbClass}">${editBtn}${innerThumb}</div>
+            <div class="pointcloud-card-body">
+              <div class="pointcloud-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
+              <div class="pointcloud-card-meta">
                 <span>${formatDate(f.updated)}</span>
                 <span>${formatSize(f.size)}</span>
               </div>
-              <div class="model-card-actions">
-                ${isViewable(f.displayName) ? `<a class="btn btn-outline btn-sm" href="/model-viewer.html?file=${encodeURIComponent(f.name)}">View</a>` : ''}
+              <div class="pointcloud-card-actions">
                 <button class="btn btn-outline btn-sm download-btn" data-file="${escapeAttr(f.name)}">Download</button>
                 <button class="btn btn-outline btn-sm btn-danger delete-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" style="display:none;">Delete</button>
               </div>
@@ -411,7 +369,7 @@
             const orig = btn.textContent;
             btn.textContent = "Preparing…";
             try {
-              const r = await fetch(`/api/model/download-url?file=${encodeURIComponent(btn.dataset.file)}`);
+              const r = await fetch(`/api/pointcloud/download-url?file=${encodeURIComponent(btn.dataset.file)}`);
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               const { downloadUrl } = await r.json();
               window.location.href = downloadUrl;
@@ -428,7 +386,7 @@
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
             openThumbModal({
-              modelPath: btn.dataset.editFile,
+              filePath: btn.dataset.editFile,
               displayName: btn.dataset.editDisplay,
               existingThumb: btn.dataset.editThumb || null,
             });
@@ -443,13 +401,13 @@
             const orig = btn.textContent;
             btn.textContent = "Deleting…";
             try {
-              const r = await fetch("/api/model/delete", {
+              const r = await fetch("/api/pointcloud/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ file: btn.dataset.file }),
               });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-              loadModels(project);
+              loadPointclouds(project);
             } catch (err) {
               alert("Delete failed: " + err.message);
               btn.disabled = false;
@@ -458,7 +416,6 @@
           });
         });
 
-        // Reveal editor-only controls (Delete button) when the visitor can edit
         if (window.me && await window.me.canEdit(project)) {
           grid.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
         }
@@ -474,7 +431,6 @@
     }
     function escapeAttr(s) { return escapeHtml(s); }
 
-    // Mobile hamburger menu — toggle, click-outside, and Escape to close
     (function () {
       const btn = document.getElementById("menuBtn");
       const panel = document.getElementById("menuDropdown");
@@ -511,7 +467,7 @@
     const thumbCancelBtn = document.getElementById("thumbCancelBtn");
     const thumbStatus = document.getElementById("thumbStatus");
 
-    let thumbCtx = null; // { modelPath, displayName, existingThumb, file }
+    let thumbCtx = null; // { filePath, displayName, existingThumb, file }
 
     function openThumbModal(ctx) {
       thumbCtx = { ...ctx, file: null };
@@ -525,7 +481,7 @@
       thumbPrompt.style.display = "";
       if (ctx.existingThumb) {
         thumbCurrent.style.display = "flex";
-        thumbCurrentImg.src = `/api/model/thumbnail?file=${encodeURIComponent(ctx.existingThumb)}&t=${Date.now()}`;
+        thumbCurrentImg.src = `/api/pointcloud/thumbnail?file=${encodeURIComponent(ctx.existingThumb)}&t=${Date.now()}`;
       } else {
         thumbCurrent.style.display = "none";
       }
@@ -577,9 +533,7 @@
       thumbStatus.textContent = "";
       thumbStatus.className = "status-message";
 
-      // modelPath is "project/<rel-name>". The thumbnail is stored as
-      // "<modelPath>.thumb.jpg" — derived by adding the suffix to the rel name.
-      const parts = thumbCtx.modelPath.split("/");
+      const parts = thumbCtx.filePath.split("/");
       const proj = parts.shift();
       const rel = parts.join("/");
       const thumbFileName = rel + ".thumb.jpg";
@@ -589,7 +543,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            bucket: "model",
+            bucket: "pointcloud",
             project: proj,
             fileName: thumbFileName,
             contentType: "image/jpeg",
@@ -617,7 +571,7 @@
         thumbStatus.className = "status-message visible success";
         setTimeout(() => {
           closeThumbModal();
-          loadModels(project);
+          loadPointclouds(project);
         }, 600);
       } catch (err) {
         thumbStatus.textContent = "Error: " + err.message;

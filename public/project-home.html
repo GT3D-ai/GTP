@@ -511,6 +511,7 @@
         <a id="imagesLink" href="#">2D Images</a>
         <a id="plansLink" href="#">2D Plans</a>
         <a id="modelsLink" href="#">3D Models</a>
+        <a id="pointcloudsLink" href="#">Point Clouds</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </nav>
       <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
@@ -523,6 +524,7 @@
         <a id="imagesMenuItem" href="#">2D Images</a>
         <a id="plansMenuItem" href="#">2D Plans</a>
         <a id="modelsMenuItem" href="#">3D Models</a>
+        <a id="pointcloudsMenuItem" href="#">Point Clouds</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </div>
     </div>
@@ -583,6 +585,22 @@
                   <line x1="12" y1="22.08" x2="12" y2="12"/>
                 </svg>
                 <span>3D Models &mdash; View / Download</span>
+              </a>
+              <a href="#" id="mainPointcloudsLink">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="5" cy="6" r="1"/>
+                  <circle cx="10" cy="4" r="1"/>
+                  <circle cx="16" cy="6" r="1"/>
+                  <circle cx="20" cy="10" r="1"/>
+                  <circle cx="4" cy="12" r="1"/>
+                  <circle cx="9" cy="11" r="1"/>
+                  <circle cx="14" cy="13" r="1"/>
+                  <circle cx="19" cy="16" r="1"/>
+                  <circle cx="6" cy="18" r="1"/>
+                  <circle cx="12" cy="19" r="1"/>
+                  <circle cx="17" cy="20" r="1"/>
+                </svg>
+                <span>Point Clouds &mdash; View / Download</span>
               </a>
             </div>
           </div>
@@ -652,6 +670,22 @@
             <div class="home-card-meta" id="modelCardMeta"></div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="modelCardOpen">View 3D Models</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- POINT CLOUD: most recent -->
+        <div class="home-card" id="pointcloudCard">
+          <a href="#" class="edit-thumb-link" data-card="pointclouds">Edit</a>
+          <a id="pointcloudThumbLink" href="#" aria-label="Open point clouds">
+            <div class="home-card-thumb is-placeholder" id="pointcloudCardThumb"><span class="glyph">&#9729;</span></div>
+          </a>
+          <div class="home-card-body">
+            <div class="home-card-eyebrow">Most recent point cloud</div>
+            <div class="home-card-title" id="pointcloudCardTitle">—</div>
+            <div class="home-card-meta" id="pointcloudCardMeta"></div>
+            <div class="home-card-actions">
+              <a href="#" class="primary" id="pointcloudCardOpen">View Point Clouds</a>
             </div>
           </div>
         </div>
@@ -790,17 +824,20 @@
       document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
       document.getElementById("modelsLink").href = `/models/${enc}`;
+      document.getElementById("pointcloudsLink").href = `/pointclouds/${enc}`;
       // Mirror the same hrefs into the mobile dropdown menu
       document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
       document.getElementById("imagesMenuItem").href = `/images/${enc}`;
       document.getElementById("plansMenuItem").href = `/plans/${enc}`;
       document.getElementById("modelsMenuItem").href = `/models/${enc}`;
+      document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
 
       // Main card links
       document.getElementById("mainMapLink").href = `/map-viewer/${enc}`;
       document.getElementById("mainImagesLink").href = `/images/${enc}`;
       document.getElementById("mainPlansLink").href = `/plans/${enc}`;
       document.getElementById("mainModelsLink").href = `/models/${enc}`;
+      document.getElementById("mainPointcloudsLink").href = `/pointclouds/${enc}`;
 
       // Map card links (default open map; level param updated later)
       document.getElementById("mapThumbLink").href = `/map-viewer/${enc}`;
@@ -811,6 +848,8 @@
       document.getElementById("planCardOpen").href = `/plans/${enc}`;
       document.getElementById("modelThumbLink").href = `/models/${enc}`;
       document.getElementById("modelCardOpen").href = `/models/${enc}`;
+      document.getElementById("pointcloudThumbLink").href = `/pointclouds/${enc}`;
+      document.getElementById("pointcloudCardOpen").href = `/pointclouds/${enc}`;
       document.getElementById("imageThumbLink").href = `/images/${enc}`;
       document.getElementById("imageCardOpen").href = `/images/${enc}`;
 
@@ -821,6 +860,7 @@
         loadImageCard(),
         loadPlanCard(),
         loadModelCard(),
+        loadPointcloudCard(),
       ]);
     }
 
@@ -1107,6 +1147,47 @@
       }
     }
 
+    // ---- Point cloud card: most recently uploaded point cloud ----
+    async function loadPointcloudCard() {
+      try {
+        const res = await fetch(`/api/pointcloud/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const files = await res.json();
+        if (files.length === 0) {
+          document.getElementById("pointcloudCardTitle").textContent = "No point clouds yet";
+          document.getElementById("pointcloudCardMeta").innerHTML = '<span class="skeleton">Uploaded point clouds will appear here.</span>';
+          return;
+        }
+        files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+        const latest = files[0];
+        document.getElementById("pointcloudCardTitle").textContent = latest.displayName;
+        document.getElementById("pointcloudCardMeta").textContent =
+          `${formatDate(latest.updated)} · ${formatSize(latest.size)}`;
+        if (cardThumbnails.pointclouds) {
+          renderCardThumbImage("pointcloudCardThumb", cardThumbnails.pointclouds, "&#9729;");
+        } else if (latest.thumbnail) {
+          const thumb = document.getElementById("pointcloudCardThumb");
+          thumb.classList.remove("is-placeholder");
+          thumb.innerHTML = "";
+          const img = document.createElement("img");
+          img.src = `/api/pointcloud/thumbnail?file=${encodeURIComponent(latest.thumbnail)}`;
+          img.alt = latest.displayName;
+          img.loading = "lazy";
+          img.style.width = "100%";
+          img.style.height = "100%";
+          img.style.objectFit = "cover";
+          img.onerror = () => {
+            thumb.classList.add("is-placeholder");
+            thumb.innerHTML = '<span class="glyph">&#9729;</span>';
+          };
+          thumb.appendChild(img);
+        }
+      } catch (err) {
+        document.getElementById("pointcloudCardMeta").innerHTML =
+          `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
+      }
+    }
+
     // ---- Thumbnail picker modal ----
     const thumbModal = document.getElementById("thumbModal");
     const thumbModalTitle = document.getElementById("thumbModalTitle");
@@ -1118,7 +1199,7 @@
     const thumbClearBtn = document.getElementById("thumbClearBtn");
     let activeCard = null;
 
-    const cardLabels = { main: "Project cover", map: "Map", images: "2D Images", plans: "2D Plans", models: "3D Models" };
+    const cardLabels = { main: "Project cover", map: "Map", images: "2D Images", plans: "2D Plans", models: "3D Models", pointclouds: "Point Clouds" };
 
     function setThumbStatus(msg, isError) {
       thumbStatus.textContent = msg || "";
@@ -1203,6 +1284,7 @@
           else if (activeCard === "images") await loadImageCard();
           else if (activeCard === "plans") await loadPlanCard();
           else if (activeCard === "models") await loadModelCard();
+          else if (activeCard === "pointclouds") await loadPointcloudCard();
         }
         setThumbStatus("Saved.");
         closeThumbModal();
@@ -1242,6 +1324,7 @@
         else if (activeCard === "images") await loadImageCard();
         else if (activeCard === "plans") await loadPlanCard();
         else if (activeCard === "models") await loadModelCard();
+        else if (activeCard === "pointclouds") await loadPointcloudCard();
         closeThumbModal();
       } catch (err) {
         setThumbStatus(err.message, true);

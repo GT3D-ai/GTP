@@ -63,6 +63,11 @@ app.get("/models/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-models.html"));
 });
 
+// Public, per-project point clouds showcase: /pointclouds/<project-name>
+app.get("/pointclouds/:project", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "project-pointclouds.html"));
+});
+
 // Public, per-project plans showcase: /plans/<project-name>
 app.get("/plans/:project", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-plans.html"));
@@ -440,6 +445,7 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
     await deleteAllInBucket(bucket, prefix);
     await deleteAllInBucket(imageBucket, prefix);
     await deleteAllInBucket(modelBucket, prefix);
+    await deleteAllInBucket(pointcloudBucket, prefix);
     await userService.removeProjectFromRoster(name);
     console.log(`Deleted project: ${name}`);
     res.json({ success: true });
@@ -454,7 +460,7 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
 // `file` to clear the override and fall back to the default.
 app.post("/api/project-thumbnail", requireProjectRole("editor"), async (req, res) => {
   const { project, card, file } = req.body;
-  const validCards = new Set(["main", "images", "plans", "models"]);
+  const validCards = new Set(["main", "images", "plans", "models", "pointclouds"]);
   if (!project || !card) return res.status(400).json({ error: "project and card are required" });
   if (!validCards.has(card)) return res.status(400).json({ error: "invalid card" });
   try {
@@ -718,11 +724,14 @@ app.post("/api/upload-url", async (req, res) => {
 
   // Authorization
   if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud") {
-    // Model thumbnails (<file>.thumb.jpg) pair with files editors already
-    // manage on the project models page, so they're editor-gated. Everything
-    // else in the model/plan/pointcloud buckets stays admin-only.
-    const isModelThumbnail = bucketKind === "model" && fileName.endsWith(".thumb.jpg");
-    if (isModelThumbnail) {
+    // Per-file thumbnails (<file>.thumb.jpg) for models and point clouds pair
+    // with files editors already manage on the showcase pages, so they're
+    // editor-gated. Everything else in the model/plan/pointcloud buckets stays
+    // admin-only.
+    const isAssetThumbnail =
+      (bucketKind === "model" || bucketKind === "pointcloud") &&
+      fileName.endsWith(".thumb.jpg");
+    if (isAssetThumbnail) {
       if (!req.user?.isAdmin) {
         const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
         if (!ok) return res.status(403).json({ error: `editor access to ${project} required` });
@@ -1516,19 +1525,44 @@ app.get("/api/pointcloud/files", async (req, res) => {
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
     const [files] = await pointcloudBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
     const list = files
       .filter((f) => !f.name.endsWith("/"))
-      .map((f) => ({
-        name: f.name,
-        displayName: f.name.replace(prefix, ""),
-        size: Number(f.metadata.size),
-        updated: f.metadata.updated,
-        contentType: f.metadata.contentType,
-      }));
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+        };
+      });
     res.json(list);
   } catch (err) {
     console.error("List point clouds error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxy a point cloud thumbnail — PUBLIC
+app.get("/api/pointcloud/thumbnail", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).send("file is required");
+    if (!filePath.endsWith(".thumb.jpg")) return res.status(400).send("invalid thumbnail path");
+    const file = pointcloudBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).send("Not found");
+    const [metadata] = await file.getMetadata();
+    res.set("Content-Type", metadata.contentType || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=300");
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    console.error("Point cloud thumbnail error:", err.message);
+    res.status(500).send(err.message);
   }
 });
 
@@ -1552,16 +1586,30 @@ app.get("/api/pointcloud/download-url", async (req, res) => {
   }
 });
 
-// Delete a point cloud — admins + project editors.
+// Delete a point cloud — admins + project editors. Also deletes the sibling
+// thumbnail (<file>.thumb.jpg) if present.
 app.post("/api/pointcloud/delete", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (filePath.endsWith(".thumb.jpg")) {
+    return res.status(400).json({ error: "Thumbnails are deleted alongside their point cloud" });
+  }
   try {
     const f = pointcloudBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
     await f.delete();
     console.log(`Deleted point cloud: gs://${POINTCLOUD_BUCKET_NAME}/${filePath}`);
+
+    try {
+      const thumb = pointcloudBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) {
+        await thumb.delete();
+        console.log(`Deleted thumbnail: gs://${POINTCLOUD_BUCKET_NAME}/${filePath}.thumb.jpg`);
+      }
+    } catch (e) { /* non-fatal */ }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Point cloud delete error:", err.message);
@@ -1774,7 +1822,7 @@ app.get("/:project", (req, res, next) => {
   if (!project || project.includes(".") || project.startsWith("_")) return next();
   // Reserved top-level words that are not projects
   const reserved = new Set([
-    "api", "map-viewer", "models", "plans", "images", "projects", "public",
+    "api", "map-viewer", "models", "pointclouds", "plans", "images", "projects", "public",
     "robots.txt", "tokens.css", "app.css", "me.js",
   ]);
   if (reserved.has(project)) return next();

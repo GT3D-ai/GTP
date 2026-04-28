@@ -1,0 +1,45 @@
+defaultService: https://www.googleapis.com/compute/v1/projects/gt-platform-472016/global/backendServices/gt-platform-be-private
+name: gt-platform-map
+hostRules:
+- hosts:
+  - app.gt3d.com
+  pathMatcher: public-paths
+pathMatchers:
+- name: public-paths
+  defaultService: https://www.googleapis.com/compute/v1/projects/gt-platform-472016/global/backendServices/gt-platform-be-private
+  pathRules:
+  - service: https://www.googleapis.com/compute/v1/projects/gt-platform-472016/global/backendServices/gt-platform-be-public
+    paths:
+    - /
+    - /index.html
+    - /public/*
+    - /map-viewer/*
+    - /models/*
+    - /pointclouds/*
+    - /plans/*
+    - /images/*
+    - /model-viewer.html
+    - /tokens.css
+    - /app.css
+    - /me.js
+    - /favicon.ico
+    - /robots.txt
+    - /api/contact-request
+    - /api/project-info
+    - /api/levels
+    - /api/files
+    - /api/2d/files
+    - /api/2d/image
+    - /api/model/files
+    - /api/model/thumbnail
+    - /api/model/download-url
+    - /api/plan/files
+    - /api/plan/thumbnail
+    - /api/plan/view-url
+    - /api/plan/download-url
+    - /api/pointcloud/files
+    - /api/pointcloud/thumbnail
+    - /api/pointcloud/download-url
+    - /api/image
+    - /api/thumbnail
+    - /api/mappings
