@@ -47,15 +47,25 @@
     }
     await renderUserChip(chipEl);
 
-    // Admin-only "Users" nav link
+    // Admin-only nav links — Documents (admin upload + management page) and
+    // Users (admin user roster). Hidden from non-admins so neither the
+    // documents feature nor its existence leaks to viewers.
     const nav = inner.querySelector(".nav-primary");
     if (nav) {
       const admin = await isAdmin();
-      if (admin && !nav.querySelector('a[href="/users.html"]')) {
-        const a = document.createElement("a");
-        a.href = "/users.html";
-        a.textContent = "Users";
-        nav.appendChild(a);
+      if (admin) {
+        if (!nav.querySelector('a[href="/document-upload.html"]')) {
+          const a = document.createElement("a");
+          a.href = "/document-upload.html";
+          a.textContent = "Documents";
+          nav.appendChild(a);
+        }
+        if (!nav.querySelector('a[href="/users.html"]')) {
+          const a = document.createElement("a");
+          a.href = "/users.html";
+          a.textContent = "Users";
+          nav.appendChild(a);
+        }
       }
     }
   }

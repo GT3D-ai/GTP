@@ -724,11 +724,11 @@ app.post("/api/upload-url", async (req, res) => {
   if (!project) return res.status(400).json({ error: "project is required" });
 
   // Authorization
-  if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud") {
+  if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud" || bucketKind === "document") {
     // Per-file thumbnails (<file>.thumb.jpg) for models and point clouds pair
     // with files editors already manage on the showcase pages, so they're
-    // editor-gated. Everything else in the model/plan/pointcloud buckets stays
-    // admin-only.
+    // editor-gated. Everything else in the model/plan/pointcloud/document
+    // buckets stays admin-only — documents are admin-only across the board.
     const isAssetThumbnail =
       (bucketKind === "model" || bucketKind === "pointcloud") &&
       fileName.endsWith(".thumb.jpg");
@@ -752,6 +752,7 @@ app.post("/api/upload-url", async (req, res) => {
   else if (bucketKind === "model") { target = modelBucket; bucketName = MODEL_BUCKET_NAME; }
   else if (bucketKind === "plan") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else if (bucketKind === "pointcloud") { target = pointcloudBucket; bucketName = POINTCLOUD_BUCKET_NAME; }
+  else if (bucketKind === "document") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else { target = bucket; bucketName = BUCKET_NAME; }
 
   let dest = fileName;
@@ -759,6 +760,11 @@ app.post("/api/upload-url", async (req, res) => {
     // Plans live under a reserved _plans/ prefix so they don't leak into the
     // regular 2D images list. The caller passes fileName without the prefix.
     dest = `${project}/_plans/${fileName}`;
+  } else if (bucketKind === "document") {
+    // Documents share the image bucket but live under _documents/ — same
+    // separation pattern as plans, and they're admin-only end-to-end so they
+    // never appear in any viewer-facing listing.
+    dest = `${project}/_documents/${fileName}`;
   } else if (project && level) dest = `${project}/${level}/${fileName}`;
   else if (project) dest = `${project}/${fileName}`;
 
@@ -1094,6 +1100,7 @@ app.get("/api/2d/files", async (req, res) => {
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/")) // plans are managed separately
+      .filter((f) => !f.name.includes("/_documents/")) // documents are admin-only, never surfaced here
       .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
       .map((f) => ({
         name: f.name,
@@ -1124,6 +1131,7 @@ app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/"))
+      .filter((f) => !f.name.includes("/_documents/"))
       .map((f) => ({
         name: f.name,
         displayName: prefix ? f.name.replace(prefix, "") : f.name,
@@ -1369,6 +1377,208 @@ app.post("/api/plan/delete", requireProjectRole("editor"), async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Plan delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Document endpoints (image bucket, {project}/_documents/ prefix) ----
+// Documents are admin-only across the board: list, download, rename, change
+// visibility, and delete all require admin. The `visibility` flag is stored
+// per-document on a sidecar (<file>.meta.json) but isn't enforced by any
+// public endpoint yet — no viewer-facing surface exposes documents at all.
+
+const DOCUMENTS_PREFIX_SEG = "/_documents/";
+function isDocumentPath(p) { return typeof p === "string" && p.includes(DOCUMENTS_PREFIX_SEG); }
+function metaPathFor(filePath) { return filePath + ".meta.json"; }
+async function readDocumentMeta(filePath) {
+  try {
+    const metaFile = imageBucket.file(metaPathFor(filePath));
+    const [exists] = await metaFile.exists();
+    if (!exists) return {};
+    const [content] = await metaFile.download();
+    return JSON.parse(content.toString());
+  } catch (err) {
+    console.warn(`[document] meta read failed for ${filePath}:`, err.message);
+    return {};
+  }
+}
+async function writeDocumentMeta(filePath, meta) {
+  await imageBucket.file(metaPathFor(filePath)).save(
+    JSON.stringify(meta, null, 2),
+    { contentType: "application/json" }
+  );
+}
+
+// List documents in a project — admin only.
+app.get("/api/document/files", requireAdmin, async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = `${project}/_documents/`;
+    const [files] = await imageBucket.getFiles({ prefix });
+    const docs = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"));
+    const list = await Promise.all(docs.map(async (f) => {
+      const meta = await readDocumentMeta(f.name);
+      return {
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        uploadedBy: meta.uploadedBy || null,
+        uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+        visibility: meta.visibility === "public" ? "public" : "private",
+      };
+    }));
+    list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list);
+  } catch (err) {
+    console.error("List documents error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Acknowledge a completed direct-to-GCS upload — admin only. The signed
+// upload URL itself doesn't carry the requesting admin's identity past the
+// PUT, so the client calls this immediately after a successful PUT and the
+// server records the uploader on a sidecar metadata file.
+app.post("/api/document/uploaded", requireAdmin, async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+  try {
+    const f = imageBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    // Preserve uploadedBy if a sidecar already exists (re-upload over an
+    // existing path keeps the original uploader). Visibility defaults to
+    // private on first creation.
+    const existing = await readDocumentMeta(filePath);
+    const meta = {
+      uploadedBy: existing.uploadedBy || req.user?.email || null,
+      uploadedAt: existing.uploadedAt || new Date().toISOString(),
+      visibility: existing.visibility === "public" ? "public" : "private",
+    };
+    await writeDocumentMeta(filePath, meta);
+    res.json({ success: true, meta });
+  } catch (err) {
+    console.error("Document uploaded ack error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Signed download URL for a document — admin only (15-min expiry).
+app.get("/api/document/download-url", requireAdmin, async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Document download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Rename a document — admin only. GCS has no rename, so copy + delete on
+// both the file and its sidecar metadata. The new name must stay inside
+// the same project's _documents/ folder.
+app.post("/api/document/rename", requireAdmin, async (req, res) => {
+  const { file: filePath, newName } = req.body || {};
+  if (!filePath || !newName) return res.status(400).json({ error: "file and newName are required" });
+  if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+  const cleanNew = String(newName).trim().replace(/^\/+|\/+$/g, "");
+  if (!cleanNew || cleanNew.includes("/")) {
+    return res.status(400).json({ error: "newName must be a single filename (no slashes)" });
+  }
+  if (cleanNew.endsWith(".meta.json")) {
+    return res.status(400).json({ error: "filename can't end in .meta.json" });
+  }
+  try {
+    const dirIdx = filePath.lastIndexOf("/");
+    const newPath = filePath.slice(0, dirIdx + 1) + cleanNew;
+    if (newPath === filePath) return res.json({ success: true, newPath });
+    const src = imageBucket.file(filePath);
+    const [exists] = await src.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    const [collides] = await imageBucket.file(newPath).exists();
+    if (collides) return res.status(409).json({ error: "A document with that name already exists" });
+    await src.copy(imageBucket.file(newPath));
+    await src.delete();
+    // Move the meta sidecar alongside, if present.
+    try {
+      const oldMeta = imageBucket.file(metaPathFor(filePath));
+      const [metaExists] = await oldMeta.exists();
+      if (metaExists) {
+        await oldMeta.copy(imageBucket.file(metaPathFor(newPath)));
+        await oldMeta.delete();
+      }
+    } catch (metaErr) {
+      console.warn(`[document] meta rename failed for ${filePath}:`, metaErr.message);
+    }
+    res.json({ success: true, newPath });
+  } catch (err) {
+    console.error("Document rename error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set the public/private visibility flag on a document — admin only.
+// The flag is stored on the sidecar metadata; nothing in the codebase
+// enforces it yet (no viewer endpoint exists), so it's purely metadata
+// captured for future use.
+app.post("/api/document/visibility", requireAdmin, async (req, res) => {
+  const { file: filePath, visibility } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+  if (visibility !== "public" && visibility !== "private") {
+    return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
+  }
+  try {
+    const f = imageBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    const meta = await readDocumentMeta(filePath);
+    meta.visibility = visibility;
+    if (!meta.uploadedAt) meta.uploadedAt = new Date().toISOString();
+    await writeDocumentMeta(filePath, meta);
+    res.json({ success: true, visibility });
+  } catch (err) {
+    console.error("Document visibility error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a document — admin only. Also removes the sidecar metadata.
+app.post("/api/document/delete", requireAdmin, async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+  if (filePath.endsWith(".meta.json")) {
+    return res.status(400).json({ error: "metadata sidecars are deleted alongside their document" });
+  }
+  try {
+    const f = imageBucket.file(filePath);
+    const [exists] = await f.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await f.delete();
+    console.log(`Deleted document: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    try {
+      const meta = imageBucket.file(metaPathFor(filePath));
+      const [metaExists] = await meta.exists();
+      if (metaExists) await meta.delete();
+    } catch (e) { /* non-fatal */ }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Document delete error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1702,6 +1912,7 @@ async function resolveProjectCover(project) {
     const first = files.find((f) =>
       !f.name.endsWith("/") &&
       !f.name.includes("/_plans/") &&
+      !f.name.includes("/_documents/") &&
       (f.metadata.contentType || "").startsWith("image/") &&
       !(f.metadata.metadata && f.metadata.metadata.hidden === "true")
     );
