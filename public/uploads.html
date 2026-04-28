@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uploads — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    .page-head { display:flex; align-items:baseline; justify-content:space-between; gap:var(--space-sm); flex-wrap:wrap; margin-bottom:var(--space-md); }
+    .page-head h1 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .page-head .project-tag {
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+    .page-head .project-tag strong { color: var(--ink); }
+
+    /* Tabs across the top — one per asset type. Active tab gets a thicker
+       underline; the rest blend into the background. Wraps on narrow
+       screens so all seven still fit. */
+    .upload-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: var(--space-md);
+    }
+    .upload-tab {
+      background: none;
+      border: none;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px; /* sit on top of the bottom border */
+    }
+    .upload-tab:hover { color: var(--ink); }
+    .upload-tab.active {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+
+    .upload-panel { display: none; }
+    .upload-panel.active { display: block; }
+
+    .upload-panel .panel-hint {
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-sm);
+    }
+    .upload-panel .panel-hint code {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      padding: 1px 4px;
+      font-size: 0.78rem;
+    }
+
+    /* Reused upload mechanics — drop zone, per-file rows, progress. Mirrors
+       the styling of the existing per-asset upload pages. */
+    .panel-level-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+    .panel-level-row label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+    .panel-level-row select {
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
+
+    .file-list-wrap { display: none; margin-top: var(--space-sm); }
+    .file-list-wrap.visible { display: block; }
+    .file-entry-icon { color: var(--ink-subtle); font-size: 1rem; flex-shrink: 0; }
+    .file-entry-info { flex: 1; min-width: 0; }
+    .clear-all { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+    .clear-all:hover { text-decoration: underline; }
+    .progress-container { display: none; margin-top: var(--space-sm); }
+    .progress-container.visible { display: block; }
+    .upload-btn-wrap { display: none; margin-top: var(--space-md); }
+    .upload-btn-wrap.visible { display: block; }
+    .per-file-progress { height: 2px; background: var(--line); overflow: hidden; margin-top: 4px; }
+    .per-file-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+
+    .not-admin {
+      background: var(--warning-bg);
+      border: 1px solid var(--accent);
+      color: var(--ink);
+      padding: var(--space-lg);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .no-project {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger);
+      color: var(--ink);
+      padding: var(--space-lg);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a id="backToProject" href="#">Back to project</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="notAdmin" class="not-admin" style="display:none;">
+      Admin access required to use this page.
+    </div>
+    <div id="noProject" class="no-project" style="display:none;">
+      No project specified. Open this page from a project — the URL should look like <code>/uploads.html?project=&lt;project-name&gt;</code>.
+    </div>
+
+    <div id="uploadsRoot" style="display:none;">
+      <div class="page-head">
+        <h1>Uploads</h1>
+        <div class="project-tag">Active project: <strong id="projectName"></strong></div>
+      </div>
+
+      <div class="upload-tabs" id="uploadTabs"></div>
+      <div id="uploadPanels"></div>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const project = params.get("project");
+
+    const notAdmin = document.getElementById("notAdmin");
+    const noProject = document.getElementById("noProject");
+    const root = document.getElementById("uploadsRoot");
+    const tabsEl = document.getElementById("uploadTabs");
+    const panelsEl = document.getElementById("uploadPanels");
+
+    // Per-asset config drives the tabs and panels. Each entry knows the
+    // bucket kind for /api/upload-url, an accept hint for the file picker,
+    // whether 360-style level scoping is required, and an optional "after
+    // upload" hook (documents and videos call their /uploaded endpoint to
+    // stamp the metadata sidecar).
+    const SECTIONS = [
+      {
+        kind: "2d", label: "2D Images", asset: "image",
+        accept: "image/*",
+        hint: "Stored at <code>{project}/&lt;file&gt;</code> in the image bucket. Visible on the /images/&lt;project&gt; page.",
+      },
+      {
+        kind: "360", label: "360 Photos", asset: "panorama",
+        accept: "image/*", requiresLevel: true,
+        hint: "Equirectangular panoramas. Picked level becomes the GCS subfolder, so they show up on the map editor for that level.",
+      },
+      {
+        kind: "plan", label: "2D Plans", asset: "plan",
+        accept: "image/*,.pdf",
+        hint: "Stored under <code>{project}/_plans/</code>. Listed on the /plans/&lt;project&gt; page.",
+      },
+      {
+        kind: "model", label: "Models", asset: "model",
+        accept: ".glb,.gltf,.obj,.mtl,.stl,.ply,.fbx,.dae",
+        hint: "3D models. Listed on the /models/&lt;project&gt; page. Pair an OBJ with its MTL by uploading both with the same basename.",
+      },
+      {
+        kind: "document", label: "Documents", asset: "document",
+        accept: "",
+        hint: "Admin-only assets. Stored under <code>{project}/_documents/</code>; never surfaced to viewers.",
+        ackEndpoint: "/api/document/uploaded",
+      },
+      {
+        kind: "pointcloud", label: "Point Clouds", asset: "point cloud",
+        accept: ".laz,.las,.rcs,.rcp,.e57,.ply",
+        hint: "Multi-GB scans. Listed on the /pointclouds/&lt;project&gt; page.",
+      },
+      {
+        kind: "video", label: "Videos", asset: "video",
+        accept: "video/*",
+        hint: "Admin-only assets. Stored under <code>{project}/_videos/</code>; never surfaced to viewers.",
+        ackEndpoint: "/api/video/uploaded",
+      },
+    ];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    (async () => {
+      if (!project) { noProject.style.display = "block"; return; }
+      const myInfo = await me.getMe();
+      if (!myInfo.isAdmin) { notAdmin.style.display = "block"; return; }
+
+      // "Back to project" link in the top nav resolves to the per-project
+      // home page. The catch-all /:project route serves project-home.html.
+      document.getElementById("backToProject").href = `/${encodeURIComponent(project)}`;
+      document.getElementById("projectName").textContent = project;
+
+      buildSections();
+      activateTab(SECTIONS[0].kind);
+      root.style.display = "block";
+    })();
+
+    function buildSections() {
+      SECTIONS.forEach((cfg) => {
+        // Tab
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "upload-tab";
+        tab.dataset.tab = cfg.kind;
+        tab.textContent = cfg.label;
+        tab.addEventListener("click", () => activateTab(cfg.kind));
+        tabsEl.appendChild(tab);
+
+        // Panel — uses the section factory to wire up its own state.
+        const panel = createUploadPanel(cfg);
+        panelsEl.appendChild(panel);
+      });
+    }
+
+    function activateTab(kind) {
+      tabsEl.querySelectorAll(".upload-tab").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === kind);
+      });
+      panelsEl.querySelectorAll(".upload-panel").forEach((p) => {
+        p.classList.toggle("active", p.dataset.tab === kind);
+      });
+    }
+
+    function createUploadPanel(cfg) {
+      const panel = document.createElement("section");
+      panel.className = "upload-panel";
+      panel.dataset.tab = cfg.kind;
+
+      const idBase = `panel-${cfg.kind}`;
+      const levelHtml = cfg.requiresLevel ? `
+        <div class="panel-level-row">
+          <label for="${idBase}-level">Level</label>
+          <select id="${idBase}-level"><option value="">Loading…</option></select>
+        </div>` : "";
+
+      panel.innerHTML = `
+        <p class="panel-hint">${cfg.hint}</p>
+        ${levelHtml}
+        <div class="drop-zone" id="${idBase}-zone">
+          <div class="drop-zone-icon">&#128193;</div>
+          <p>Drag &amp; drop ${cfg.asset} files here, or <strong>browse</strong></p>
+          <p style="font-size:0.72rem; color:var(--ink-subtle); margin-top:6px;">
+            ${cfg.accept ? "Accepts: <code>" + escapeHtml(cfg.accept) + "</code>" : "Accepts any file type."}
+          </p>
+        </div>
+        <input type="file" id="${idBase}-input" multiple ${cfg.accept ? `accept="${cfg.accept}"` : ""} style="display:none;">
+
+        <div class="file-list-wrap" id="${idBase}-list">
+          <div class="file-list-header">
+            <span id="${idBase}-count">0 files selected</span>
+            <button class="clear-all" id="${idBase}-clear">Clear all</button>
+          </div>
+          <div id="${idBase}-entries"></div>
+        </div>
+
+        <div class="upload-btn-wrap" id="${idBase}-btnwrap">
+          <button class="btn btn-primary btn-block" id="${idBase}-btn">Upload ${cfg.label}</button>
+        </div>
+
+        <div class="progress-container" id="${idBase}-progress">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="${idBase}-fill"></div>
+          </div>
+          <div class="progress-text" id="${idBase}-text">0%</div>
+        </div>
+
+        <div class="status-message" id="${idBase}-status"></div>
+      `;
+
+      // Wire up after the elements exist in the panel.
+      const zone = panel.querySelector(`#${idBase}-zone`);
+      const input = panel.querySelector(`#${idBase}-input`);
+      const listEl = panel.querySelector(`#${idBase}-list`);
+      const entries = panel.querySelector(`#${idBase}-entries`);
+      const countEl = panel.querySelector(`#${idBase}-count`);
+      const clearBtn = panel.querySelector(`#${idBase}-clear`);
+      const btn = panel.querySelector(`#${idBase}-btn`);
+      const btnWrap = panel.querySelector(`#${idBase}-btnwrap`);
+      const progress = panel.querySelector(`#${idBase}-progress`);
+      const fill = panel.querySelector(`#${idBase}-fill`);
+      const text = panel.querySelector(`#${idBase}-text`);
+      const status = panel.querySelector(`#${idBase}-status`);
+      const levelSelect = cfg.requiresLevel ? panel.querySelector(`#${idBase}-level`) : null;
+
+      let selected = [];
+
+      if (cfg.requiresLevel) {
+        // Lazily fetch levels for this project.
+        fetch(`/api/levels?project=${encodeURIComponent(project)}`)
+          .then((r) => r.ok ? r.json() : [])
+          .then((levels) => {
+            levelSelect.innerHTML = "";
+            if (!levels || levels.length === 0) {
+              levelSelect.innerHTML = '<option value="">No levels — create one in the map editor first</option>';
+              return;
+            }
+            levels.forEach((lvl) => {
+              const opt = document.createElement("option");
+              opt.value = lvl;
+              opt.textContent = lvl;
+              levelSelect.appendChild(opt);
+            });
+            const defaultLevel = levels.find((l) => l.toLowerCase() === "level 1") || levels[0];
+            if (defaultLevel) levelSelect.value = defaultLevel;
+          })
+          .catch(() => {
+            levelSelect.innerHTML = '<option value="">Couldn’t load levels</option>';
+          });
+      }
+
+      function render() {
+        entries.innerHTML = "";
+        selected.forEach((file, i) => {
+          const entry = document.createElement("div");
+          entry.className = "file-entry";
+          entry.style.flexDirection = "column";
+          entry.style.alignItems = "stretch";
+          entry.innerHTML = `
+            <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
+              <span class="file-entry-icon">&#128196;</span>
+              <div class="file-entry-info">
+                <div class="file-entry-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                <div class="file-entry-size">${formatSize(file.size)}</div>
+              </div>
+              <span class="file-entry-status pending" data-i="${i}">Pending</span>
+              <button class="icon-btn" data-remove="${i}" title="Remove">&times;</button>
+            </div>
+            <div class="per-file-progress" style="display:none;" data-pfp-wrap="${i}">
+              <div class="per-file-progress-fill" data-pfp="${i}"></div>
+            </div>
+          `;
+          entries.appendChild(entry);
+        });
+        countEl.textContent = `${selected.length} file${selected.length !== 1 ? "s" : ""} selected`;
+        listEl.classList.toggle("visible", selected.length > 0);
+        btnWrap.classList.toggle("visible", selected.length > 0);
+      }
+
+      function addFiles(files) {
+        const existing = new Set(selected.map((f) => f.name + f.size));
+        for (const f of files) {
+          if (!existing.has(f.name + f.size)) selected.push(f);
+        }
+        status.classList.remove("visible");
+        progress.classList.remove("visible");
+        render();
+      }
+      function clear() {
+        selected = [];
+        input.value = "";
+        listEl.classList.remove("visible");
+        btnWrap.classList.remove("visible");
+        status.classList.remove("visible");
+        progress.classList.remove("visible");
+      }
+
+      zone.addEventListener("click", () => input.click());
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag-over"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault(); zone.classList.remove("drag-over");
+        if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+      });
+      input.addEventListener("change", () => {
+        if (input.files.length > 0) { addFiles(input.files); input.value = ""; }
+      });
+      entries.addEventListener("click", (e) => {
+        const r = e.target.closest("[data-remove]");
+        if (r) { selected.splice(parseInt(r.dataset.remove), 1); render(); }
+      });
+      clearBtn.addEventListener("click", clear);
+
+      btn.addEventListener("click", async () => {
+        if (selected.length === 0) return;
+        if (cfg.requiresLevel && !levelSelect.value) {
+          status.textContent = "Pick a level before uploading 360 photos.";
+          status.className = "status-message visible error";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Uploading…";
+        status.classList.remove("visible");
+        progress.classList.add("visible");
+
+        const total = selected.length;
+        let completed = 0, failed = 0;
+
+        for (let i = 0; i < total; i++) {
+          const file = selected[i];
+          const statusEl = entries.querySelector(`[data-i="${i}"]`);
+          const pfpWrap = entries.querySelector(`[data-pfp-wrap="${i}"]`);
+          const pfp = entries.querySelector(`[data-pfp="${i}"]`);
+          statusEl.textContent = "Uploading";
+          statusEl.className = "file-entry-status uploading";
+          pfpWrap.style.display = "block";
+          fill.style.width = ((i / total) * 100).toFixed(0) + "%";
+          text.textContent = `Uploading ${i + 1} of ${total} — ${file.name} (${formatSize(file.size)})`;
+
+          try {
+            await uploadOne(cfg, file, levelSelect ? levelSelect.value : null, (loaded, tot) => {
+              if (!tot) return;
+              pfp.style.width = ((loaded / tot) * 100).toFixed(1) + "%";
+            });
+            statusEl.textContent = "Done";
+            statusEl.className = "file-entry-status done";
+            pfp.style.width = "100%";
+            completed++;
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = "Failed";
+            statusEl.className = "file-entry-status failed";
+            failed++;
+          }
+        }
+
+        fill.style.width = "100%";
+        text.textContent = "Complete";
+
+        if (failed === 0) {
+          status.innerHTML = `<strong>${completed}</strong> ${cfg.asset}${completed !== 1 ? "s" : ""} uploaded to <strong>${escapeHtml(project)}</strong>.`;
+          status.className = "status-message visible success";
+        } else {
+          status.textContent = `${completed} uploaded, ${failed} failed.`;
+          status.className = "status-message visible error";
+        }
+
+        btn.disabled = false;
+        btn.textContent = `Upload ${cfg.label}`;
+      });
+
+      return panel;
+    }
+
+    async function uploadOne(cfg, file, level, onProgress) {
+      // 1. Signed upload URL
+      const body = {
+        bucket: cfg.kind,
+        project,
+        fileName: file.name,
+        contentType: file.type || "application/octet-stream",
+      };
+      if (cfg.requiresLevel && level) body.level = level;
+
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+      }
+      const { uploadUrl, gcsPath } = await res.json();
+
+      // 2. PUT directly to GCS with progress
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.upload.addEventListener("progress", (e) => {
+          if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+        });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error")));
+        xhr.send(file);
+      });
+
+      // 3. Optional ack — documents and videos use a sidecar to record
+      // the uploader's identity and timestamp; the per-asset endpoints
+      // already exist.
+      if (cfg.ackEndpoint) {
+        try {
+          await fetch(cfg.ackEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ file: gcsPath }),
+          });
+        } catch (e) { console.warn("Ack failed", e); }
+      }
+    }
+  </script>
+</body>
+</html>
