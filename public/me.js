@@ -49,12 +49,16 @@
 
     // Admin-only nav links — Documents (admin upload + management page) and
     // Users (admin user roster). Hidden from non-admins so neither the
-    // documents feature nor its existence leaks to viewers.
+    // documents feature nor its existence leaks to viewers. The Documents
+    // link is per-project, so it's omitted on the projects index page where
+    // each project tile owns its own actions; Users stays everywhere.
     const nav = inner.querySelector(".nav-primary");
     if (nav) {
       const admin = await isAdmin();
       if (admin) {
-        if (!nav.querySelector('a[href="/document-upload.html"]')) {
+        const path = window.location.pathname;
+        const onProjectsIndex = path === "/" || path === "/projects" || path === "/projects.html";
+        if (!onProjectsIndex && !nav.querySelector('a[href="/document-upload.html"]')) {
           const a = document.createElement("a");
           a.href = "/document-upload.html";
           a.textContent = "Documents";
