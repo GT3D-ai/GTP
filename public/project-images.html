@@ -51,7 +51,70 @@
       display: flex;
       flex-direction: column;
       transition: background var(--transition);
+      position: relative;
     }
+    /* Editor reorder affordances. The drag handle is only revealed for
+       editors via .can-reorder on the grid; viewers see the original
+       static layout. */
+    .image-card .drag-handle {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 26px;
+      height: 26px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border-radius: 4px;
+      cursor: grab;
+      z-index: 4;
+      user-select: none;
+      font-size: 0.95rem;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    .images-grid.can-reorder .image-card .drag-handle { display: flex; }
+    .image-card .drag-handle:active { cursor: grabbing; }
+    .image-card.dragging { opacity: 0.4; }
+    .image-card.drop-target {
+      box-shadow: inset 4px 0 0 var(--accent);
+    }
+    .image-card.drop-target.drop-after {
+      box-shadow: inset -4px 0 0 var(--accent);
+    }
+
+    /* Right-aligned action row in the page head — currently holds the
+       editor-only "Reset order" button next to "+ Manage images". */
+    .page-head .head-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .reset-order-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 0;
+    }
+    .reset-order-btn:hover { text-decoration: underline; }
+    .reset-order-btn:disabled { opacity: 0.5; cursor: progress; text-decoration: none; }
+
+    .order-status {
+      font-size: 0.72rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-sm);
+      min-height: 1.1em;
+    }
+    .order-status.error { color: var(--danger); }
+    .order-status.ok { color: var(--success); }
 
     .image-card-thumb {
       width: 100%;
@@ -205,8 +268,13 @@
   <main class="container">
     <div class="page-head">
       <h1>2D Images</h1>
-      <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload images</a>
+      <div class="head-actions">
+        <button type="button" class="reset-order-btn" id="resetOrderBtn" style="display:none;" title="Clear the manual order so tiles fall back to upload date (newest first)">Reset to chronological</button>
+        <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload images</a>
+      </div>
     </div>
+
+    <div class="order-status" id="orderStatus"></div>
 
     <div id="imagesWrap">
       <div class="placeholder">
@@ -282,30 +350,64 @@
       return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
 
+    // Cached project metadata so we don't re-fetch project.json after every
+    // local reorder. Refreshed from the server only on full reload.
+    let projectInfo = { imageOrder: [] };
+
+    function setOrderStatus(text, kind) {
+      const el = document.getElementById("orderStatus");
+      el.textContent = text || "";
+      el.className = "order-status" + (kind ? " " + kind : "");
+    }
+
+    // Compute the display order: items in imageOrder first (in that exact
+    // order, skipping any that no longer exist in the bucket), then any
+    // newcomers appended in chronological order (newest first). New uploads
+    // therefore land at the end of a manual order rather than disrupting it.
+    function applyOrder(files, order) {
+      const byName = new Map(files.map((f) => [f.name, f]));
+      const ordered = [];
+      const seen = new Set();
+      (order || []).forEach((name) => {
+        const f = byName.get(name);
+        if (f) { ordered.push(f); seen.add(name); }
+      });
+      const remaining = files
+        .filter((f) => !seen.has(f.name))
+        .sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+      return ordered.concat(remaining);
+    }
+
     async function loadImages(project) {
       try {
-        const res = await fetch(`/api/2d/files?project=${encodeURIComponent(project)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const files = await res.json();
+        const [filesRes, infoRes] = await Promise.all([
+          fetch(`/api/2d/files?project=${encodeURIComponent(project)}`),
+          fetch(`/api/project-info?project=${encodeURIComponent(project)}`),
+        ]);
+        if (!filesRes.ok) throw new Error(`HTTP ${filesRes.status}`);
+        const files = await filesRes.json();
+        projectInfo = infoRes.ok ? await infoRes.json() : { imageOrder: [] };
 
         if (files.length === 0) {
           wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128444;</div><p>No 2D images uploaded for this project yet.</p></div>';
           return;
         }
 
-        // Sort newest first
-        files.sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+        const ordered = applyOrder(files, projectInfo.imageOrder);
 
         const grid = document.createElement("div");
         grid.className = "images-grid";
+        grid.id = "imagesGrid";
 
-        files.forEach((f) => {
+        ordered.forEach((f) => {
           const card = document.createElement("div");
           card.className = "image-card";
+          card.dataset.file = f.name;
           const src = `/api/2d/image?file=${encodeURIComponent(f.name)}`;
           card.innerHTML = `
+            <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="image-card-thumb" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
-              <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy">
+              <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy" draggable="false">
             </div>
             <div class="image-card-body">
               <div class="image-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
@@ -356,13 +458,144 @@
           });
         });
 
+        // Editors get drag-to-reorder + the "Reset to chronological" button.
         if (window.me && await window.me.canEdit(project)) {
           grid.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
+          enableReorder(grid);
+          const resetBtn = document.getElementById("resetOrderBtn");
+          resetBtn.style.display = (projectInfo.imageOrder && projectInfo.imageOrder.length > 0) ? "" : "none";
         }
       } catch (err) {
         wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
       }
     }
+
+    // ---- Drag-to-reorder ----
+    // Each card is made draggable; the drag-handle in the corner is a hint
+    // and accessible click target, but the entire card surface accepts the
+    // drop. Drop position is "before the target" if the cursor is on the
+    // left half, otherwise "after". Saves on dragend so a single drag is
+    // a single network round-trip.
+    let draggingCard = null;
+    let dropTargetCard = null;
+    let dropAfter = false;
+
+    function enableReorder(grid) {
+      grid.classList.add("can-reorder");
+      grid.querySelectorAll(".image-card").forEach((card) => {
+        card.draggable = true;
+
+        card.addEventListener("dragstart", (e) => {
+          draggingCard = card;
+          card.classList.add("dragging");
+          // Setting any data here keeps Firefox happy — without this,
+          // dragstart fires but no subsequent drag events do.
+          try { e.dataTransfer.setData("text/plain", card.dataset.file); } catch {}
+          e.dataTransfer.effectAllowed = "move";
+        });
+
+        card.addEventListener("dragend", async () => {
+          card.classList.remove("dragging");
+          clearDropTarget();
+          if (!draggingCard) return;
+          draggingCard = null;
+          await persistOrder();
+        });
+
+        card.addEventListener("dragover", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          // Pick before/after based on which side of the card we're hovering
+          // — feels natural for a horizontal grid and degrades cleanly when
+          // the grid wraps to one column.
+          const rect = card.getBoundingClientRect();
+          dropAfter = (e.clientX - rect.left) > rect.width / 2;
+          if (dropTargetCard !== card || card.classList.contains("drop-after") !== dropAfter) {
+            clearDropTarget();
+            dropTargetCard = card;
+            card.classList.add("drop-target");
+            if (dropAfter) card.classList.add("drop-after");
+          }
+        });
+
+        card.addEventListener("dragleave", (e) => {
+          if (e.target === card) {
+            // Leaving the card itself (not bubbled from a child) — clear if
+            // this is still the active drop target.
+            if (dropTargetCard === card) clearDropTarget();
+          }
+        });
+
+        card.addEventListener("drop", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          if (dropAfter && card.nextSibling) {
+            grid.insertBefore(draggingCard, card.nextSibling);
+          } else if (dropAfter) {
+            grid.appendChild(draggingCard);
+          } else {
+            grid.insertBefore(draggingCard, card);
+          }
+          clearDropTarget();
+        });
+      });
+    }
+
+    function clearDropTarget() {
+      if (dropTargetCard) {
+        dropTargetCard.classList.remove("drop-target", "drop-after");
+        dropTargetCard = null;
+      }
+      dropAfter = false;
+    }
+
+    async function persistOrder() {
+      const grid = document.getElementById("imagesGrid");
+      if (!grid) return;
+      const order = Array.from(grid.querySelectorAll(".image-card")).map((c) => c.dataset.file);
+      setOrderStatus("Saving order…");
+      try {
+        const r = await fetch("/api/2d/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, order }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Save failed (${r.status})`);
+        projectInfo.imageOrder = data.imageOrder || order;
+        setOrderStatus("Order saved.", "ok");
+        const resetBtn = document.getElementById("resetOrderBtn");
+        if (resetBtn) resetBtn.style.display = projectInfo.imageOrder.length > 0 ? "" : "none";
+        setTimeout(() => setOrderStatus(""), 1800);
+      } catch (err) {
+        setOrderStatus("Couldn't save order: " + err.message, "error");
+      }
+    }
+
+    document.getElementById("resetOrderBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("resetOrderBtn");
+      if (!confirm("Clear the manual order? Tiles will revert to upload date (newest first).")) return;
+      btn.disabled = true;
+      setOrderStatus("Resetting…");
+      try {
+        const r = await fetch("/api/2d/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, order: [] }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Reset failed (${r.status})`);
+        projectInfo.imageOrder = [];
+        setOrderStatus("Reset to chronological.", "ok");
+        setTimeout(() => setOrderStatus(""), 1800);
+        await loadImages(project);
+      } catch (err) {
+        setOrderStatus("Reset failed: " + err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, (c) => ({

@@ -459,6 +459,45 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
 // Editor: set or clear the thumbnail override for a project home card.
 // Persists into project.json under `cardThumbnails[<card>]`. Pass an empty
 // `file` to clear the override and fall back to the default.
+// Editor: set or reset the manual presentation order for the project's
+// 2D images. The order is an array of GCS file paths and is read by the
+// public /images/<project> page; when omitted or empty, viewers fall back
+// to chronological (newest-first) order. Stored on project.json next to
+// the existing cover/cardThumbnails fields.
+app.post("/api/2d/order", requireProjectRole("editor"), async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of file paths or null" });
+  }
+  // Sanitize: keep only string entries that look like project-scoped paths.
+  // Filtering here means a stale entry (file deleted later) just gets
+  // ignored on render — no need for the client to garbage-collect.
+  const projectPrefix = `${project}/`;
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.startsWith(projectPrefix))
+        .filter((s, i, arr) => arr.indexOf(s) === i) // dedupe, first wins
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.imageOrder;
+    else meta.imageOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, imageOrder: meta.imageOrder || [] });
+  } catch (err) {
+    console.error("2d order error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/project-thumbnail", requireProjectRole("editor"), async (req, res) => {
   const { project, card, file } = req.body;
   const validCards = new Set(["main", "images", "plans", "models", "pointclouds"]);
