@@ -204,6 +204,47 @@
       background: var(--accent);
       border-color: var(--accent);
     }
+    /* Snapshot+share button — sits left of the close button, same style. */
+    .snapshot-btn {
+      position: absolute;
+      top: 16px;
+      right: 70px;
+      width: 44px;
+      height: 44px;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      cursor: pointer;
+      z-index: 1010;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+      padding: 0;
+    }
+    .snapshot-btn:hover { background: var(--accent); border-color: var(--accent); }
+    .snapshot-btn:disabled { opacity: 0.5; cursor: progress; }
+    .snapshot-btn svg { display: block; }
+    /* Brief toast shown after a snapshot is downloaded (Web Share path uses
+       the OS sheet, no toast needed). */
+    .snapshot-toast {
+      position: fixed;
+      top: calc(var(--header-h) + 16px);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.625rem 1rem;
+      background: rgba(13, 13, 13, 0.92);
+      color: #fff;
+      font-size: 0.8125rem;
+      letter-spacing: 0.02em;
+      max-width: min(90vw, 28rem);
+      text-align: center;
+      z-index: 1100;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.22s ease;
+    }
+    .snapshot-toast.visible { opacity: 1; }
 
     /* Prev/next arrows inside the 360 modal */
     .nav-btn {
@@ -330,6 +371,13 @@
 
   <div class="viewer-modal" id="viewerModal">
     <div class="modal-title" id="modalTitle"></div>
+    <button class="snapshot-btn" id="snapshotBtn" title="Send snapshot of current view" aria-label="Send snapshot of current view">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+        <polyline points="16 6 12 2 8 6"/>
+        <line x1="12" y1="2" x2="12" y2="15"/>
+      </svg>
+    </button>
     <button class="close-btn" id="closeBtn" title="Close">&times;</button>
     <button class="nav-btn prev" id="prevBtn" title="Previous (←)" aria-label="Previous">&#9664;</button>
     <button class="nav-btn next" id="nextBtn" title="Next (→)" aria-label="Next">&#9654;</button>
@@ -338,6 +386,20 @@
   </div>
 
   <script>
+    // Force preserveDrawingBuffer:true on every WebGL context created on this
+    // page. Pannellum's renderer doesn't expose this option through its config,
+    // and without it canvas.toBlob() returns black pixels for the snapshot
+    // button below. Has to run BEFORE pannellum.viewer() is called.
+    (function () {
+      const orig = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+        if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
+          attrs = Object.assign({}, attrs || {}, { preserveDrawingBuffer: true });
+        }
+        return orig.call(this, type, attrs);
+      };
+    })();
+
     let project = null;
     const pathMatch = window.location.pathname.match(/^\/map-viewer\/(.+?)\/?$/);
     if (pathMatch) project = decodeURIComponent(pathMatch[1]);
@@ -683,6 +745,81 @@
       else if (e.key === "ArrowLeft") navigate(-1);
       else if (e.key === "ArrowRight") navigate(1);
     });
+
+    // ---- Snapshot of current 360 view ----
+    // Grabs Pannellum's WebGL canvas, exports a PNG of what the user is
+    // currently looking at, and either hands it to the OS share sheet (Web
+    // Share API with files — typical on mobile and modern desktop browsers)
+    // or downloads it as a fallback. The preserveDrawingBuffer monkey-patch
+    // at the top of this script is what makes canvas.toBlob() return real
+    // pixels instead of a black frame.
+    const snapshotBtn = document.getElementById("snapshotBtn");
+    function showSnapshotToast(message) {
+      let toast = document.getElementById("snapshotToast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "snapshotToast";
+        toast.className = "snapshot-toast";
+        toast.setAttribute("role", "status");
+        toast.setAttribute("aria-live", "polite");
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      void toast.offsetWidth;
+      toast.classList.add("visible");
+      clearTimeout(toast._hideTimer);
+      toast._hideTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+    }
+
+    async function captureAndShareSnapshot() {
+      if (!viewer) return;
+      const canvas = document.querySelector("#pano360 canvas");
+      if (!canvas) {
+        showSnapshotToast("Snapshot not available yet — wait for the panorama to load.");
+        return;
+      }
+      snapshotBtn.disabled = true;
+      try {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) throw new Error("Empty snapshot");
+
+        const baseTitle = (modalTitle.textContent || "snapshot").replace(/\.[^.]+$/, "");
+        const fileName = `${baseTitle}-view.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        // Web Share API with files — preferred path. Opens the OS share sheet
+        // so the user can pick Mail / Messages / WhatsApp / etc.
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: fileName,
+              text: `Snapshot from ${modalTitle.textContent || "Ground Truth 3D"}`,
+            });
+            return;
+          } catch (err) {
+            if (err && err.name === "AbortError") return; // user cancelled — silent
+            // fall through to download
+          }
+        }
+
+        // Fallback: download. The user can then attach it in their email or chat app.
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showSnapshotToast("Snapshot saved — attach it to your message to share.");
+      } catch (err) {
+        console.error("Snapshot failed:", err);
+        showSnapshotToast("Snapshot failed.");
+      } finally {
+        snapshotBtn.disabled = false;
+      }
+    }
+
+    snapshotBtn.addEventListener("click", captureAndShareSnapshot);
   </script>
 </body>
 </html>
