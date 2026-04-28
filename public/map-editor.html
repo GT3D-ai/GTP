@@ -260,6 +260,23 @@
       outline-offset: 2px;
     }
 
+    /* Optional 50% gray tint over the floor plan — toggled with the
+       "Dim Map" link in the toolbar. Sits above the img (z-index: 1) but
+       below pins (z-index: 5) so pins stay clickable; pointer-events:none
+       lets drag-and-drop placement still hit the underlying container. */
+    .map-overlay-tint {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(128, 128, 128, 0.5);
+      pointer-events: none;
+      z-index: 1;
+      display: none;
+    }
+    .map-container.tinted .map-overlay-tint { display: block; }
+
     .placeholder {
       text-align: center;
       color: var(--ink-subtle);
@@ -727,6 +744,7 @@
     <a href="#" id="uploadPhotosLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Upload Photos</a>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
+      <a href="#" id="dimMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;" title="Toggle a 50% gray overlay over the floor plan to make pins stand out">&#9681; Dim Map</a>
       <a href="#" id="viewMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#128065; View Map</a>
       <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
     </span>
@@ -749,6 +767,7 @@
       </div>
       <div class="map-container" id="mapContainer" style="display:none;">
         <img id="floorPlanImg" alt="Floor plan">
+        <div class="map-overlay-tint" aria-hidden="true"></div>
       </div>
       <div class="zoom-indicator" id="zoomIndicator">100%</div>
     </div>
@@ -1698,6 +1717,29 @@
     editMapLink.addEventListener("click", (e) => {
       e.preventDefault();
       openFloorPlanPicker();
+    });
+
+    // ---- Dim Map: 50% gray overlay over the floor plan ----
+    // Useful when the floor plan has busy or low-contrast lines and the
+    // editor wants pin markers to pop. Preference is per-browser via
+    // localStorage so a refresh keeps the editor's last choice.
+    const dimMapLink = document.getElementById("dimMapLink");
+    const DIM_MAP_KEY = "gtp.mapEditor.dimFloorPlan";
+    function applyDimState(active) {
+      mapContainer.classList.toggle("tinted", active);
+      dimMapLink.textContent = active ? "◑ Undim Map" : "◑ Dim Map";
+      dimMapLink.style.fontWeight = active ? "600" : "";
+    }
+    try {
+      applyDimState(localStorage.getItem(DIM_MAP_KEY) === "1");
+    } catch {
+      applyDimState(false);
+    }
+    dimMapLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      const next = !mapContainer.classList.contains("tinted");
+      applyDimState(next);
+      try { localStorage.setItem(DIM_MAP_KEY, next ? "1" : "0"); } catch {}
     });
     floorPlanPickerClose.addEventListener("click", closeFloorPlanPicker);
     floorPlanPickerOverlay.addEventListener("click", (e) => {
