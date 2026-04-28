@@ -178,6 +178,31 @@ app.use("/api", resolveUser);
 // List top-level project folders, filtered by what the current user can access.
 // Anonymous callers get [] — they don't enumerate projects, they arrive on a
 // specific /map-viewer/<project> URL and ask for scoped data directly.
+// Admin-controlled presentation order for the projects list. Stored as a
+// system-wide JSON file in the reserved _platform/ prefix; nothing else is
+// in there today, but we already exclude that prefix from the project
+// listing so it's a safe namespace for system metadata.
+const PROJECT_ORDER_PATH = "_platform/project-order.json";
+async function loadProjectOrder() {
+  try {
+    const f = bucket.file(PROJECT_ORDER_PATH);
+    const [exists] = await f.exists();
+    if (!exists) return [];
+    const [content] = await f.download();
+    const parsed = JSON.parse(content.toString());
+    return Array.isArray(parsed.order) ? parsed.order.filter((s) => typeof s === "string") : [];
+  } catch (err) {
+    console.warn("[project-order] read failed:", err.message);
+    return [];
+  }
+}
+async function saveProjectOrder(order) {
+  await bucket.file(PROJECT_ORDER_PATH).save(
+    JSON.stringify({ order, updatedAt: new Date().toISOString() }, null, 2),
+    { contentType: "application/json" }
+  );
+}
+
 app.get("/api/projects", async (req, res) => {
   try {
     if (!req.user) return res.json([]);
@@ -187,9 +212,57 @@ app.get("/api/projects", async (req, res) => {
       .map((p) => p.replace(/\/$/, ""))
       .filter((p) => p !== "_thumbs" && p !== "_platform");
     const accessible = await userService.accessibleProjects(req.user.email, allProjects);
-    res.json(accessible);
+    // Apply the admin-managed order: items in the saved order first (only
+    // those still accessible), then any remaining accessible projects in
+    // GCS's lexicographic order — so newly created projects land at the
+    // end of the manual order without disrupting it.
+    const savedOrder = await loadProjectOrder();
+    const accessibleSet = new Set(accessible);
+    const ordered = [];
+    const placed = new Set();
+    for (const name of savedOrder) {
+      if (accessibleSet.has(name) && !placed.has(name)) {
+        ordered.push(name);
+        placed.add(name);
+      }
+    }
+    for (const name of accessible) {
+      if (!placed.has(name)) ordered.push(name);
+    }
+    res.json(ordered);
   } catch (err) {
     console.error("List projects error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: read or set the manual project presentation order. The full set
+// of project names goes in `order`; sending an empty array clears the
+// override and the listing falls back to alphabetical (GCS lex order).
+app.get("/api/admin/project-order", requireAdmin, async (req, res) => {
+  try {
+    const order = await loadProjectOrder();
+    res.json({ order });
+  } catch (err) {
+    console.error("project-order read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post("/api/admin/project-order", requireAdmin, async (req, res) => {
+  const { order } = req.body || {};
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of project names or null" });
+  }
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.trim() && !s.includes("/") && s !== "_thumbs" && s !== "_platform")
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    await saveProjectOrder(cleaned);
+    res.json({ success: true, order: cleaned });
+  } catch (err) {
+    console.error("project-order save error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

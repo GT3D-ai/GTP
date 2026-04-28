@@ -72,6 +72,57 @@
     .project-card:hover { background: var(--bg); color: inherit; text-decoration: none; }
     .project-card:hover .project-card-name { color: var(--accent); }
 
+    /* Admin-only drag-to-reorder affordances. The handle and reset button
+       only appear when the grid carries .can-reorder, which is set after
+       me.isAdmin() resolves. */
+    .project-card .drag-handle {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 32px;
+      height: 32px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border-radius: 6px;
+      cursor: grab;
+      z-index: 6;
+      user-select: none;
+      font-size: 1rem;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    .projects-grid.can-reorder .project-card .drag-handle { display: flex; }
+    .project-card .drag-handle:active { cursor: grabbing; }
+    .project-card.dragging { opacity: 0.4; }
+    .project-card.drop-target { box-shadow: inset 4px 0 0 var(--accent); }
+    .project-card.drop-target.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
+
+    .reset-order-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 0;
+    }
+    .reset-order-btn:hover { text-decoration: underline; }
+    .reset-order-btn:disabled { opacity: 0.5; cursor: progress; text-decoration: none; }
+    .order-status {
+      font-size: 0.72rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-sm);
+      min-height: 1.1em;
+    }
+    .order-status.error { color: var(--danger); }
+    .order-status.ok { color: var(--success); }
+    .head-extras { display: flex; gap: var(--space-md); align-items: center; flex-wrap: wrap; }
+
     .project-card-cover {
       width: 100%;
       aspect-ratio: 4 / 3;
@@ -248,8 +299,13 @@
   <main class="container">
     <div class="page-actions">
       <h1>Projects</h1>
-      <a href="/new-project.html" class="btn btn-primary" id="newProjectBtn" style="display:none;">+ New Project</a>
+      <div class="head-extras">
+        <button type="button" class="reset-order-btn" id="resetOrderBtn" style="display:none;" title="Clear the manual order so projects fall back to alphabetical">Reset to alphabetical</button>
+        <a href="/new-project.html" class="btn btn-primary" id="newProjectBtn" style="display:none;">+ New Project</a>
+      </div>
     </div>
+
+    <div class="order-status" id="orderStatus"></div>
 
     <div id="projectList">
       <div class="placeholder">
@@ -315,6 +371,7 @@
 
         const grid = document.createElement("div");
         grid.className = "projects-grid";
+        grid.id = "projectsGrid";
 
         infos.forEach((info) => {
           const name = info.name;
@@ -328,7 +385,9 @@
 
           const card = document.createElement("div");
           card.className = "project-card";
+          card.dataset.project = name;
           card.innerHTML = `
+            <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             ${coverHtml}
             <button type="button" class="share-icon-btn" data-project="${name}" title="Share project" aria-label="Share project">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -453,13 +512,153 @@
       el.addEventListener("keydown", (e) => { if (e.key === "Enter") submitShare(); });
     });
 
-    // Show admin-only "New Project" controls
+    // Show admin-only controls and enable drag-to-reorder for admins.
+    // The list itself is already returned in the saved order by the
+    // server, so the reset button only needs to send an empty array.
     (async () => {
       if (window.me && await window.me.isAdmin()) {
         document.getElementById("newProjectBtn").style.display = "";
         document.getElementById("newProjectNav").style.display = "";
+        // Wait for the grid to mount before attaching reorder handlers —
+        // loadProjects() is async and the grid replaces #projectList only
+        // after /api/projects + per-project metadata fetches finish.
+        await waitForGrid();
+        const grid = document.getElementById("projectsGrid");
+        if (grid) enableProjectReorder(grid);
+        document.getElementById("resetOrderBtn").style.display = "";
       }
     })();
+
+    function waitForGrid(timeoutMs = 8000) {
+      return new Promise((resolve) => {
+        const start = Date.now();
+        (function poll() {
+          if (document.getElementById("projectsGrid")) return resolve();
+          if (Date.now() - start > timeoutMs) return resolve();
+          setTimeout(poll, 80);
+        })();
+      });
+    }
+
+    // ---- Project drag-to-reorder (admin only) ----
+    let draggingCard = null;
+    let dropTargetCard = null;
+    let dropAfter = false;
+
+    function setOrderStatus(text, kind) {
+      const el = document.getElementById("orderStatus");
+      el.textContent = text || "";
+      el.className = "order-status" + (kind ? " " + kind : "");
+    }
+
+    function enableProjectReorder(grid) {
+      grid.classList.add("can-reorder");
+      grid.querySelectorAll(".project-card").forEach((card) => {
+        card.draggable = true;
+
+        card.addEventListener("dragstart", (e) => {
+          // Don't start a drag from the share icon or any inner link/button —
+          // those have their own click semantics.
+          if (e.target.closest(".share-icon-btn") || e.target.closest("a[href]")) {
+            e.preventDefault();
+            return;
+          }
+          draggingCard = card;
+          card.classList.add("dragging");
+          try { e.dataTransfer.setData("text/plain", card.dataset.project); } catch {}
+          e.dataTransfer.effectAllowed = "move";
+        });
+
+        card.addEventListener("dragend", async () => {
+          card.classList.remove("dragging");
+          clearDropTarget();
+          if (!draggingCard) return;
+          draggingCard = null;
+          await persistProjectOrder();
+        });
+
+        card.addEventListener("dragover", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const rect = card.getBoundingClientRect();
+          dropAfter = (e.clientX - rect.left) > rect.width / 2;
+          if (dropTargetCard !== card || card.classList.contains("drop-after") !== dropAfter) {
+            clearDropTarget();
+            dropTargetCard = card;
+            card.classList.add("drop-target");
+            if (dropAfter) card.classList.add("drop-after");
+          }
+        });
+
+        card.addEventListener("dragleave", (e) => {
+          if (e.target === card && dropTargetCard === card) clearDropTarget();
+        });
+
+        card.addEventListener("drop", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          if (dropAfter && card.nextSibling) grid.insertBefore(draggingCard, card.nextSibling);
+          else if (dropAfter) grid.appendChild(draggingCard);
+          else grid.insertBefore(draggingCard, card);
+          clearDropTarget();
+        });
+      });
+    }
+
+    function clearDropTarget() {
+      if (dropTargetCard) {
+        dropTargetCard.classList.remove("drop-target", "drop-after");
+        dropTargetCard = null;
+      }
+      dropAfter = false;
+    }
+
+    async function persistProjectOrder() {
+      const grid = document.getElementById("projectsGrid");
+      if (!grid) return;
+      const order = Array.from(grid.querySelectorAll(".project-card")).map((c) => c.dataset.project);
+      setOrderStatus("Saving order…");
+      try {
+        const r = await fetch("/api/admin/project-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Save failed (${r.status})`);
+        setOrderStatus("Order saved.", "ok");
+        setTimeout(() => setOrderStatus(""), 1800);
+      } catch (err) {
+        setOrderStatus("Couldn't save order: " + err.message, "error");
+      }
+    }
+
+    document.getElementById("resetOrderBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("resetOrderBtn");
+      if (!confirm("Clear the manual project order? Tiles will revert to alphabetical.")) return;
+      btn.disabled = true;
+      setOrderStatus("Resetting…");
+      try {
+        const r = await fetch("/api/admin/project-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: [] }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Reset failed (${r.status})`);
+        setOrderStatus("Reset to alphabetical.", "ok");
+        setTimeout(() => setOrderStatus(""), 1800);
+        await loadProjects();
+        // Re-attach reorder handlers since loadProjects rebuilds the grid.
+        const grid = document.getElementById("projectsGrid");
+        if (grid) enableProjectReorder(grid);
+      } catch (err) {
+        setOrderStatus("Reset failed: " + err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>
