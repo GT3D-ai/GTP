@@ -347,6 +347,92 @@
 
     .pin:hover .pin-tooltip { display: block; }
 
+    /* Map link arrows — clickable overlays that jump to another level. The
+       editor places them via the "Link Maps" toolbar action; the viewer
+       renders the same elements and uses them for navigation. */
+    .map-link {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: rgba(13, 13, 13, 0.82);
+      color: #fff;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 6;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
+    }
+    .map-link:hover {
+      transform: translate(-50%, -50%) scale(1.15);
+      background: var(--accent);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    }
+    .map-link svg { display: block; }
+    .map-link .pin-tooltip { bottom: calc(100% + 6px); }
+    .map-link:hover .pin-tooltip { display: block; }
+    /* Move mode + drag — mirrors the pin .movable / .dragging pattern so
+       both overlays feel consistent under right-click → Move. */
+    .map-link.movable {
+      background: #ffd700;
+      color: #1a1a1a;
+      border: 3px solid #000000;
+      box-shadow: 0 0 12px rgba(255, 215, 0, 0.7);
+      cursor: grab;
+    }
+    .map-link.movable:hover {
+      background: #ffd700;
+      transform: translate(-50%, -50%) scale(1.15);
+      box-shadow: 0 0 18px rgba(255, 215, 0, 0.9);
+    }
+    .map-link.dragging {
+      background: #ffd700;
+      color: #1a1a1a;
+      border: 3px solid #000000;
+      box-shadow: 0 0 18px rgba(255, 215, 0, 0.9);
+      cursor: grabbing;
+      z-index: 20;
+      transform: translate(-50%, -50%) scale(1.25);
+    }
+
+    /* Placement mode — set on body while the editor is choosing where to
+       drop a new map link. Crosshair makes the targeting affordance clear
+       and we dim existing pins/links so they don't get clicked instead. */
+    body.placing-link .map-area,
+    body.placing-link .map-container { cursor: crosshair; }
+    body.placing-link .pin,
+    body.placing-link .map-link { pointer-events: none; opacity: 0.55; }
+
+    /* Link placement modal — uses the existing levels-modal shell */
+    .link-direction-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: var(--space-sm) 0 var(--space-md);
+    }
+    .link-direction-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 0;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .link-direction-btn:hover { background: var(--bg-elevated); }
+    .link-direction-btn.selected {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .link-direction-btn svg { display: block; }
+
     /* Hover thumbnail — single shared element positioned next to the pin */
     .pin-hover-thumb {
       position: fixed;
@@ -748,6 +834,7 @@
     <a href="#" id="uploadPhotosLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer; margin-left:6px;">Upload Photos</a>
     <span class="save-status" id="saveStatus"></span>
     <span id="floorPlanGroup" style="display:flex; align-items:center; gap:12px; margin-left:auto;">
+      <a href="#" id="linkMapsLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;" title="Place an arrow on the map that links to another level">&#8644; Link Maps</a>
       <a href="#" id="dimMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;" title="Toggle a 50% gray overlay over the floor plan to make pins stand out">&#9681; Dim Map</a>
       <a href="#" id="viewMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#128065; View Map</a>
       <a href="#" id="editMapLink" style="color:var(--accent); text-decoration:none; font-size:0.85rem; cursor:pointer;">&#9998; Edit Map</a>
@@ -867,6 +954,65 @@
     <div class="pin-context-menu-item view" id="pinContextView">&#127758; View 360</div>
     <div class="pin-context-menu-item move" id="pinContextMove">&#9995; Move</div>
     <div class="pin-context-menu-item remove" id="pinContextRemove">&#10060; Remove</div>
+  </div>
+
+  <div class="pin-context-menu" id="mapLinkContextMenu">
+    <div class="pin-context-menu-header" id="mapLinkContextName"></div>
+    <div class="pin-context-menu-item move" id="mapLinkContextMove">&#9995; Move</div>
+    <div class="pin-context-menu-item remove" id="mapLinkContextRemove">&#10060; Remove</div>
+  </div>
+
+  <!-- Place Map Link modal — opens after the editor clicks a target spot
+       on the map while in Link Maps placement mode. Choose a direction
+       (one of four arrows) and which level the link jumps to. -->
+  <div class="levels-modal-backdrop" id="mapLinkModal" role="dialog" aria-modal="true">
+    <div class="levels-modal" style="max-width:380px;">
+      <div class="levels-modal-header">
+        <h3>Place a map link</h3>
+        <button class="levels-modal-close" id="mapLinkModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="levels-modal-body">
+        <p style="margin:0; font-size:0.85rem; color:var(--ink-muted);">Pick the arrow direction and the level this link jumps to.</p>
+
+        <label style="margin-top:var(--space-md); font-size:0.75rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-muted);">Direction</label>
+        <div class="link-direction-grid" id="linkDirectionGrid">
+          <button type="button" class="link-direction-btn" data-direction="up" aria-label="Up">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="19" x2="12" y2="5"/>
+              <polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
+          <button type="button" class="link-direction-btn" data-direction="right" aria-label="Right">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+          <button type="button" class="link-direction-btn" data-direction="down" aria-label="Down">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <polyline points="5 12 12 19 19 12"/>
+            </svg>
+          </button>
+          <button type="button" class="link-direction-btn" data-direction="left" aria-label="Left">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 5 5 12 12 19"/>
+            </svg>
+          </button>
+        </div>
+
+        <label for="mapLinkTargetSelect" style="font-size:0.75rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-muted);">Link to</label>
+        <select id="mapLinkTargetSelect" style="width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--line-strong); color:var(--ink); font-family:inherit; font-size:0.9rem;"></select>
+
+        <div class="levels-status" id="mapLinkStatus"></div>
+
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:var(--space-md);">
+          <button type="button" class="btn btn-outline btn-sm" id="mapLinkCancelBtn">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" id="mapLinkSaveBtn" disabled>Save link</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1338,6 +1484,11 @@
       const byKey = new Map();
       (current.pins || []).forEach((p) => { if (p && p.image360) byKey.set(p.image360, p); });
       (local.pins || []).forEach((p) => { if (p && p.image360) byKey.set(p.image360, p); });
+      // Map links: union by id, local wins on ties so the current editor's
+      // most recent placement isn't undone by a stale server copy.
+      const linksById = new Map();
+      (current.mapLinks || []).forEach((l) => { if (l && l.id) linksById.set(l.id, l); });
+      (local.mapLinks || []).forEach((l) => { if (l && l.id) linksById.set(l.id, l); });
       return {
         ...current,
         ...local,
@@ -1348,6 +1499,7 @@
         // Per-level overlay so two editors' tint choices coexist after a 409.
         floorPlanTints: { ...(current.floorPlanTints || {}), ...(local.floorPlanTints || {}) },
         pins: [...byKey.values()],
+        mapLinks: [...linksById.values()],
       };
     }
 
@@ -1761,6 +1913,184 @@
       else delete mappings.floorPlanTints[currentLevelFilter];
       applyDimState(next);
       saveMappings();
+    });
+
+    // ---- Link Maps: place clickable arrow overlays that jump to other levels ----
+    // Workflow:
+    //   1. Editor clicks "Link Maps" → enters placement mode (crosshair).
+    //   2. Click a spot on the map → opens the placement modal at that x/y.
+    //   3. Pick a direction (up/right/down/left) and a target level → Save.
+    //   4. The link is appended to mappings.mapLinks and saved.
+    // Right-click an existing link → context menu with Remove.
+    const linkMapsLink = document.getElementById("linkMapsLink");
+    const mapLinkModal = document.getElementById("mapLinkModal");
+    const mapLinkModalClose = document.getElementById("mapLinkModalClose");
+    const mapLinkCancelBtn = document.getElementById("mapLinkCancelBtn");
+    const mapLinkSaveBtn = document.getElementById("mapLinkSaveBtn");
+    const mapLinkTargetSelect = document.getElementById("mapLinkTargetSelect");
+    const mapLinkStatus = document.getElementById("mapLinkStatus");
+    const linkDirectionGrid = document.getElementById("linkDirectionGrid");
+    const mapLinkContextMenu = document.getElementById("mapLinkContextMenu");
+    const mapLinkContextName = document.getElementById("mapLinkContextName");
+    const mapLinkContextRemove = document.getElementById("mapLinkContextRemove");
+
+    let linkPlacementMode = false;
+    let pendingLinkXY = null;          // { x, y } in 0..1 image-relative coords
+    let pendingLinkDirection = null;   // "up" | "right" | "down" | "left"
+    let mapLinkContext = null;         // the link object the context menu is open for
+    let moveModeLinkId = null;         // link id currently in drag-to-move mode
+
+    function setLinkPlacementMode(active) {
+      linkPlacementMode = !!active;
+      document.body.classList.toggle("placing-link", linkPlacementMode);
+      linkMapsLink.style.fontWeight = linkPlacementMode ? "600" : "";
+      linkMapsLink.textContent = linkPlacementMode ? "✕ Cancel placing" : "⇄ Link Maps";
+    }
+
+    linkMapsLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (linkPlacementMode) { setLinkPlacementMode(false); return; }
+      if (!currentLevelFilter) {
+        saveStatus.textContent = "Select a level before placing a map link.";
+        saveStatus.style.color = "var(--ink-muted)";
+        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = ""; }, 2500);
+        return;
+      }
+      // Need at least one OTHER level to link to — otherwise the dropdown
+      // would be empty and there's nothing useful to save.
+      const others = (cachedLevels || []).filter((l) => l !== currentLevelFilter);
+      if (others.length === 0) {
+        saveStatus.textContent = "Add another level before placing map links.";
+        saveStatus.style.color = "var(--ink-muted)";
+        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = ""; }, 2500);
+        return;
+      }
+      setLinkPlacementMode(true);
+    });
+
+    // Click handler that captures placement clicks. Registered on
+    // mapContainer (capture phase) so we get the click before the existing
+    // bubble-phase handlers (move-mode cancel, pin click) run and consume it.
+    mapContainer.addEventListener("click", (e) => {
+      if (!linkPlacementMode) return;
+      if (mapContainer.style.display === "none") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = floorPlanImg.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      pendingLinkXY = {
+        x: Math.round(x * 10000) / 10000,
+        y: Math.round(y * 10000) / 10000,
+      };
+      openMapLinkModal();
+    }, true);
+
+    function openMapLinkModal() {
+      pendingLinkDirection = null;
+      linkDirectionGrid.querySelectorAll(".link-direction-btn").forEach((b) => b.classList.remove("selected"));
+      mapLinkStatus.textContent = "";
+      mapLinkStatus.className = "levels-status";
+      // Populate target dropdown with every level except the current one.
+      mapLinkTargetSelect.innerHTML = "";
+      const others = (cachedLevels || []).filter((l) => l !== currentLevelFilter);
+      others.forEach((lvl) => {
+        const opt = document.createElement("option");
+        opt.value = lvl;
+        opt.textContent = lvl;
+        mapLinkTargetSelect.appendChild(opt);
+      });
+      mapLinkSaveBtn.disabled = true;
+      mapLinkModal.classList.add("visible");
+    }
+
+    function closeMapLinkModal({ exitPlacement = true } = {}) {
+      mapLinkModal.classList.remove("visible");
+      pendingLinkXY = null;
+      pendingLinkDirection = null;
+      if (exitPlacement) setLinkPlacementMode(false);
+    }
+
+    linkDirectionGrid.querySelectorAll(".link-direction-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        linkDirectionGrid.querySelectorAll(".link-direction-btn").forEach((b) => b.classList.remove("selected"));
+        btn.classList.add("selected");
+        pendingLinkDirection = btn.dataset.direction;
+        mapLinkSaveBtn.disabled = !(pendingLinkDirection && mapLinkTargetSelect.value);
+      });
+    });
+
+    mapLinkTargetSelect.addEventListener("change", () => {
+      mapLinkSaveBtn.disabled = !(pendingLinkDirection && mapLinkTargetSelect.value);
+    });
+
+    mapLinkSaveBtn.addEventListener("click", async () => {
+      if (!pendingLinkXY || !pendingLinkDirection || !mapLinkTargetSelect.value) return;
+      const link = {
+        id: "mlink_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sourceLevel: currentLevelFilter,
+        targetLevel: mapLinkTargetSelect.value,
+        direction: pendingLinkDirection,
+        x: pendingLinkXY.x,
+        y: pendingLinkXY.y,
+      };
+      if (!Array.isArray(mappings.mapLinks)) mappings.mapLinks = [];
+      mappings.mapLinks.push(link);
+      renderMapLinks();
+      closeMapLinkModal();
+      saveMappings();
+    });
+
+    mapLinkCancelBtn.addEventListener("click", () => closeMapLinkModal());
+    mapLinkModalClose.addEventListener("click", () => closeMapLinkModal());
+    mapLinkModal.addEventListener("click", (e) => {
+      if (e.target === mapLinkModal) closeMapLinkModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (mapLinkModal.classList.contains("visible")) { closeMapLinkModal(); return; }
+      if (linkPlacementMode) setLinkPlacementMode(false);
+    });
+
+    // Map-link context menu (right-click → Remove)
+    function showMapLinkContextMenu(evt, link) {
+      mapLinkContext = link;
+      mapLinkContextName.textContent = `Go to ${link.targetLevel}`;
+      mapLinkContextMenu.style.left = evt.clientX + "px";
+      mapLinkContextMenu.style.top = evt.clientY + "px";
+      mapLinkContextMenu.style.display = "block";
+    }
+    function hideMapLinkContextMenu() {
+      mapLinkContextMenu.style.display = "none";
+      mapLinkContext = null;
+    }
+    document.addEventListener("click", () => hideMapLinkContextMenu());
+    document.addEventListener("contextmenu", (e) => {
+      if (!e.target.closest(".map-link")) hideMapLinkContextMenu();
+    });
+    mapLinkContextRemove.addEventListener("click", () => {
+      if (!mapLinkContext) return;
+      const removed = mapLinkContext;
+      mappings.mapLinks = (mappings.mapLinks || []).filter((l) => l.id !== removed.id);
+      hideMapLinkContextMenu();
+      renderMapLinks();
+      saveMappings();
+    });
+
+    // Right-click → Move puts the chosen link in move mode. The next
+    // mousedown on it (handled in renderMapLinks) hands off to the global
+    // drag handlers that already exist for pins, with the link branch in
+    // mouseup committing the new x/y.
+    const mapLinkContextMove = document.getElementById("mapLinkContextMove");
+    mapLinkContextMove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!mapLinkContext) return;
+      const linkId = mapLinkContext.id;
+      hideMapLinkContextMenu();
+      moveModeLinkId = linkId;
+      // Re-render so the affected link picks up the .movable class.
+      renderMapLinks();
     });
     floorPlanPickerClose.addEventListener("click", closeFloorPlanPicker);
     floorPlanPickerOverlay.addEventListener("click", (e) => {
@@ -2290,14 +2620,90 @@
 
         mapContainer.appendChild(el);
       });
+
+      renderMapLinks();
     }
 
-    // Cancel move mode when clicking on the map background (not a pin)
+    // Render the directional map-link arrows for the current level. Called
+    // at the end of renderPins() so every place that re-draws pins also
+    // refreshes links — keeps the two overlays in sync without sprinkling
+    // additional calls through the file.
+    const ARROW_SVG = {
+      up:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+      right: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+      down:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>',
+      left:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 5 5 12 12 19"/></svg>',
+    };
+    function renderMapLinks() {
+      mapContainer.querySelectorAll(".map-link").forEach((el) => el.remove());
+      if (!currentLevelFilter) return;
+      const links = (mappings.mapLinks || []).filter((l) => l.sourceLevel === currentLevelFilter);
+      links.forEach((link) => {
+        const el = document.createElement("div");
+        el.className = "map-link";
+        el.style.left = (link.x * 100) + "%";
+        el.style.top = (link.y * 100) + "%";
+        el.innerHTML = (ARROW_SVG[link.direction] || ARROW_SVG.right) +
+          `<div class="pin-tooltip">Go to ${link.targetLevel}</div>`;
+
+        // Mousedown — if this link is in move mode, start dragging immediately.
+        // Mirrors the pin .movable → .dragging handoff and reuses the global
+        // mousemove/mouseup handlers below to commit the new x/y.
+        el.addEventListener("mousedown", (e) => {
+          if (moveModeLinkId === link.id) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove("movable");
+            el.classList.add("dragging");
+            activeDrag = { el, linkId: link.id };
+          }
+        });
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (linkPlacementMode) return;
+          // Suppress the navigation click when this link was just dragged
+          // or is still in move mode — same defensive checks as pins.
+          if (justDragged) { justDragged = false; return; }
+          if (activeDrag) return;
+          if (moveModeLinkId === link.id) return;
+          // Switch the editor to the linked level — same path users take
+          // via the level dropdown, so all the existing render hooks fire.
+          if (cachedLevels.includes(link.targetLevel)) {
+            levelFilter.value = link.targetLevel;
+            levelFilter.dispatchEvent(new Event("change"));
+          }
+        });
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // Cancel any existing link move mode — same affordance as pins.
+          if (moveModeLinkId) {
+            mapContainer.querySelectorAll(".map-link.movable").forEach((p) => p.classList.remove("movable"));
+            moveModeLinkId = null;
+          }
+          showMapLinkContextMenu(e, link);
+        });
+
+        // Restore movable state if this link is in move mode (after re-render)
+        if (moveModeLinkId === link.id) {
+          el.classList.add("movable");
+        }
+
+        mapContainer.appendChild(el);
+      });
+    }
+
+    // Cancel move mode when clicking on the map background (not a pin or link)
     mapContainer.addEventListener("click", (e) => {
-      if (e.target.closest(".pin")) return;
+      if (e.target.closest(".pin") || e.target.closest(".map-link")) return;
       if (moveModePin) {
         mapContainer.querySelectorAll(".pin.movable").forEach((p) => p.classList.remove("movable"));
         moveModePin = null;
+      }
+      if (moveModeLinkId) {
+        mapContainer.querySelectorAll(".map-link.movable").forEach((p) => p.classList.remove("movable"));
+        moveModeLinkId = null;
       }
     });
 
@@ -2312,24 +2718,36 @@
       activeDrag.el.style.top = (Math.max(0, Math.min(1, y)) * 100) + "%";
     });
 
-    // Global mouseup → drop the pin at new location
+    // Global mouseup → drop the dragged pin or link at the new location.
+    // The mousemove handler above is overlay-agnostic (it just updates
+    // activeDrag.el's left/top), so the only branching needed is here when
+    // we commit the new x/y back to the right object in mappings.
     document.addEventListener("mouseup", () => {
       if (!activeDrag) return;
       const el = activeDrag.el;
-      const pinId = activeDrag.pinId;
       const finalX = parseFloat(el.style.left) / 100;
       const finalY = parseFloat(el.style.top) / 100;
 
-      const pin = mappings.pins.find((p) => p.id === pinId);
-      if (pin) {
-        pin.x = Math.round(finalX * 10000) / 10000;
-        pin.y = Math.round(finalY * 10000) / 10000;
-        saveMappings();
+      if (activeDrag.linkId) {
+        const link = (mappings.mapLinks || []).find((l) => l.id === activeDrag.linkId);
+        if (link) {
+          link.x = Math.round(finalX * 10000) / 10000;
+          link.y = Math.round(finalY * 10000) / 10000;
+          saveMappings();
+        }
+        moveModeLinkId = null;
+      } else {
+        const pin = mappings.pins.find((p) => p.id === activeDrag.pinId);
+        if (pin) {
+          pin.x = Math.round(finalX * 10000) / 10000;
+          pin.y = Math.round(finalY * 10000) / 10000;
+          saveMappings();
+        }
+        moveModePin = null;
       }
 
       el.classList.remove("dragging");
       justDragged = true;
-      moveModePin = null;
       activeDrag = null;
     });
   </script>

@@ -118,6 +118,34 @@
     }
     .pin:hover .pin-tooltip { display: block; }
 
+    /* Map link arrows — clickable overlays placed by editors that jump to
+       another level in the same project. */
+    .map-link {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      background: rgba(13, 13, 13, 0.82);
+      color: #fff;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 6;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
+    }
+    .map-link:hover {
+      transform: translate(-50%, -50%) scale(1.18);
+      background: var(--accent);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    }
+    .map-link svg { display: block; }
+    .map-link .pin-tooltip { bottom: calc(100% + 6px); }
+    .map-link:hover .pin-tooltip { display: block; }
+
     /* Level bar — above the map, visually part of the map region.
        Sticks below the sticky header while the user scrolls through a tall map. */
     .level-bar {
@@ -563,6 +591,38 @@
         const displayName = pin.image360.split("/").pop();
         el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
         el.addEventListener("click", (e) => { e.stopPropagation(); openViewer(pin.image360, displayName); });
+        mapContainer.appendChild(el);
+      });
+      renderMapLinks();
+    }
+
+    // Map link arrows — editors place these in the map editor; clicking
+    // one in the viewer switches to the linked level.
+    const ARROW_SVG = {
+      up:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+      right: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+      down:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>',
+      left:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 5 5 12 12 19"/></svg>',
+    };
+    function renderMapLinks() {
+      mapContainer.querySelectorAll(".map-link").forEach((el) => el.remove());
+      const links = (mappings.mapLinks || []).filter((l) => l.sourceLevel === currentLevel);
+      links.forEach((link) => {
+        const el = document.createElement("div");
+        el.className = "map-link";
+        el.style.left = (link.x * 100) + "%";
+        el.style.top = (link.y * 100) + "%";
+        el.innerHTML = (ARROW_SVG[link.direction] || ARROW_SVG.right) +
+          `<div class="pin-tooltip">Go to ${link.targetLevel}</div>`;
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Only navigate if the target level still exists in the dropdown
+          // (it may have been renamed or removed since the link was placed).
+          const exists = Array.from(levelSelect.options).some((o) => o.value === link.targetLevel);
+          if (!exists) return;
+          levelSelect.value = link.targetLevel;
+          levelSelect.dispatchEvent(new Event("change"));
+        });
         mapContainer.appendChild(el);
       });
     }
