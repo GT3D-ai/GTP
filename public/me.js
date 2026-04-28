@@ -47,11 +47,12 @@
     }
     await renderUserChip(chipEl);
 
-    // Admin-only nav links — Documents (admin upload + management page) and
-    // Users (admin user roster). Hidden from non-admins so neither the
-    // documents feature nor its existence leaks to viewers. The Documents
-    // link is per-project, so it's omitted on the projects index page where
-    // each project tile owns its own actions; Users stays everywhere.
+    // Admin-only nav links — Documents and Videos (admin upload +
+    // management pages) and Users (admin user roster). Hidden from
+    // non-admins so the documents/videos features and their existence
+    // don't leak to viewers. Documents and Videos are per-project, so
+    // they're omitted on the projects index page where each project tile
+    // owns its own actions; Users stays everywhere.
     const nav = inner.querySelector(".nav-primary");
     if (nav) {
       const admin = await isAdmin();
@@ -62,6 +63,12 @@
           const a = document.createElement("a");
           a.href = "/document-upload.html";
           a.textContent = "Documents";
+          nav.appendChild(a);
+        }
+        if (!onProjectsIndex && !nav.querySelector('a[href="/video-upload.html"]')) {
+          const a = document.createElement("a");
+          a.href = "/video-upload.html";
+          a.textContent = "Videos";
           nav.appendChild(a);
         }
         if (!nav.querySelector('a[href="/users.html"]')) {

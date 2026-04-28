@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Videos — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    #fileInput { display: none; }
+    .file-entry-icon { color: var(--ink-subtle); font-size: 1rem; flex-shrink: 0; }
+    .file-entry-info { flex: 1; min-width: 0; }
+    .file-list-wrap { display: none; margin-top: var(--space-sm); }
+    .file-list-wrap.visible { display: block; }
+    .clear-all { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+    .clear-all:hover { text-decoration: underline; }
+    .progress-container { display: none; margin-top: var(--space-sm); }
+    .progress-container.visible { display: block; }
+    .upload-btn-wrap { display: none; margin-top: var(--space-md); }
+    .upload-btn-wrap.visible { display: block; }
+    .form-head h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.375rem, 2.5vw, 1.75rem); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+    .form-head p.lede { margin-bottom: var(--space-lg); }
+
+    .per-file-progress { height: 2px; background: var(--line); overflow: hidden; margin-top: 4px; }
+    .per-file-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+
+    /* Videos listing — one row per video with name (rename inline),
+       upload date+time, uploader, download, delete. */
+    .videos-section { margin-top: var(--space-xl); }
+    .videos-header {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: var(--space-sm);
+    }
+    .videos-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+    }
+    .videos-table th, .videos-table td {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    .videos-table tr:last-child td { border-bottom: none; }
+    .videos-table th {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      background: var(--bg);
+    }
+    .videos-table td.empty { text-align: center; color: var(--ink-subtle); padding: var(--space-md); }
+    .videos-table .col-name { min-width: 180px; }
+    .videos-table .col-uploaded { white-space: nowrap; color: var(--ink-muted); }
+    .videos-table .col-by { white-space: nowrap; color: var(--ink-muted); }
+    .videos-table .col-actions { width: 1px; white-space: nowrap; text-align: right; }
+
+    .video-name {
+      font-weight: 500;
+      color: var(--ink);
+      cursor: text;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      border-radius: 3px;
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .video-name:focus {
+      outline: 2px solid var(--accent);
+      background: var(--bg);
+    }
+
+    .video-action-btn {
+      background: none;
+      border: 1px solid var(--line-strong);
+      color: var(--ink-muted);
+      padding: 4px 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-left: 4px;
+    }
+    .video-action-btn:hover { color: var(--ink); border-color: var(--ink); }
+    .video-action-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .video-action-btn.danger:hover { background: var(--danger); color: #fff; }
+
+    .not-admin {
+      background: var(--warning-bg);
+      border: 1px solid var(--accent);
+      color: var(--ink);
+      padding: var(--space-lg);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container-sm">
+    <div id="notAdmin" class="not-admin" style="display:none;">
+      Admin access required to manage videos.
+    </div>
+
+    <div id="uploaderWrap" style="display:none;">
+      <div class="form-head">
+        <p class="eyebrow">Upload</p>
+        <h2>Upload videos</h2>
+        <p class="lede">Admin-only. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code>{project}/_videos/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Videos are not surfaced anywhere viewers can see.</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="projectSelect">Project <span class="required-mark">*</span></label>
+        <select class="field-select" id="projectSelect">
+          <option value="">Select a project…</option>
+        </select>
+      </div>
+
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">&#127916;</div>
+        <p>Drag &amp; drop video files here, or <strong>browse</strong></p>
+        <p style="font-size:0.72rem; color:var(--ink-subtle); margin-top:6px;">
+          Accepts any video format. Common: .mp4 .mov .webm .mkv .m4v
+        </p>
+      </div>
+      <input type="file" id="fileInput" accept="video/*" multiple>
+
+      <div class="file-list-wrap" id="fileList">
+        <div class="file-list-header">
+          <span id="fileCount">0 files selected</span>
+          <button class="clear-all" id="clearAll">Clear all</button>
+        </div>
+        <div id="fileEntries"></div>
+      </div>
+
+      <div class="upload-btn-wrap" id="uploadBtnWrap">
+        <button class="btn btn-primary btn-block" id="uploadBtn">Upload Videos</button>
+      </div>
+
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">0%</div>
+      </div>
+
+      <div class="status-message" id="statusMessage"></div>
+
+      <div class="videos-section" id="videosSection" style="display:none;">
+        <div class="videos-header">
+          <span>Project Videos</span>
+          <span id="videosCount" style="font-weight:400; letter-spacing:0; text-transform:none;"></span>
+        </div>
+        <table class="videos-table" id="videosTable">
+          <thead>
+            <tr>
+              <th class="col-name">Name</th>
+              <th class="col-uploaded">Uploaded</th>
+              <th class="col-by">By</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="videosBody">
+            <tr><td colspan="4" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const projectFromUrl = params.get("project");
+
+    const uploaderWrap = document.getElementById("uploaderWrap");
+    const notAdmin = document.getElementById("notAdmin");
+    const projectSelect = document.getElementById("projectSelect");
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const fileListEl = document.getElementById("fileList");
+    const fileEntries = document.getElementById("fileEntries");
+    const fileCount = document.getElementById("fileCount");
+    const clearAllBtn = document.getElementById("clearAll");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const uploadBtnWrap = document.getElementById("uploadBtnWrap");
+    const progressContainer = document.getElementById("progressContainer");
+    const progressFill = document.getElementById("progressFill");
+    const progressText = document.getElementById("progressText");
+    const statusMessage = document.getElementById("statusMessage");
+
+    let selectedFiles = [];
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+    function formatWhen(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString();
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    (async () => {
+      const myInfo = await me.getMe();
+      if (!myInfo.isAdmin) {
+        notAdmin.style.display = "block";
+        return;
+      }
+      uploaderWrap.style.display = "block";
+
+      try {
+        const res = await fetch("/api/projects");
+        if (res.ok) {
+          const projects = await res.json();
+          projectSelect.innerHTML = '<option value="">Select a project…</option>';
+          projects.forEach((name) => {
+            const opt = document.createElement("option");
+            opt.value = name; opt.textContent = name;
+            projectSelect.appendChild(opt);
+          });
+          if (projectFromUrl) {
+            projectSelect.value = projectFromUrl;
+            loadVideos(projectFromUrl);
+          }
+        }
+      } catch {}
+    })();
+
+    projectSelect.addEventListener("change", () => {
+      if (projectSelect.value) loadVideos(projectSelect.value);
+      else document.getElementById("videosSection").style.display = "none";
+    });
+
+    function renderFileList() {
+      fileEntries.innerHTML = "";
+      selectedFiles.forEach((file, i) => {
+        const entry = document.createElement("div");
+        entry.className = "file-entry";
+        entry.style.flexDirection = "column";
+        entry.style.alignItems = "stretch";
+        entry.innerHTML = `
+          <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
+            <span class="file-entry-icon">&#127916;</span>
+            <div class="file-entry-info">
+              <div class="file-entry-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+              <div class="file-entry-size">${formatSize(file.size)}</div>
+            </div>
+            <span class="file-entry-status pending" id="file-status-${i}">Pending</span>
+            <button class="icon-btn" data-index="${i}" title="Remove">&times;</button>
+          </div>
+          <div class="per-file-progress" id="pfp-wrap-${i}" style="display:none;">
+            <div class="per-file-progress-fill" id="pfp-${i}"></div>
+          </div>
+        `;
+        fileEntries.appendChild(entry);
+      });
+      fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`;
+      fileListEl.classList.toggle("visible", selectedFiles.length > 0);
+      uploadBtnWrap.classList.toggle("visible", selectedFiles.length > 0);
+    }
+
+    function addFiles(files) {
+      const existing = new Set(selectedFiles.map((f) => f.name + f.size));
+      for (const file of files) {
+        if (!existing.has(file.name + file.size)) selectedFiles.push(file);
+      }
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+      renderFileList();
+    }
+    function clearFiles() {
+      selectedFiles = [];
+      fileInput.value = "";
+      fileListEl.classList.remove("visible");
+      uploadBtnWrap.classList.remove("visible");
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault(); dropZone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) { addFiles(fileInput.files); fileInput.value = ""; }
+    });
+    fileEntries.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-index]");
+      if (btn) { selectedFiles.splice(parseInt(btn.dataset.index), 1); renderFileList(); }
+    });
+    clearAllBtn.addEventListener("click", clearFiles);
+
+    uploadBtn.addEventListener("click", async () => {
+      if (selectedFiles.length === 0) return;
+      const project = projectSelect.value;
+      if (!project) {
+        projectSelect.focus();
+        statusMessage.textContent = "Please select a project before uploading.";
+        statusMessage.className = "status-message visible error";
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Uploading…";
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.add("visible");
+
+      const total = selectedFiles.length;
+      let completed = 0, failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const file = selectedFiles[i];
+        const statusEl = document.getElementById(`file-status-${i}`);
+        const pfpWrap = document.getElementById(`pfp-wrap-${i}`);
+        const pfp = document.getElementById(`pfp-${i}`);
+        statusEl.textContent = "Uploading";
+        statusEl.className = "file-entry-status uploading";
+        pfpWrap.style.display = "block";
+        progressFill.style.width = ((i / total) * 100).toFixed(0) + "%";
+        progressText.textContent = `Uploading ${i + 1} of ${total} — ${file.name} (${formatSize(file.size)})`;
+
+        try {
+          await uploadVideo(file, project, (loaded, tot) => {
+            if (!tot) return;
+            const pct = (loaded / tot) * 100;
+            pfp.style.width = pct.toFixed(1) + "%";
+          });
+          statusEl.textContent = "Done";
+          statusEl.className = "file-entry-status done";
+          pfp.style.width = "100%";
+          completed++;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "Failed";
+          statusEl.className = "file-entry-status failed";
+          failed++;
+        }
+      }
+
+      progressFill.style.width = "100%";
+      progressText.textContent = "Complete";
+
+      if (failed === 0) {
+        statusMessage.innerHTML = `<strong>${completed}</strong> video${completed !== 1 ? "s" : ""} uploaded to project <strong>${escapeHtml(project)}</strong>.`;
+        statusMessage.className = "status-message visible success";
+      } else {
+        statusMessage.textContent = `${completed} uploaded, ${failed} failed.`;
+        statusMessage.className = "status-message visible error";
+      }
+
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "Upload Videos";
+      loadVideos(project);
+    });
+
+    async function uploadVideo(file, project, onProgress) {
+      // 1. Request a signed URL (admin-only on the server)
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "video",
+          project,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
+      }
+      const { uploadUrl, gcsPath } = await res.json();
+
+      // 2. PUT directly to GCS with progress reporting
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.upload.addEventListener("progress", (e) => {
+          if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+        });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error")));
+        xhr.send(file);
+      });
+
+      // 3. Stamp the metadata sidecar with the uploader's email so the
+      // listing can show who uploaded what. Best-effort — if this fails
+      // the video still exists; the row will just show "—" for the
+      // uploader until something writes the sidecar.
+      try {
+        await fetch("/api/video/uploaded", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: gcsPath }),
+        });
+      } catch (e) { console.warn("uploaded ack failed", e); }
+    }
+
+    async function loadVideos(project) {
+      const section = document.getElementById("videosSection");
+      const body = document.getElementById("videosBody");
+      const countEl = document.getElementById("videosCount");
+      section.style.display = "block";
+      body.innerHTML = '<tr><td colspan="4" class="empty">Loading…</td></tr>';
+      countEl.textContent = "";
+
+      try {
+        const res = await fetch(`/api/video/files?project=${encodeURIComponent(project)}`);
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        const videos = await res.json();
+        countEl.textContent = `${videos.length} file${videos.length !== 1 ? "s" : ""}`;
+
+        if (videos.length === 0) {
+          body.innerHTML = '<tr><td colspan="4" class="empty">No videos uploaded yet.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = "";
+        videos.forEach((v) => {
+          const tr = document.createElement("tr");
+          tr.dataset.file = v.name;
+          tr.innerHTML = `
+            <td class="col-name">
+              <span class="video-name" contenteditable="true" spellcheck="false" title="${escapeHtml(v.displayName)}">${escapeHtml(v.displayName)}</span>
+              <div style="font-size:0.72rem; color:var(--ink-subtle); margin-top:2px;">${formatSize(v.size)}</div>
+            </td>
+            <td class="col-uploaded">${formatWhen(v.uploadedAt || v.updated)}</td>
+            <td class="col-by">${escapeHtml(v.uploadedBy || "—")}</td>
+            <td class="col-actions">
+              <button type="button" class="video-action-btn video-download-btn">Download</button>
+              <button type="button" class="video-action-btn danger video-delete-btn">Delete</button>
+            </td>
+          `;
+          body.appendChild(tr);
+        });
+
+        // Inline rename on blur / Enter — commits via /api/video/rename.
+        body.querySelectorAll(".video-name").forEach((el) => {
+          const original = el.textContent;
+          el.dataset.original = original;
+          el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); el.blur(); }
+            if (e.key === "Escape") { el.textContent = el.dataset.original; el.blur(); }
+          });
+          el.addEventListener("blur", async () => {
+            const newName = el.textContent.trim();
+            if (!newName || newName === el.dataset.original) {
+              el.textContent = el.dataset.original;
+              return;
+            }
+            const tr = el.closest("tr");
+            const filePath = tr.dataset.file;
+            try {
+              const r = await fetch("/api/video/rename", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: filePath, newName }),
+              });
+              const data = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+              loadVideos(project);
+            } catch (err) {
+              alert("Rename failed: " + err.message);
+              el.textContent = el.dataset.original;
+            }
+          });
+        });
+
+        body.querySelectorAll(".video-download-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const tr = btn.closest("tr");
+            const filePath = tr.dataset.file;
+            btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
+            try {
+              const r = await fetch(`/api/video/download-url?file=${encodeURIComponent(filePath)}`);
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              const { downloadUrl } = await r.json();
+              window.location.href = downloadUrl;
+            } catch (err) {
+              alert("Download failed: " + err.message);
+            } finally {
+              btn.disabled = false; btn.textContent = orig;
+            }
+          });
+        });
+
+        body.querySelectorAll(".video-delete-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const tr = btn.closest("tr");
+            const filePath = tr.dataset.file;
+            const displayName = tr.querySelector(".video-name")?.textContent || filePath;
+            if (!confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
+            btn.disabled = true; btn.textContent = "Deleting…";
+            try {
+              const r = await fetch("/api/video/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: filePath }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadVideos(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false; btn.textContent = "Delete";
+            }
+          });
+        });
+      } catch (err) {
+        body.innerHTML = `<tr><td colspan="4" class="empty" style="color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+  </script>
+</body>
+</html>
