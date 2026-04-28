@@ -785,6 +785,110 @@
     }
     .snapshot-toast.visible { opacity: 1; }
 
+    /* Post-capture snapshot modal — preview + Save to project / Share /
+       Download / Cancel. Save to project is the new primary action; the
+       previous share/download flow lives behind the secondary buttons. */
+    .snapshot-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 10001;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .snapshot-modal-backdrop.visible { display: flex; }
+    .snapshot-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 460px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 32px);
+    }
+    .snapshot-modal-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .snapshot-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .snapshot-modal-close {
+      background: none; border: none; color: var(--ink-subtle);
+      font-size: 1.25rem; cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .snapshot-modal-close:hover { color: var(--ink); }
+    .snapshot-modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .snapshot-preview {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      background: var(--bg);
+      border: 1px solid var(--line);
+    }
+    .snapshot-modal-body label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+    .snapshot-modal-body input[type="text"] {
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .snapshot-modal-body input[type="text"]:focus { border-color: var(--accent); }
+    .snapshot-modal-status { font-size: 0.8rem; min-height: 1.1em; color: var(--ink-muted); }
+    .snapshot-modal-status.error { color: var(--danger); }
+    .snapshot-modal-status.ok { color: var(--success); }
+    .snapshot-modal-actions {
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .snapshot-modal-actions .spacer { flex: 1; }
+    .snapshot-modal-actions button {
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .snapshot-modal-actions button:hover { border-color: var(--ink); }
+    .snapshot-modal-actions button.primary {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .snapshot-modal-actions button.primary:hover { background: var(--accent); border-color: var(--accent); }
+    .snapshot-modal-actions button:disabled { opacity: 0.55; cursor: progress; }
+    .snapshot-modal-actions button.subtle { color: var(--ink-muted); }
+
     .fp-option {
       background: var(--bg-elevated);
       border: 1px solid var(--line);
@@ -963,6 +1067,31 @@
   <div class="pin-hover-thumb" id="pinHoverThumb">
     <img id="pinHoverThumbImg" alt="">
     <div class="caption" id="pinHoverThumbCaption"></div>
+  </div>
+
+  <!-- Post-capture snapshot modal — shown after the user clicks the
+       snapshot button in the editor's pano modal. Save to project is the
+       primary action; share / download are fallbacks. -->
+  <div class="snapshot-modal-backdrop" id="snapshotModal" role="dialog" aria-modal="true" aria-labelledby="snapshotModalTitle">
+    <div class="snapshot-modal">
+      <div class="snapshot-modal-header">
+        <h3 id="snapshotModalTitle">Snapshot</h3>
+        <button class="snapshot-modal-close" id="snapshotModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="snapshot-modal-body">
+        <img class="snapshot-preview" id="snapshotPreview" alt="Snapshot preview">
+        <label for="snapshotName">File name</label>
+        <input type="text" id="snapshotName" autocomplete="off" spellcheck="false">
+        <div class="snapshot-modal-status" id="snapshotStatus"></div>
+      </div>
+      <div class="snapshot-modal-actions">
+        <button type="button" class="subtle" id="snapshotCancelBtn">Cancel</button>
+        <span class="spacer"></span>
+        <button type="button" id="snapshotDownloadBtn">Download</button>
+        <button type="button" id="snapshotShareBtn">Share</button>
+        <button type="button" class="primary" id="snapshotSaveBtn">Save to project</button>
+      </div>
+    </div>
   </div>
 
   <div class="pin-context-menu" id="pinContextMenu">
@@ -1180,6 +1309,43 @@
       clearTimeout(toast._hideTimer);
       toast._hideTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
     }
+    // Capture the current pano view, then open the snapshot modal so the
+    // editor can save it back into the project's 2D images, share via the
+    // OS share sheet, or download it. The editor page is editor-only so
+    // Save to project is always available; no role check needed here.
+    const snapshotModal = document.getElementById("snapshotModal");
+    const snapshotPreview = document.getElementById("snapshotPreview");
+    const snapshotNameInput = document.getElementById("snapshotName");
+    const snapshotStatus = document.getElementById("snapshotStatus");
+    const snapshotSaveBtn = document.getElementById("snapshotSaveBtn");
+    const snapshotShareBtn = document.getElementById("snapshotShareBtn");
+    const snapshotDownloadBtn = document.getElementById("snapshotDownloadBtn");
+    const snapshotCancelBtn = document.getElementById("snapshotCancelBtn");
+    const snapshotModalClose = document.getElementById("snapshotModalClose");
+
+    let snapshotState = null; // { blob, previewUrl, sourceTitle }
+
+    function setSnapshotStatus(text, kind) {
+      snapshotStatus.textContent = text || "";
+      snapshotStatus.className = "snapshot-modal-status" + (kind ? " " + kind : "");
+    }
+    function snapshotTimestamp() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    }
+    function closeSnapshotModal() {
+      snapshotModal.classList.remove("visible");
+      if (snapshotState && snapshotState.previewUrl) URL.revokeObjectURL(snapshotState.previewUrl);
+      snapshotState = null;
+    }
+    function ensureSnapshotName() {
+      let name = snapshotNameInput.value.trim();
+      if (!name) name = `snapshot-${snapshotTimestamp()}.png`;
+      if (!/\.[a-z0-9]+$/i.test(name)) name += ".png";
+      return name;
+    }
+
     async function captureAndShareSnapshot() {
       if (!panoViewer) return;
       const canvas = panoModalViewer.querySelector("canvas");
@@ -1193,38 +1359,104 @@
         if (!blob) throw new Error("Empty snapshot");
 
         const baseTitle = (panoModalTitle.textContent || "snapshot").replace(/\.[^.]+$/, "");
-        const fileName = `${baseTitle}-view.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
+        const defaultName = `${baseTitle}-snap-${snapshotTimestamp()}.png`;
+        const previewUrl = URL.createObjectURL(blob);
+        snapshotState = { blob, previewUrl, sourceTitle: panoModalTitle.textContent || "" };
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: fileName,
-              text: `Snapshot from ${panoModalTitle.textContent || "Ground Truth 3D"}`,
-            });
-            return;
-          } catch (err) {
-            if (err && err.name === "AbortError") return;
-            // fall through to download
-          }
-        }
+        snapshotPreview.src = previewUrl;
+        snapshotNameInput.value = defaultName;
+        setSnapshotStatus("");
+        snapshotSaveBtn.disabled = false;
+        snapshotShareBtn.disabled = false;
+        snapshotDownloadBtn.disabled = false;
+        // The map editor is editor-only by design, so Save to project is
+        // always shown. If the project context is somehow missing the
+        // upload would fail; the button stays available and surfaces the
+        // server error in the status row.
+        snapshotSaveBtn.style.display = project ? "" : "none";
 
-        const url = URL.createObjectURL(blob);
-        const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        showSnapshotToast("Snapshot saved — attach it to your message to share.");
+        snapshotModal.classList.add("visible");
+        setTimeout(() => snapshotNameInput.focus(), 0);
       } catch (err) {
-        console.error("Snapshot failed:", err);
+        console.error("Snapshot capture failed:", err);
         showSnapshotToast("Snapshot failed.");
       } finally {
         panoModalSnapshot.disabled = false;
       }
     }
+
+    async function saveSnapshotToProject() {
+      if (!snapshotState || !project) return;
+      const fileName = ensureSnapshotName();
+      const file = new File([snapshotState.blob], fileName, { type: "image/png" });
+      snapshotSaveBtn.disabled = true;
+      snapshotShareBtn.disabled = true;
+      snapshotDownloadBtn.disabled = true;
+      setSnapshotStatus("Saving to project…");
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("project", project);
+        fd.append("destName", fileName);
+        const res = await fetch("/api/2d/upload", { method: "POST", body: fd, credentials: "same-origin" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+        setSnapshotStatus("Saved to project.", "ok");
+        setTimeout(closeSnapshotModal, 900);
+      } catch (err) {
+        console.error("Snapshot save failed:", err);
+        setSnapshotStatus(err.message || "Save failed.", "error");
+        snapshotSaveBtn.disabled = false;
+        snapshotShareBtn.disabled = false;
+        snapshotDownloadBtn.disabled = false;
+      }
+    }
+
+    async function shareSnapshot() {
+      if (!snapshotState) return;
+      const fileName = ensureSnapshotName();
+      const file = new File([snapshotState.blob], fileName, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: fileName,
+            text: `Snapshot from ${snapshotState.sourceTitle || "Ground Truth 3D"}`,
+          });
+          closeSnapshotModal();
+          return;
+        } catch (err) {
+          if (err && err.name === "AbortError") return;
+          // fall through to download
+        }
+      }
+      downloadSnapshot();
+    }
+
+    function downloadSnapshot() {
+      if (!snapshotState) return;
+      const fileName = ensureSnapshotName();
+      const url = URL.createObjectURL(snapshotState.blob);
+      const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      closeSnapshotModal();
+    }
+
     panoModalSnapshot.addEventListener("click", captureAndShareSnapshot);
+    snapshotSaveBtn.addEventListener("click", saveSnapshotToProject);
+    snapshotShareBtn.addEventListener("click", shareSnapshot);
+    snapshotDownloadBtn.addEventListener("click", downloadSnapshot);
+    snapshotCancelBtn.addEventListener("click", closeSnapshotModal);
+    snapshotModalClose.addEventListener("click", closeSnapshotModal);
+    snapshotModal.addEventListener("click", (e) => {
+      if (e.target === snapshotModal) closeSnapshotModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && snapshotModal.classList.contains("visible")) closeSnapshotModal();
+    });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && panoModalOverlay.classList.contains("visible")) closePanoModal();
     });
