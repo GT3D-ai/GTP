@@ -289,7 +289,7 @@
       position: absolute;
       width: 11px;
       height: 11px;
-      background: #ffffff;
+      background: #dc2626;
       border: 2px solid var(--ink);
       border-radius: 50%;
       transform: translate(-50%, -50%);
@@ -1131,6 +1131,7 @@
       refreshFloorPlanDisplay();
       render360List();
       renderPins();
+      refreshDimState();
     }
 
     // Pick the level to show on first open: session-remembered for this project,
@@ -1188,6 +1189,7 @@
       render360List();
       renderPins();
       updateViewMapLink();
+      refreshDimState();
     });
 
     // Keep the "View Map" toolbar link pointed at the public map-viewer
@@ -1339,6 +1341,8 @@
           ? local.floorPlanImage
           : current.floorPlanImage,
         floorPlans: { ...(current.floorPlans || {}), ...(local.floorPlans || {}) },
+        // Per-level overlay so two editors' tint choices coexist after a 409.
+        floorPlanTints: { ...(current.floorPlanTints || {}), ...(local.floorPlanTints || {}) },
         pins: [...byKey.values()],
       };
     }
@@ -1369,8 +1373,10 @@
             delete current._generation;
             mappings = mergeMappings(mappings, current);
             mappingsGeneration = newGen;
-            // Re-render any UI that depends on mappings (pins, floor plan).
+            // Re-render any UI that depends on mappings (pins, floor plan,
+            // dim state — another editor may have changed the tint too).
             try { renderPins(); } catch {}
+            try { refreshDimState(); } catch {}
             saveStatus.textContent = "Synced changes from another editor…";
             continue; // retry the save
           }
@@ -1720,26 +1726,37 @@
     });
 
     // ---- Dim Map: 50% gray overlay over the floor plan ----
-    // Useful when the floor plan has busy or low-contrast lines and the
-    // editor wants pin markers to pop. Preference is per-browser via
-    // localStorage so a refresh keeps the editor's last choice.
+    // Stored per-level on the project's mappings.json under floorPlanTints
+    // so every viewer (editors + anonymous public visitors) sees the same
+    // tint state. Saving goes through the existing saveMappings flow which
+    // already handles optimistic concurrency with other editors.
     const dimMapLink = document.getElementById("dimMapLink");
-    const DIM_MAP_KEY = "gtp.mapEditor.dimFloorPlan";
+    function getCurrentLevelTint() {
+      if (!currentLevelFilter) return false;
+      return !!(mappings && mappings.floorPlanTints && mappings.floorPlanTints[currentLevelFilter]);
+    }
     function applyDimState(active) {
-      mapContainer.classList.toggle("tinted", active);
+      mapContainer.classList.toggle("tinted", !!active);
       dimMapLink.textContent = active ? "◑ Undim Map" : "◑ Dim Map";
       dimMapLink.style.fontWeight = active ? "600" : "";
     }
-    try {
-      applyDimState(localStorage.getItem(DIM_MAP_KEY) === "1");
-    } catch {
-      applyDimState(false);
+    function refreshDimState() {
+      applyDimState(getCurrentLevelTint());
     }
     dimMapLink.addEventListener("click", (e) => {
       e.preventDefault();
-      const next = !mapContainer.classList.contains("tinted");
+      if (!currentLevelFilter) {
+        saveStatus.textContent = "Select a level before dimming the map.";
+        saveStatus.style.color = "var(--ink-muted)";
+        setTimeout(() => { saveStatus.textContent = ""; saveStatus.style.color = ""; }, 2500);
+        return;
+      }
+      const next = !getCurrentLevelTint();
+      if (!mappings.floorPlanTints) mappings.floorPlanTints = {};
+      if (next) mappings.floorPlanTints[currentLevelFilter] = true;
+      else delete mappings.floorPlanTints[currentLevelFilter];
       applyDimState(next);
-      try { localStorage.setItem(DIM_MAP_KEY, next ? "1" : "0"); } catch {}
+      saveMappings();
     });
     floorPlanPickerClose.addEventListener("click", closeFloorPlanPicker);
     floorPlanPickerOverlay.addEventListener("click", (e) => {

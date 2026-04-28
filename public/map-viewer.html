@@ -88,7 +88,7 @@
       position: absolute;
       width: 13px;
       height: 13px;
-      background: #ffffff;
+      background: #dc2626;
       border: 2px solid var(--ink);
       border-radius: 50%;
       transform: translate(-50%, -50%);
@@ -181,6 +181,23 @@
       display: none;
     }
     .viewer-modal.visible { display: block; }
+
+    /* Optional 50% gray tint over the floor plan, set per-level by editors
+       in the map editor and persisted to mappings.json. Sits above the
+       floor-plan image but below pins (z-index: 5+) so pins stay visible
+       and clickable. pointer-events:none keeps map-pan/zoom unaffected. */
+    .map-overlay-tint {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(128, 128, 128, 0.5);
+      pointer-events: none;
+      z-index: 1;
+      display: none;
+    }
+    .map-container.tinted .map-overlay-tint { display: block; }
     #pano360 { width: 100%; height: 100%; }
 
     .close-btn {
@@ -365,6 +382,7 @@
     </div>
     <div class="map-container" id="mapContainer" style="display:none;">
       <img id="floorPlanImg" alt="Floor plan">
+      <div class="map-overlay-tint" aria-hidden="true"></div>
     </div>
     <div class="zoom-indicator" id="zoomIndicator">100%</div>
   </div>
@@ -483,6 +501,12 @@
 
     function refreshFloorPlanDisplay() {
       const path = getFloorPlanForLevel(currentLevel);
+      // Editors set per-level tint state via the "Dim Map" toggle in the
+      // map editor; it's stored on mappings.floorPlanTints[level] so every
+      // viewer (including anonymous public visitors here) sees the same
+      // overlay.
+      const tinted = !!(mappings && mappings.floorPlanTints && mappings.floorPlanTints[currentLevel]);
+      mapContainer.classList.toggle("tinted", tinted);
       if (path) { showFloorPlan(path); }
       else {
         mapContainer.style.display = "none";

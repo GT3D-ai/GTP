@@ -99,11 +99,20 @@
       position: absolute;
       width: 9px;
       height: 9px;
-      background: #ffffff;
+      background: #dc2626;
       border: 1.5px solid #0d0d0d;
       border-radius: 50%;
       transform: translate(-50%, -50%);
       box-shadow: 0 0 0 1.5px rgba(255,255,255,0.5), 0 1px 4px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+    /* 50% gray overlay applied when an editor has dimmed the floor plan
+       for the current level (mappings.floorPlanTints[level]). Sits above
+       the thumbnail img and below the pin dots so pins still pop. */
+    .map-thumb-tint {
+      position: absolute;
+      inset: 0;
+      background: rgba(128, 128, 128, 0.5);
       pointer-events: none;
     }
 
@@ -933,6 +942,14 @@
           thumb.innerHTML = '<span class="glyph">&#128506;</span>';
         };
         stage.appendChild(img);
+
+        // Tint overlay (set per-level by editors via "Dim Map" in the
+        // map editor). Inserted before the pins so pins stay on top.
+        if (mappings.floorPlanTints && mappings.floorPlanTints[level]) {
+          const tint = document.createElement("div");
+          tint.className = "map-thumb-tint";
+          stage.appendChild(tint);
+        }
 
         // Overlay pins for the selected level — same 360 photo markers
         // that the map viewer shows, rendered as small circles on top of
