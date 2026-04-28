@@ -225,6 +225,61 @@
     }
     .map-card-level-row select:focus { border-color: var(--ink); }
 
+    /* Editor drag-to-reorder for the home cards. Handle sits in the
+       top-left corner so it doesn't collide with the Edit thumbnail badge
+       (top-right) or the share-icon button on the main card. */
+    .home-card .drag-handle {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 32px;
+      height: 32px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border-radius: 6px;
+      cursor: grab;
+      z-index: 6;
+      user-select: none;
+      font-size: 1rem;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    .home-grid.can-reorder .home-card .drag-handle { display: flex; }
+    .home-card .drag-handle:active { cursor: grabbing; }
+    .home-card.dragging { opacity: 0.4; }
+    .home-card.drop-target { box-shadow: inset 4px 0 0 var(--accent); }
+    .home-card.drop-target.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
+    /* The main card has its own top-left "Edit" badge already; nudge the
+       drag handle right so they don't overlap. */
+    .home-card.main .drag-handle { left: 56px; }
+    .home-card.main .edit-thumb-link { left: 8px; right: auto; }
+
+    /* Editor reset action — appears in the page-head whenever a manual
+       card order exists. Subtle to avoid pulling focus from the title. */
+    .reset-card-order-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 0;
+    }
+    .reset-card-order-btn:hover { text-decoration: underline; }
+    .reset-card-order-btn:disabled { opacity: 0.5; cursor: progress; text-decoration: none; }
+    .card-order-status {
+      font-size: 0.72rem;
+      color: var(--ink-muted);
+      min-height: 1.1em;
+    }
+    .card-order-status.error { color: var(--danger); }
+    .card-order-status.ok { color: var(--success); }
+
     /* Editor "edit thumbnail" badge sits over each card's thumbnail */
     .home-card { position: relative; }
     .edit-thumb-link {
@@ -512,12 +567,15 @@
     <div class="page-head">
       <h1 id="projectName">Loading…</h1>
       <div class="page-head-meta" id="projectAddress"></div>
+      <button type="button" class="reset-card-order-btn" id="resetCardOrderBtn" style="display:none;" title="Clear the manual card order so cards revert to the default layout">Reset card order</button>
+      <div class="card-order-status" id="cardOrderStatus"></div>
     </div>
 
     <div id="homeWrap">
       <div class="home-grid" id="homeGrid">
         <!-- MAIN: project cover + address + top-level links -->
         <div class="home-card main" id="mainCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="main">Edit</a>
           <button type="button" class="share-icon-btn" id="shareProjectBtn" title="Share project" aria-label="Share project">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -586,6 +644,7 @@
 
         <!-- MAP: Level 1 floor plan thumbnail + level selector -->
         <div class="home-card" id="mapCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="map">Edit</a>
           <a id="mapThumbLink" href="#" aria-label="Open map">
             <div class="home-card-thumb is-placeholder" id="mapCardThumb"><span class="glyph">&#128506;</span></div>
@@ -606,6 +665,7 @@
 
         <!-- 2D IMAGE: most recent -->
         <div class="home-card" id="imageCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="images">Edit</a>
           <a id="imageThumbLink" href="#" aria-label="Open 2D images">
             <div class="home-card-thumb is-placeholder" id="imageCardThumb"><span class="glyph">&#128444;</span></div>
@@ -622,6 +682,7 @@
 
         <!-- 2D PLAN: most recent -->
         <div class="home-card" id="planCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="plans">Edit</a>
           <a id="planThumbLink" href="#" aria-label="Open plans">
             <div class="home-card-thumb is-placeholder" id="planCardThumb"><span class="glyph">&#128196;</span></div>
@@ -638,6 +699,7 @@
 
         <!-- 3D MODEL: most recent -->
         <div class="home-card" id="modelCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="models">Edit</a>
           <a id="modelThumbLink" href="#" aria-label="Open models">
             <div class="home-card-thumb is-placeholder" id="modelCardThumb"><span class="glyph">&#127744;</span></div>
@@ -654,6 +716,7 @@
 
         <!-- POINT CLOUD: most recent -->
         <div class="home-card" id="pointcloudCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
           <a href="#" class="edit-thumb-link" data-card="pointclouds">Edit</a>
           <a id="pointcloudThumbLink" href="#" aria-label="Open point clouds">
             <div class="home-card-thumb is-placeholder" id="pointcloudCardThumb"><span class="glyph">&#9729;</span></div>
@@ -783,6 +846,9 @@
       if (canEditProject) {
         document.querySelectorAll(".home-card").forEach((c) => c.classList.add("is-editor"));
         document.querySelectorAll(".editor-only").forEach((el) => { el.style.display = ""; });
+        // Editors get drag-to-reorder + the Reset button. Order itself is
+        // applied (for everyone) in loadProjectInfo once project.json is read.
+        enableCardReorder();
       }
       if (isPublicPath) {
         // Logo on the public mirror points to the same /public/<project>
@@ -851,6 +917,10 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const info = await res.json();
         cardThumbnails = info.cardThumbnails || {};
+        // Apply the editor-set card order before any cards render content,
+        // so the layout reflows once. Empty / missing cardOrder leaves the
+        // static HTML order intact.
+        applyCardOrder(Array.isArray(info.cardOrder) ? info.cardOrder : []);
 
         // Address renders in the page header (#projectAddress) only — the
         // main card's duplicate copy was removed for a cleaner layout.
@@ -1349,6 +1419,174 @@
     thumbClearBtn.addEventListener("click", clearThumbnail);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && thumbModal.classList.contains("visible")) closeThumbModal();
+    });
+
+    // ---- Home card drag-to-reorder ----
+    // Editors can drag any of the six home cards (mainCard / mapCard /
+    // imageCard / planCard / modelCard / pointcloudCard) into any order.
+    // The order is stored on project.json under cardOrder and applied for
+    // every visitor (viewer or editor); only editors see drag handles
+    // and the Reset button. The main card keeps its full-width style
+    // wherever it lands because .home-card.main { grid-column: 1 / -1 }.
+    const KNOWN_CARDS = ["mainCard", "mapCard", "imageCard", "planCard", "modelCard", "pointcloudCard"];
+    let cardDraggingEl = null;
+    let cardDropTargetEl = null;
+    let cardDropAfter = false;
+    let currentCardOrder = []; // last-applied order, kept in memory for the reset toggle
+
+    function setCardOrderStatus(text, kind) {
+      const el = document.getElementById("cardOrderStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "card-order-status" + (kind ? " " + kind : "");
+    }
+
+    function applyCardOrder(order) {
+      const grid = document.getElementById("homeGrid");
+      if (!grid) return;
+      // Filter to known cards in the supplied order, then append any cards
+      // that weren't named — so a future card added to the HTML still shows
+      // up at the end without breaking older saved orders.
+      const seen = new Set();
+      const sequence = [];
+      (order || []).forEach((id) => {
+        if (KNOWN_CARDS.includes(id) && !seen.has(id)) { sequence.push(id); seen.add(id); }
+      });
+      KNOWN_CARDS.forEach((id) => { if (!seen.has(id)) sequence.push(id); });
+      sequence.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) grid.appendChild(el);
+      });
+      currentCardOrder = order && order.length ? order.slice() : [];
+      const resetBtn = document.getElementById("resetCardOrderBtn");
+      if (resetBtn && canEditProject) {
+        resetBtn.style.display = currentCardOrder.length > 0 ? "" : "none";
+      }
+    }
+
+    function enableCardReorder() {
+      const grid = document.getElementById("homeGrid");
+      if (!grid) return;
+      grid.classList.add("can-reorder");
+      grid.querySelectorAll(".home-card").forEach((card) => {
+        card.draggable = true;
+
+        card.addEventListener("dragstart", (e) => {
+          // Don't start a drag from any inner click target (Edit thumb link,
+          // share button, action links) — they have their own behavior.
+          if (
+            e.target.closest(".edit-thumb-link") ||
+            e.target.closest(".share-icon-btn") ||
+            e.target.closest("a[href]") ||
+            e.target.closest("button")
+          ) {
+            // Allow drag if the user grabbed the dedicated handle.
+            if (!e.target.closest(".drag-handle")) {
+              e.preventDefault();
+              return;
+            }
+          }
+          cardDraggingEl = card;
+          card.classList.add("dragging");
+          try { e.dataTransfer.setData("text/plain", card.id); } catch {}
+          e.dataTransfer.effectAllowed = "move";
+        });
+
+        card.addEventListener("dragend", async () => {
+          card.classList.remove("dragging");
+          clearCardDropTarget();
+          if (!cardDraggingEl) return;
+          cardDraggingEl = null;
+          await persistCardOrder();
+        });
+
+        card.addEventListener("dragover", (e) => {
+          if (!cardDraggingEl || card === cardDraggingEl) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const rect = card.getBoundingClientRect();
+          // For the full-width main card, switch to a top/bottom decision so
+          // dropping above vs below is unambiguous; for the others use the
+          // left/right halves of the tile.
+          const isMain = card.classList.contains("main");
+          cardDropAfter = isMain
+            ? (e.clientY - rect.top) > rect.height / 2
+            : (e.clientX - rect.left) > rect.width / 2;
+          if (cardDropTargetEl !== card || card.classList.contains("drop-after") !== cardDropAfter) {
+            clearCardDropTarget();
+            cardDropTargetEl = card;
+            card.classList.add("drop-target");
+            if (cardDropAfter) card.classList.add("drop-after");
+          }
+        });
+
+        card.addEventListener("dragleave", (e) => {
+          if (e.target === card && cardDropTargetEl === card) clearCardDropTarget();
+        });
+
+        card.addEventListener("drop", (e) => {
+          if (!cardDraggingEl || card === cardDraggingEl) return;
+          e.preventDefault();
+          if (cardDropAfter && card.nextSibling) grid.insertBefore(cardDraggingEl, card.nextSibling);
+          else if (cardDropAfter) grid.appendChild(cardDraggingEl);
+          else grid.insertBefore(cardDraggingEl, card);
+          clearCardDropTarget();
+        });
+      });
+    }
+
+    function clearCardDropTarget() {
+      if (cardDropTargetEl) {
+        cardDropTargetEl.classList.remove("drop-target", "drop-after");
+        cardDropTargetEl = null;
+      }
+      cardDropAfter = false;
+    }
+
+    async function persistCardOrder() {
+      const grid = document.getElementById("homeGrid");
+      if (!grid) return;
+      const order = Array.from(grid.querySelectorAll(".home-card")).map((c) => c.id).filter((id) => KNOWN_CARDS.includes(id));
+      setCardOrderStatus("Saving order…");
+      try {
+        const r = await fetch("/api/project-card-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, order }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Save failed (${r.status})`);
+        currentCardOrder = data.cardOrder || order;
+        const resetBtn = document.getElementById("resetCardOrderBtn");
+        if (resetBtn) resetBtn.style.display = currentCardOrder.length > 0 ? "" : "none";
+        setCardOrderStatus("Order saved.", "ok");
+        setTimeout(() => setCardOrderStatus(""), 1800);
+      } catch (err) {
+        setCardOrderStatus("Couldn't save order: " + err.message, "error");
+      }
+    }
+
+    document.getElementById("resetCardOrderBtn")?.addEventListener("click", async () => {
+      const btn = document.getElementById("resetCardOrderBtn");
+      if (!confirm("Clear the manual card order? Cards will revert to the default layout.")) return;
+      btn.disabled = true;
+      setCardOrderStatus("Resetting…");
+      try {
+        const r = await fetch("/api/project-card-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, order: [] }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Reset failed (${r.status})`);
+        applyCardOrder([]); // restore default DOM order
+        setCardOrderStatus("Reset to default.", "ok");
+        setTimeout(() => setCardOrderStatus(""), 1800);
+      } catch (err) {
+        setCardOrderStatus("Reset failed: " + err.message, "error");
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     // ---- Share modal ----

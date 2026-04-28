@@ -571,6 +571,41 @@ app.post("/api/2d/order", requireProjectRole("editor"), async (req, res) => {
   }
 });
 
+// Editor: set or reset the card order on the project home page. Stored on
+// project.json under cardOrder; an empty array clears the override and the
+// page falls back to its static layout. Only the known card IDs are
+// accepted so a typo or hostile payload can't write garbage in.
+app.post("/api/project-card-order", requireProjectRole("editor"), async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of card IDs or null" });
+  }
+  const validCards = new Set(["mainCard", "mapCard", "imageCard", "planCard", "modelCard", "pointcloudCard"]);
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && validCards.has(s))
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.cardOrder;
+    else meta.cardOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, cardOrder: meta.cardOrder || [] });
+  } catch (err) {
+    console.error("project-card-order error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/project-thumbnail", requireProjectRole("editor"), async (req, res) => {
   const { project, card, file } = req.body;
   const validCards = new Set(["main", "images", "plans", "models", "pointclouds"]);
