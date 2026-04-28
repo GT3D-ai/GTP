@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const { Storage } = require("@google-cloud/storage");
 const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 const createUserService = require("./user-service");
@@ -1710,6 +1711,148 @@ async function resolveProjectCover(project) {
   }
   return null;
 }
+
+// Throttle helper for /api/share-project-public. Each anonymous client IP is
+// allowed one successful share per project per 24 hours — repeats inside that
+// window get a friendly "contact us" response. The marker is a GCS object so
+// the limit holds across Cloud Run instances and across restarts (in-memory
+// wouldn't survive either). The marker's last-modified time is what we
+// compare against, so simply re-saving the marker resets the window.
+const SHARE_THROTTLE_PREFIX = "_share-throttle/";
+const SHARE_THROTTLE_WINDOW_MS = 24 * 60 * 60 * 1000;
+function clientIpHash(req) {
+  // Behind Google Cloud LB the original client IP is the leftmost entry in
+  // X-Forwarded-For; req.socket.remoteAddress is the LB's edge IP and not
+  // useful for distinguishing callers.
+  const xff = req.get("x-forwarded-for") || "";
+  const ip = xff.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+  return crypto.createHash("sha256").update(ip).digest("hex").slice(0, 32);
+}
+function shareThrottleFile(req, project) {
+  return bucket.file(
+    `${SHARE_THROTTLE_PREFIX}${encodeURIComponent(project)}/${clientIpHash(req)}`
+  );
+}
+
+// Anonymous-friendly share endpoint used by the /public/<project> mirror.
+// Same upsert + invite flow as /api/share-project, but no auth: anyone with a
+// public share link can pass the access along. The project name in the body
+// is the only thing tying the share to a real project — same trust model as
+// the public link itself. Honeypot field defends against the most basic bots,
+// and the per-IP throttle below caps anonymous shares at one per source IP.
+app.post("/api/share-project-public", async (req, res) => {
+  if (req.body && req.body.website) return res.json({ success: true });
+
+  const project = String((req.body && req.body.project) || "").trim();
+  if (!project) return res.status(400).json({ error: "project required" });
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+  const name = String((req.body && req.body.name) || "").trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Valid email required" });
+  }
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  try {
+    // Verify the project actually exists before logging a stranger as a
+    // viewer of it — without this, a bot could pollute the user roster with
+    // arbitrary project names.
+    const [exists] = await bucket.file(`${project}/`).exists();
+    if (!exists) return res.status(404).json({ error: "Project not found" });
+
+    // Per-IP per-project cap: one anonymous share per (source IP, project)
+    // every 24h. Marker file's last-modified time is the window anchor —
+    // a stale marker (>24h old) is treated as expired and the share goes
+    // through, refreshing the marker.
+    const throttleFile = shareThrottleFile(req, project);
+    const [throttled] = await throttleFile.exists();
+    if (throttled) {
+      let ageMs = Infinity;
+      try {
+        const [meta] = await throttleFile.getMetadata();
+        const updatedMs = Date.parse(meta.updated || meta.timeCreated || "");
+        if (!Number.isNaN(updatedMs)) ageMs = Date.now() - updatedMs;
+      } catch (metaErr) {
+        // Couldn't read metadata — fall through to a conservative throttle
+        // (treating ageMs as Infinity) so a flaky read doesn't accidentally
+        // open the floodgates.
+        console.warn("[share-public] throttle marker metadata read failed:", metaErr.message);
+        ageMs = 0;
+      }
+      if (ageMs < SHARE_THROTTLE_WINDOW_MS) {
+        return res.status(429).json({
+          error: "share_limit_reached",
+          message: "Please contact Ground Truth 3D to share this project with additional people.",
+        });
+      }
+    }
+
+    const existing = await userService.getUser(email);
+    const patch = { name };
+    if (!existing) patch.projects = { [project]: "viewer" };
+    await userService.upsertUser(email, patch);
+    const currentRole = existing?.projects?.[project];
+    if (currentRole !== "editor") {
+      await userService.setProjectRole(email, project, "viewer");
+    }
+
+    const proto = req.get("x-forwarded-proto") || req.protocol || "https";
+    const host = req.get("x-forwarded-host") || req.get("host");
+    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(project)}`;
+    const coverPath = await resolveProjectCover(project);
+    let thumbnailUrl = null;
+    if (coverPath) {
+      try {
+        const [signed] = await imageBucket.file(coverPath).getSignedUrl({
+          version: "v4",
+          action: "read",
+          expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        });
+        thumbnailUrl = signed;
+      } catch (err) {
+        console.warn(`[share-public] signed thumbnail URL failed for ${coverPath}:`, err.message);
+      }
+    }
+
+    const invite = await emailService.sendShareInvite({
+      toEmail: email,
+      toName: name,
+      fromName: "",
+      fromEmail: "",
+      project,
+      projectUrl,
+      thumbnailUrl,
+    });
+
+    // Record the per-IP throttle marker only after the share succeeded — if
+    // the upsert or invite blew up we don't want to lock the visitor out of
+    // retrying. Best-effort write; a marker failure shouldn't fail the
+    // request the user already perceives as successful.
+    try {
+      await throttleFile.save(JSON.stringify({
+        project,
+        recipientEmail: email,
+        recipientName: name,
+        timestamp: new Date().toISOString(),
+      }), { contentType: "application/json" });
+    } catch (markerErr) {
+      console.warn("[share-public] throttle marker write failed:", markerErr.message);
+    }
+
+    res.json({
+      success: true,
+      email,
+      name,
+      project,
+      role: currentRole === "editor" ? "editor" : "viewer",
+      emailSent: invite.sent,
+      emailReason: invite.sent ? undefined : invite.reason,
+      projectUrl,
+    });
+  } catch (err) {
+    console.error("share-project-public error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post("/api/share-project", requireProjectRole("editor"), async (req, res) => {
   // requireProjectRole only sets req.projectName for non-admins (admins skip

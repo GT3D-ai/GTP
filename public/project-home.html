@@ -181,28 +181,6 @@
     .home-card.main .home-card-actions a:hover svg { color: var(--accent); }
     .home-card.main .home-card-actions a.primary svg { color: var(--accent); }
 
-    /* Floating confirmation pill shown after the anonymous share button
-       copies the project URL to the clipboard. Auto-fades after ~2.8s. */
-    .share-toast {
-      position: fixed;
-      top: calc(var(--header-h) + 1rem);
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 0.625rem 1rem;
-      background: var(--ink);
-      color: var(--bg-elevated);
-      font-size: 0.8125rem;
-      letter-spacing: 0.02em;
-      max-width: min(90vw, 28rem);
-      text-align: center;
-      z-index: 1000;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.22s ease;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-    }
-    .share-toast.visible { opacity: 0.96; }
-
     /* Main card spans both columns on wider layouts */
     @media (min-width: 720px) {
       .home-card.main { grid-column: 1 / -1; }
@@ -1397,60 +1375,12 @@
       shareModal.classList.remove("visible");
     }
 
-    // Click handler branches by path: anonymous viewers on /public/<project>
-    // get a lightweight share flow (Web Share API on mobile, clipboard copy
-    // on desktop) since the /api/share-project endpoint is IAP-protected and
-    // unreachable for them. Editors on /<project> still open the full modal.
-    shareProjectBtn.addEventListener("click", () => {
-      if (isPublicPath) shareAnonymous();
-      else openShareModal();
-    });
+    // Both authenticated editors and anonymous viewers get the same modal.
+    // submitShare picks the endpoint based on isPublicPath so the recipient
+    // is always upserted into the user roster and emailed by the platform —
+    // never via the sharer's local mail client.
+    shareProjectBtn.addEventListener("click", openShareModal);
 
-    async function shareAnonymous() {
-      const shareUrl = `${window.location.origin}/public/${encodeURIComponent(project)}`;
-      const title = `${project} — Ground Truth 3D`;
-      const text = `View the ${project} project on Ground Truth 3D.`;
-
-      if (navigator.share) {
-        try {
-          await navigator.share({ title, text, url: shareUrl });
-          return;
-        } catch (err) {
-          // User cancelled the share sheet — bail without falling through to
-          // clipboard, which would feel like a second action they didn't ask for.
-          if (err && err.name === "AbortError") return;
-        }
-      }
-
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-          showToast("Link copied — anyone with this URL can view the project.");
-          return;
-        } catch (err) { /* fall through to prompt */ }
-      }
-
-      // Last resort for browsers without share or clipboard APIs
-      window.prompt("Copy this link to share:", shareUrl);
-    }
-
-    function showToast(message) {
-      let toast = document.getElementById("shareToast");
-      if (!toast) {
-        toast = document.createElement("div");
-        toast.id = "shareToast";
-        toast.className = "share-toast";
-        toast.setAttribute("role", "status");
-        toast.setAttribute("aria-live", "polite");
-        document.body.appendChild(toast);
-      }
-      toast.textContent = message;
-      // Force reflow so the transition fires when we add the visible class
-      void toast.offsetWidth;
-      toast.classList.add("visible");
-      clearTimeout(toast._hideTimer);
-      toast._hideTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
-    }
     document.getElementById("shareModalClose").addEventListener("click", closeShareModal);
     document.getElementById("shareModalCancel").addEventListener("click", closeShareModal);
     shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShareModal(); });
@@ -1467,18 +1397,31 @@
       shareStatus.className = "share-modal-status";
       shareStatus.textContent = "Sharing…";
       try {
-        const res = await fetch("/api/share-project", {
+        const endpoint = isPublicPath ? "/api/share-project-public" : "/api/share-project";
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
           body: JSON.stringify({ project, name, email }),
         });
         const data = await res.json().catch(() => ({}));
+        if (res.status === 429 && data.error === "share_limit_reached") {
+          shareStatus.className = "share-modal-status error";
+          shareStatus.textContent = data.message;
+          shareSubmit.disabled = false;
+          return;
+        }
         if (!res.ok) throw new Error(data.error || `Share failed (${res.status})`);
         shareStatus.className = "share-modal-status ok";
         if (data.emailSent) {
           shareStatus.textContent = `Invite sent to ${email}.`;
           setTimeout(closeShareModal, 1500);
+        } else if (isPublicPath) {
+          // Anonymous shares must always be sent by the platform — falling
+          // back to the sharer's mailto would defeat the point (recipient
+          // sees the anonymous user's email instead of a gt3d.com invite).
+          shareStatus.textContent = `Access granted, but the invite email couldn't be sent. Please contact support.`;
+          shareSubmit.disabled = false;
         } else {
           const projectUrl = data.projectUrl || `${window.location.origin}/public/${encodeURIComponent(project)}`;
           const subject = `You have access to "${project}" on Ground Truth 3D`;

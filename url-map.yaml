@@ -25,6 +25,7 @@ pathMatchers:
     - /favicon.ico
     - /robots.txt
     - /api/contact-request
+    - /api/share-project-public
     - /api/project-info
     - /api/levels
     - /api/files
