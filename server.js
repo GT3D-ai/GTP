@@ -30,6 +30,69 @@ const pointcloudBucket = storage.bucket(POINTCLOUD_BUCKET_NAME);
 
 const userService = createUserService({ bucket });
 
+// Case-insensitive project URL canonicalization. Project folders in GCS
+// are case-sensitive (so `gs://.../SFYC-Pilings/...` is distinct from
+// `gs://.../sfyc-pilings/...`), but most users don't think about case in
+// a URL bar. We cache the actual project list briefly and 302-redirect
+// any page request whose case doesn't match the canonical folder name.
+// API endpoints stay case-sensitive — by the time they're called from the
+// page, the URL has been redirected to canonical case.
+let projectNameCache = null;
+let projectNameCacheTs = 0;
+const PROJECT_NAME_CACHE_TTL_MS = 60 * 1000;
+
+async function getProjectNameMap() {
+  if (projectNameCache && (Date.now() - projectNameCacheTs) < PROJECT_NAME_CACHE_TTL_MS) {
+    return projectNameCache;
+  }
+  try {
+    const [, , apiResponse] = await bucket.getFiles({ delimiter: "/", autoPaginate: false });
+    const prefixes = apiResponse.prefixes || [];
+    const map = new Map();
+    prefixes.forEach((p) => {
+      const name = p.replace(/\/$/, "");
+      if (name === "_thumbs" || name === "_platform") return;
+      // Last write wins on the rare chance two folder names collide
+      // case-insensitively (e.g. "Foo" and "foo"). The canonical winner
+      // is whichever GCS returned later — acceptable for an edge case
+      // we'd consider misconfiguration.
+      map.set(name.toLowerCase(), name);
+    });
+    projectNameCache = map;
+    projectNameCacheTs = Date.now();
+    return map;
+  } catch (err) {
+    console.warn("[project-cache] refresh failed:", err.message);
+    return projectNameCache || new Map();
+  }
+}
+function invalidateProjectNameCache() {
+  projectNameCache = null;
+  projectNameCacheTs = 0;
+}
+
+async function resolveCanonicalProjectName(input) {
+  if (!input) return null;
+  const map = await getProjectNameMap();
+  return map.get(String(input).toLowerCase()) || null;
+}
+
+// If the supplied project URL segment doesn't match the canonical case in
+// GCS, send a 302 to the canonical URL. Returns true when a redirect was
+// issued so the caller can short-circuit.
+async function maybeRedirectCanonical(req, res, basePath, projectParam) {
+  let input;
+  try { input = decodeURIComponent(projectParam || ""); } catch { input = projectParam || ""; }
+  if (!input) return false;
+  const canonical = await resolveCanonicalProjectName(input);
+  if (canonical && canonical !== input) {
+    const target = `${basePath}/${encodeURIComponent(canonical)}`;
+    res.redirect(302, target);
+    return true;
+  }
+  return false;
+}
+
 // Body parsing (JSON only; multer handles multipart routes)
 app.use(express.json());
 
@@ -55,27 +118,32 @@ app.get(["/projects", "/projects.html"], (req, res) => {
 });
 
 // Pretty URL for map viewer: /map-viewer/<project-name>
-app.get("/map-viewer/:project", (req, res) => {
+app.get("/map-viewer/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/map-viewer", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "map-viewer.html"));
 });
 
 // Public, per-project models showcase: /models/<project-name>
-app.get("/models/:project", (req, res) => {
+app.get("/models/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/models", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-models.html"));
 });
 
 // Public, per-project point clouds showcase: /pointclouds/<project-name>
-app.get("/pointclouds/:project", (req, res) => {
+app.get("/pointclouds/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/pointclouds", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-pointclouds.html"));
 });
 
 // Public, per-project plans showcase: /plans/<project-name>
-app.get("/plans/:project", (req, res) => {
+app.get("/plans/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/plans", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-plans.html"));
 });
 
 // Public, per-project 2D images showcase: /images/<project-name>
-app.get("/images/:project", (req, res) => {
+app.get("/images/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/images", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-images.html"));
 });
 
@@ -85,7 +153,8 @@ app.get("/images/:project", (req, res) => {
 // project-home.html — the page detects the /public/ prefix client-side and
 // forces a read-only view (no editor reveals, share button hidden) regardless
 // of who's visiting.
-app.get("/public/:project", (req, res) => {
+app.get("/public/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/public", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-home.html"));
 });
 
@@ -358,6 +427,7 @@ app.post("/api/create-project", requireAdmin, upload.single("coverPhoto"), async
     });
 
     console.log(`Created project: ${name} (with ${levels.length} levels)`);
+    invalidateProjectNameCache();
     res.json({ success: true, project: name, metadata });
   } catch (err) {
     console.error("Create project error:", err.message);
@@ -502,6 +572,7 @@ app.post("/api/rename-project", requireAdmin, async (req, res) => {
     await userService.renameProjectInRoster(oldName, newName);
 
     console.log(`Renamed project: ${oldName} -> ${newName}`);
+    invalidateProjectNameCache();
     res.json({ success: true, project: newName });
   } catch (err) {
     console.error("Rename project error:", err.message);
@@ -522,6 +593,7 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
     await deleteAllInBucket(pointcloudBucket, prefix);
     await userService.removeProjectFromRoster(name);
     console.log(`Deleted project: ${name}`);
+    invalidateProjectNameCache();
     res.json({ success: true });
   } catch (err) {
     console.error("Delete project error:", err.message);
@@ -2318,7 +2390,7 @@ app.post("/api/contact-request", async (req, res) => {
 // files, pretty URLs (/map-viewer, /models, /plans), and /api/* routes take
 // priority. Anything with a "." in the path is treated as a filename and
 // falls through to 404 (so the static handler already tried it).
-app.get("/:project", (req, res, next) => {
+app.get("/:project", async (req, res, next) => {
   const project = req.params.project;
   if (!project || project.includes(".") || project.startsWith("_")) return next();
   // Reserved top-level words that are not projects
@@ -2327,6 +2399,7 @@ app.get("/:project", (req, res, next) => {
     "robots.txt", "tokens.css", "app.css", "me.js",
   ]);
   if (reserved.has(project)) return next();
+  if (await maybeRedirectCanonical(req, res, "", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-home.html"));
 });
 
