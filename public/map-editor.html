@@ -1244,7 +1244,16 @@
     function render360List() {
       const placedSet = new Set(mappings.pins.map((p) => p.image360));
       fileList.innerHTML = "";
-      allFiles360.forEach((file) => {
+      // Reorder so placed photos sink to the bottom of the list — the editor
+      // can keep working through the unplaced ones at the top without having
+      // to scroll past everything they've already pinned. Stable sort keeps
+      // the existing relative order within each group.
+      const ordered = [...allFiles360].sort((a, b) => {
+        const aPlaced = placedSet.has(a.name) ? 1 : 0;
+        const bPlaced = placedSet.has(b.name) ? 1 : 0;
+        return aPlaced - bPlaced;
+      });
+      ordered.forEach((file) => {
         if (file.name.endsWith("/") || file.name.endsWith("mappings.json")) return;
 
         // Filter by level
