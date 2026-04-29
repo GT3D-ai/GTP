@@ -859,26 +859,10 @@
         // Editors get drag-to-reorder + the Reset button. Order itself is
         // applied (for everyone) in loadProjectInfo once project.json is read.
         enableCardReorder();
-        // Replace the desktop horizontal nav with a hamburger menu at all
-        // breakpoints, and rewrite the dropdown to the editor-only set of
-        // links. Some destinations (Documents, Videos, Users) are still
-        // admin-gated server-side — non-admin editors will land on the
-        // page's "Admin required" notice if they aren't also an admin.
-        document.body.classList.add("editor-nav");
-        const enc2 = encodeURIComponent(project);
-        const dd = document.querySelector("#menuDropdown .dropdown-inner");
-        if (dd) {
-          dd.innerHTML = `
-            <a href="/map-viewer/${enc2}">Map</a>
-            <a href="/images/${enc2}">2D Images</a>
-            <a href="/plans/${enc2}">2D Plans</a>
-            <a href="/models/${enc2}">Models</a>
-            <a href="/document-upload.html?project=${enc2}">Documents</a>
-            <a href="/video-upload.html?project=${enc2}">Videos</a>
-            <a href="/users.html">Users</a>
-            <a href="/${enc2}">Project Home</a>
-          `;
-        }
+        // The editor-mode dropdown rewrite happens *after* the standard
+        // href setters below — those setters target IDs (mapMenuItem,
+        // imagesMenuItem, etc.) that the rewrite removes, so swapping
+        // first would null them out and throw.
       }
       if (isPublicPath) {
         // Logo on the public mirror points to the same /public/<project>
@@ -918,6 +902,31 @@
             document.getElementById("uploadsMenuItem").style.display = "";
           }
         }).catch(() => {});
+      }
+
+      // Editor-mode nav: replace the desktop horizontal nav with a
+      // hamburger menu at all breakpoints, and rewrite the dropdown to
+      // the editor-only set of links. Runs *after* the standard href
+      // setters above because rewriting the dropdown's innerHTML removes
+      // the IDs they target (mapMenuItem, imagesMenuItem, etc.). Some
+      // destinations (Documents, Videos, Users) are still admin-gated
+      // server-side — non-admin editors will land on the page's "Admin
+      // required" notice if they aren't also an admin.
+      if (canEditProject) {
+        document.body.classList.add("editor-nav");
+        const dd = document.querySelector("#menuDropdown .dropdown-inner");
+        if (dd) {
+          dd.innerHTML = `
+            <a href="/map-viewer/${enc}">Map</a>
+            <a href="/images/${enc}">2D Images</a>
+            <a href="/plans/${enc}">2D Plans</a>
+            <a href="/models/${enc}">Models</a>
+            <a href="/document-upload.html?project=${enc}">Documents</a>
+            <a href="/video-upload.html?project=${enc}">Videos</a>
+            <a href="/users.html">Users</a>
+            <a href="/${enc}">Project Home</a>
+          `;
+        }
       }
 
       // Main card links
