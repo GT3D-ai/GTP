@@ -252,7 +252,15 @@
     async function loadDocuments(project) {
       const isAdmin = !!(window.me && await window.me.isAdmin());
       try {
-        const res = await fetch(`/api/document/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
+        // Admins must hit the admin-routed endpoint — the public listing
+        // sits behind the no-IAP backend (so /documents/<project> is
+        // anonymous-reachable) and can't see admin identity, so it would
+        // hide private docs from admins. The admin endpoint stays off the
+        // public URL-map and routes through IAP, preserving role.
+        const listUrl = isAdmin
+          ? `/api/admin/document/files?project=${encodeURIComponent(project)}`
+          : `/api/document/files?project=${encodeURIComponent(project)}`;
+        const res = await fetch(listUrl, { credentials: "same-origin" });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
         const docs = await res.json();
         // Server already sorts by uploadedAt desc, but re-sort defensively
@@ -320,15 +328,19 @@
         wrap.innerHTML = "";
         wrap.appendChild(table);
 
-        // Download — works for everyone the API allows (non-admins are only
-        // shown public docs to begin with).
+        // Download — admins go through the admin-routed download-url
+        // endpoint so they can download private docs (the public route
+        // sits behind no-IAP and would 403 on anything not visibility=public).
         table.querySelectorAll(".doc-download-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const tr = btn.closest("tr");
             const filePath = tr.dataset.file;
             btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
             try {
-              const r = await fetch(`/api/document/download-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" });
+              const dlUrl = isAdmin
+                ? `/api/admin/document/download-url?file=${encodeURIComponent(filePath)}`
+                : `/api/document/download-url?file=${encodeURIComponent(filePath)}`;
+              const r = await fetch(dlUrl, { credentials: "same-origin" });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
               const { downloadUrl } = await r.json();
               window.location.href = downloadUrl;

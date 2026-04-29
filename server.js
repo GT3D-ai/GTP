@@ -1712,6 +1712,63 @@ async function writeDocumentMeta(filePath, meta) {
   );
 }
 
+// Admin: full document listing including private docs and uploader info.
+// Mirror of /api/document/files but kept OFF the public URL-map matcher
+// so it routes through the IAP backend — the public listing endpoint
+// can't see admin identity (it sits behind the no-IAP backend serving
+// /documents/<project>) and would silently filter private docs out.
+app.get("/api/admin/document/files", requireAdmin, async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = `${project}/_documents/`;
+    const [files] = await imageBucket.getFiles({ prefix });
+    const docs = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"));
+    const list = await Promise.all(docs.map(async (f) => {
+      const meta = await readDocumentMeta(f.name);
+      return {
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        uploadedBy: meta.uploadedBy || null,
+        uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+        visibility: meta.visibility === "public" ? "public" : "private",
+      };
+    }));
+    list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list);
+  } catch (err) {
+    console.error("Admin list documents error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: signed download URL that ignores the visibility flag — same
+// reason as the listing mirror above. Public download-url is reachable
+// to non-admins via the no-IAP backend and only signs URLs for public
+// docs; admins use this version for everything else.
+app.get("/api/admin/document/download-url", requireAdmin, async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Admin document download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // List documents in a project. Public route, but content is filtered by
 // caller role: admins see every document with full metadata; everyone
 // else (anonymous viewers and authenticated non-admins) sees only those
