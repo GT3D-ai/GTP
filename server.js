@@ -1319,6 +1319,36 @@ app.post("/api/mappings", requireProjectRole("editor"), saveMappingsHandler);
 
 // ---- 2D Image endpoints (gt_platform_image_storage) ----
 
+// Returns the set of image paths a project uses as floor plans — pulled
+// from mappings.json (floorPlanImage + every value in floorPlans). Used
+// by the 2D listing endpoints so floor plans don't double-show in the
+// 2D images page (they're still reachable via /api/mappings for the
+// map viewer / editor / project-home map card). Falls back to an empty
+// set if the project has no mappings yet or the file can't be read.
+async function getProjectFloorPlanPaths(project) {
+  if (!project) return new Set();
+  try {
+    const f = bucket.file(`${project}/mappings.json`);
+    const [exists] = await f.exists();
+    if (!exists) return new Set();
+    const [content] = await f.download();
+    const mappings = JSON.parse(content.toString());
+    const paths = new Set();
+    if (typeof mappings.floorPlanImage === "string" && mappings.floorPlanImage) {
+      paths.add(mappings.floorPlanImage);
+    }
+    if (mappings.floorPlans && typeof mappings.floorPlans === "object") {
+      Object.values(mappings.floorPlans).forEach((p) => {
+        if (typeof p === "string" && p) paths.add(p);
+      });
+    }
+    return paths;
+  } catch (err) {
+    console.warn(`[floorPlanPaths] read failed for ${project}:`, err.message);
+    return new Set();
+  }
+}
+
 // List 2D images in a project (PUBLIC — hidden images filtered out)
 app.get("/api/2d/files", async (req, res) => {
   try {
@@ -1330,11 +1360,13 @@ app.get("/api/2d/files", async (req, res) => {
       options.prefix = prefix;
     }
     const [files] = await imageBucket.getFiles(options);
+    const floorPlans = await getProjectFloorPlanPaths(project);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/")) // plans are managed separately
       .filter((f) => !f.name.includes("/_documents/"))
       .filter((f) => !f.name.includes("/_videos/")) // documents are admin-only, never surfaced here
+      .filter((f) => !floorPlans.has(f.name)) // floor-plan images live on the map only
       .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
       .map((f) => ({
         name: f.name,
@@ -1362,11 +1394,13 @@ app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
       options.prefix = prefix;
     }
     const [files] = await imageBucket.getFiles(options);
+    const floorPlans = await getProjectFloorPlanPaths(project);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/"))
       .filter((f) => !f.name.includes("/_documents/"))
       .filter((f) => !f.name.includes("/_videos/"))
+      .filter((f) => !floorPlans.has(f.name))
       .map((f) => ({
         name: f.name,
         displayName: prefix ? f.name.replace(prefix, "") : f.name,
@@ -1410,11 +1444,13 @@ app.get("/api/2d/files-with-hidden", requireProjectRole("editor"), async (req, r
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
     const [files] = await imageBucket.getFiles({ prefix });
+    const floorPlans = await getProjectFloorPlanPaths(project);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/"))
       .filter((f) => !f.name.includes("/_documents/"))
       .filter((f) => !f.name.includes("/_videos/"))
+      .filter((f) => !floorPlans.has(f.name))
       .map((f) => ({
         name: f.name,
         displayName: f.name.replace(prefix, ""),
