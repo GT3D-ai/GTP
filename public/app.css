@@ -452,24 +452,24 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
   text-overflow: ellipsis;
 }
 
-/* Admin pages use a left-aligned hamburger with the user chip
-   immediately to its left. Logo stays on the far left; everything
-   between is pulled flush so [Logo] [Chip] [Hamburger] form a
-   single left-aligned group. The hamburger is forced visible at
-   every breakpoint so admins always see the same nav. */
-body.admin-layout .menu-toggle {
-  display: flex !important;
-  margin-left: 0 !important;
-}
-body.admin-layout #userChip {
-  margin-left: var(--space-md);
+/* Admin pages use the same hamburger cluster as the project-home
+   editor view: hamburger anchored to the far right with the user
+   name (plain text, no box) immediately to its left, logo at the
+   far left, any horizontal nav suppressed. Hamburger is forced
+   visible at every breakpoint so admins always see the same nav. */
+body.admin-layout .menu-toggle { display: flex !important; }
+body.admin-layout .nav-primary { display: none !important; }
+body.admin-layout .header-inner .logo { order: 1; }
+body.admin-layout .header-inner #userChip {
+  order: 2;
+  margin-left: auto;
   margin-right: 8px;
 }
-body.admin-layout .nav-primary {
-  /* Admin layout is hamburger-only; suppress any horizontal nav so the
-     left-aligned cluster reads cleanly. Per-page admin links live
-     inside the hamburger menu instead. */
-  display: none !important;
+body.admin-layout .header-inner .menu-toggle { order: 3; }
+body.admin-layout .user-chip.user-chip--name-only {
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
 }
 
 /* Right-align the hamburger toggle for plain viewer pages so it sits

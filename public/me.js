@@ -29,16 +29,62 @@
     el.innerHTML = `<div class="user-chip user-chip--name-only" title="${m.email}">${safe}</div>`;
   }
 
-  // Standard admin hamburger menu items, used by injectAdminHamburger.
-  // Project-scoped destinations (Documents/Videos uploaders) come without
-  // a project param here — those pages already gracefully prompt for one.
-  const ADMIN_MENU = [
-    { href: "/projects",            label: "Projects" },
-    { href: "/new-project.html",    label: "New Project" },
-    { href: "/document-upload.html", label: "Documents" },
-    { href: "/video-upload.html",   label: "Videos" },
-    { href: "/users.html",          label: "Users" },
-  ];
+  // Detect the active project from the URL so admin pages can show a
+  // project-scoped menu (matching the project-home editor menu) when one
+  // is in context. Recognised URL shapes:
+  //   ?project=<name> in the query string (most upload + edit pages)
+  //   /<project> (catch-all project home)
+  //   /<section>/<project> for section in the showcase set
+  function detectProject() {
+    try {
+      const fromQuery = new URLSearchParams(location.search).get("project");
+      if (fromQuery) return fromQuery;
+    } catch {}
+    const segments = location.pathname.split("/").filter(Boolean);
+    const sectionPrefixes = new Set(["public", "map-viewer", "models", "pointclouds", "plans", "images", "documents"]);
+    if (segments.length === 2 && sectionPrefixes.has(segments[0])) {
+      try { return decodeURIComponent(segments[1]); } catch { return segments[1]; }
+    }
+    const reservedTop = new Set([
+      "api", "projects", "public",
+      "map-viewer", "models", "pointclouds", "plans", "images", "documents",
+      "uploads.html", "users.html", "new-project.html", "edit-project.html",
+      "document-upload.html", "video-upload.html", "model-upload.html",
+      "pointcloud-upload.html", "plan-upload.html", "upload.html", "images.html",
+      "image-viewer.html", "viewer.html", "model-viewer.html", "map-editor.html",
+      "robots.txt", "tokens.css", "app.css", "me.js", "favicon.ico",
+    ]);
+    if (segments.length === 1 && !segments[0].includes(".") && !reservedTop.has(segments[0])) {
+      try { return decodeURIComponent(segments[0]); } catch { return segments[0]; }
+    }
+    return null;
+  }
+
+  // Standard admin hamburger menu — mirrors the project-home editor menu
+  // when an active project is detectable from the URL, falls back to a
+  // global admin set otherwise (so users.html / new-project.html still
+  // get a useful nav without inventing a project context out of thin air).
+  function adminMenuItems() {
+    const project = detectProject();
+    if (project) {
+      const enc = encodeURIComponent(project);
+      return [
+        { href: `/map-viewer/${enc}`, label: "Map" },
+        { href: `/images/${enc}`, label: "2D Images" },
+        { href: `/plans/${enc}`, label: "2D Plans" },
+        { href: `/models/${enc}`, label: "Models" },
+        { href: `/documents/${enc}`, label: "Documents" },
+        { href: `/video-upload.html?project=${enc}`, label: "Videos" },
+        { href: `/users.html`, label: "Users" },
+        { href: `/${enc}`, label: "Project Home" },
+      ];
+    }
+    return [
+      { href: "/projects", label: "All Projects" },
+      { href: "/new-project.html", label: "New Project" },
+      { href: "/users.html", label: "Users" },
+    ];
+  }
 
   function injectAdminHamburger(inner, header) {
     const btn = document.createElement("button");
@@ -53,7 +99,8 @@
     const panel = document.createElement("div");
     panel.className = "dropdown-panel";
     panel.id = "menuDropdown";
-    const itemsHtml = ADMIN_MENU.map((m) => `<a href="${m.href}">${m.label}</a>`).join("");
+    const items = adminMenuItems();
+    const itemsHtml = items.map((m) => `<a href="${m.href}">${m.label}</a>`).join("");
     panel.innerHTML = `<div class="dropdown-inner">${itemsHtml}</div>`;
     header.appendChild(panel);
 
