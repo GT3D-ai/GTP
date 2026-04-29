@@ -198,9 +198,22 @@ module.exports = function createProjectResolver({ bucket }) {
   // Phase-1 indexing: register every existing project as a `layout: "old"`
   // entry. Idempotent — re-running won't overwrite already-migrated entries
   // and won't duplicate legacy ones.
+  //
+  // Filters at the input layer because top-level GCS prefixes after Phase-2
+  // migration include both property-id folders (the new physical prefix
+  // `prop_xxx/`) and the still-present old project folders that have an
+  // alias entry pointing to a layout:"new" canonical. Adding either as a
+  // fresh layout:"old" entry would re-pollute the index on every boot.
   async function buildLegacyIndex(projectNames) {
     return mutateIndex((idx) => {
       for (const name of projectNames) {
+        // Property-id folders are not projects.
+        if (/^prop_[0-9a-f]{16}$/.test(name)) continue;
+        // Already migrated under a compound canonical slug — alias map
+        // points old name to the new canonical entry.
+        if (idx.alias && idx.alias[name]) continue;
+        // Don't downgrade an existing layout:"new" canonical entry.
+        if (idx.canonical[name] && idx.canonical[name].layout === "new") continue;
         if (!idx.canonical[name]) {
           idx.canonical[name] = { layout: "old", name };
         }

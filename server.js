@@ -54,6 +54,10 @@ async function getProjectNameMap() {
     prefixes.forEach((p) => {
       const name = p.replace(/\/$/, "");
       if (name === "_thumbs" || name === "_platform") return;
+      // Property-id folders (the post-migration physical prefix root)
+      // are not projects — skip them so they don't get registered as
+      // legacy projects on the next boot indexing.
+      if (/^prop_[0-9a-f]{16}$/.test(name)) return;
       // Last write wins on the rare chance two folder names collide
       // case-insensitively (e.g. "Foo" and "foo"). The canonical winner
       // is whichever GCS returned later — acceptable for an edge case

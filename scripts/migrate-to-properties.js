@@ -174,7 +174,14 @@ async function discoverProjects(mainBucket) {
   const prefixes = (api && api.prefixes) || [];
   return prefixes
     .map((p) => p.replace(/\/$/, ""))
-    .filter((p) => p && !p.startsWith("_platform"))
+    .filter((p) => {
+      if (!p) return false;
+      if (p === "_platform" || p === "_thumbs") return false;
+      // Skip post-migration property-id folders so --all doesn't try to
+      // migrate them as if they were projects.
+      if (/^prop_[0-9a-f]{16}$/.test(p)) return false;
+      return true;
+    })
     .sort();
 }
 
