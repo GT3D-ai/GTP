@@ -141,6 +141,12 @@
         <div class="field-hint" id="propertyHint">Pick an existing property to add a project to it, or choose "+ New Property".</div>
       </div>
 
+      <div class="field" id="propertyNameField" style="display:none;">
+        <label class="field-label" for="propertyName">Property Name</label>
+        <input class="field-input" type="text" id="propertyName" placeholder="e.g. Smith House">
+        <div class="field-hint">Display name for this property. Defaults to the address.</div>
+      </div>
+
       <div class="field">
         <label class="field-label" for="projectAddress">Property Address <span class="required-mark" id="addressRequiredMark">*</span></label>
         <input class="field-input" type="text" id="projectAddress" placeholder="123 Main St, City, ST 12345">
@@ -196,6 +202,7 @@
 
       <div style="display:flex; gap: var(--space-sm);">
         <a href="/" class="btn btn-outline">Cancel</a>
+        <button type="button" class="btn btn-outline" id="savePropertyBtn" style="display:none;">Save Property</button>
         <button type="submit" class="btn btn-primary btn-block" id="submitBtn" style="flex:1;">Create Project</button>
       </div>
       <div class="status-message" id="statusMessage"></div>
@@ -206,11 +213,14 @@
     const form = document.getElementById("projectForm");
     const propertySelect = document.getElementById("propertySelect");
     const propertyHint = document.getElementById("propertyHint");
+    const propertyNameField = document.getElementById("propertyNameField");
+    const propertyNameEl = document.getElementById("propertyName");
     const addressEl = document.getElementById("projectAddress");
     const addressHint = document.getElementById("addressHint");
     const addressRequiredMark = document.getElementById("addressRequiredMark");
     const nameEl = document.getElementById("projectName");
     const submitBtn = document.getElementById("submitBtn");
+    const savePropertyBtn = document.getElementById("savePropertyBtn");
     const statusMessage = document.getElementById("statusMessage");
 
     // Property cover (left)
@@ -370,6 +380,11 @@
       addressHint.className = "field-hint";
       propertyHint.textContent = "Creating a new property.";
       propertyHint.className = "field-hint";
+      // Property name field: hidden for new property — name auto-derives
+      // from the address. User can rename later via the edit flow.
+      propertyNameField.style.display = "none";
+      propertyNameEl.value = "";
+      savePropertyBtn.style.display = "none";
       clearPropertyCoverDisplay();
       // Default the project name to "Existing Conditions <date>" if blank.
       if (!nameEl.value) nameEl.value = defaultProjectName();
@@ -388,6 +403,10 @@
       addressHint.className = "field-hint";
       propertyHint.textContent = `Adding a project to "${summary.name}" (${summary.projectCount} existing).`;
       propertyHint.className = "field-hint";
+      // Property name editable when an existing property is selected.
+      propertyNameField.style.display = "";
+      propertyNameEl.value = summary.name || "";
+      savePropertyBtn.style.display = "";
       // Default project name to "Existing Conditions <date>" — even on
       // an existing property, that's the user's stated convention for
       // re-surveys when conditions change over time.
@@ -405,6 +424,89 @@
         }
       } catch { /* fall through with no cover */ }
     }
+
+    // Save property edits (name, address, cover) without creating a
+    // project. Only available when an existing property is selected.
+    async function savePropertyChanges() {
+      if (!selectedPropertyId) return;
+      const newName = propertyNameEl.value.trim();
+      const newAddress = addressEl.value.trim();
+      // Bail out if nothing to save (no name change, no address change,
+      // no new cover file). Avoids a no-op round-trip.
+      const summary = propertiesById.get(selectedPropertyId);
+      const noNameChange = !newName || newName === (summary && summary.name);
+      const noAddressChange = !newAddress || newAddress === (summary && summary.address);
+      if (noNameChange && noAddressChange && !propertyCoverFile) {
+        statusMessage.textContent = "No changes to save.";
+        statusMessage.className = "status-message visible info";
+        return;
+      }
+      savePropertyBtn.disabled = true;
+      submitBtn.disabled = true;
+      const oldLabel = savePropertyBtn.textContent;
+      savePropertyBtn.textContent = "Saving…";
+      statusMessage.textContent = "Saving property changes…";
+      statusMessage.className = "status-message visible info";
+      try {
+        const fd = new FormData();
+        if (newName) fd.append("name", newName);
+        if (newAddress) fd.append("address", newAddress);
+        if (propertyCoverFile) fd.append("propertyCoverPhoto", propertyCoverFile);
+        const res = await fetch(`/api/property/${encodeURIComponent(selectedPropertyId)}`, {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          if (data && data.error === "address_needs_review") {
+            const accept = confirm(
+              "The address looks incomplete:\n  " + (data.warnings || []).join(", ") +
+              "\n\nSuggested:\n  " + (data.suggestion || "(none)") +
+              "\n\nUse the suggestion?"
+            );
+            if (accept && data.suggestion) {
+              addressEl.value = data.suggestion;
+              addressHint.textContent = "Updated to suggestion — click Save Property again to confirm.";
+              addressHint.className = "field-hint ok";
+            } else {
+              addressHint.textContent = "Please adjust the address and try again.";
+              addressHint.className = "field-hint warn";
+              addressEl.focus();
+            }
+            throw new Error("Address needs review");
+          }
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
+        // Update in-memory state so the dropdown reflects the changes
+        // without a reload.
+        const updated = data.property || {};
+        if (summary) {
+          if (updated.name) summary.name = updated.name;
+          if (updated.address) summary.address = updated.address;
+          if (updated.coverPhoto) summary.coverPhoto = updated.coverPhoto;
+        }
+        // Refresh the option label.
+        const opt = Array.from(propertySelect.options).find((o) => o.value === selectedPropertyId);
+        if (opt && summary) opt.textContent = summary.name + (summary.projectCount > 0 ? `  (${summary.projectCount})` : "");
+        propertyHint.textContent = `Saved. Adding a project to "${(summary && summary.name) || ""}" (${(summary && summary.projectCount) || 0} existing).`;
+        // Clear the cover-file slot so a subsequent Create Project
+        // doesn't re-upload the same file as a new project cover.
+        propertyCoverFile = null;
+        // Re-display the now-current cover from the server.
+        if (updated.coverPhoto) showExistingPropertyCover(updated.coverPhoto);
+        statusMessage.textContent = "Property changes saved.";
+        statusMessage.className = "status-message visible success";
+      } catch (err) {
+        statusMessage.textContent = "Error: " + err.message;
+        statusMessage.className = "status-message visible error";
+      } finally {
+        savePropertyBtn.disabled = false;
+        submitBtn.disabled = false;
+        savePropertyBtn.textContent = oldLabel;
+      }
+    }
+    savePropertyBtn.addEventListener("click", savePropertyChanges);
 
     propertySelect.addEventListener("change", () => {
       const id = propertySelect.value;

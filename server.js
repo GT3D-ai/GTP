@@ -543,6 +543,87 @@ app.post("/api/validate-address", requireAdmin, async (req, res) => {
   res.json(normalizeAddress(addr));
 });
 
+// Update an existing property — name, address, and/or cover photo.
+// All fields optional; only changed fields are written. Address is
+// validated/normalized the same way the create flow does.
+app.post(
+  "/api/property/:propertyId",
+  requireAdmin,
+  upload.single("propertyCoverPhoto"),
+  async (req, res) => {
+    const propertyId = req.params.propertyId;
+    const cleanup = () => req.file && fs.unlink(req.file.path, () => {});
+
+    try {
+      const existing = await getProperty(propertyId);
+      if (!existing) {
+        cleanup();
+        return res.status(404).json({ error: "Property not found" });
+      }
+
+      const updates = {};
+
+      const newName = (req.body.name || "").trim();
+      if (newName && newName !== existing.name) updates.name = newName;
+
+      const rawAddress = (req.body.address || "").trim();
+      if (rawAddress && rawAddress !== existing.address) {
+        const norm = normalizeAddress(rawAddress);
+        if (norm.needsReview && !norm.autoCorrected) {
+          cleanup();
+          return res.status(400).json({
+            error: "address_needs_review",
+            message: "The address looks incomplete or malformed.",
+            suggestion: norm.normalized,
+            warnings: norm.warnings,
+          });
+        }
+        updates.address = norm.normalized;
+        // Clearing the needsAddress flag — user has just confirmed an
+        // address that passed validation.
+        if (existing.needsAddress) updates.needsAddress = false;
+      }
+
+      if (req.file) {
+        const ext = path.extname(req.file.originalname) || ".jpg";
+        const coverPath = `${propertyId}/_property-cover${ext}`;
+        const gcs = imageBucket.file(coverPath);
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(req.file.path)
+            .pipe(
+              gcs.createWriteStream({
+                resumable: false,
+                metadata: { contentType: req.file.mimetype || "image/jpeg" },
+              })
+            )
+            .on("error", reject)
+            .on("finish", resolve);
+        });
+        fs.unlink(req.file.path, () => {});
+        updates.coverPhoto = coverPath;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.json({ success: true, property: existing, message: "no changes" });
+      }
+
+      const updated = await mutateProperties((data) => {
+        const p = data.properties[propertyId];
+        if (!p) throw new Error("Property disappeared mid-update");
+        Object.assign(p, updates, { updatedAt: new Date().toISOString() });
+        return p;
+      });
+
+      console.log(`Updated property ${propertyId}: ${Object.keys(updates).join(", ")}`);
+      res.json({ success: true, property: updated });
+    } catch (err) {
+      console.error("Update property error:", err.message);
+      cleanup();
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 app.get("/api/projects", async (req, res) => {
   try {
     if (!req.user) return res.json([]);
