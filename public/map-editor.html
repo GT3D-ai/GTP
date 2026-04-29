@@ -1683,6 +1683,18 @@
     const thumbPopoverLabel = document.getElementById("thumbPopoverLabel");
     let activeThumbFile = null;
 
+    // The popover IMG is intentionally draggable so editors can drop a
+    // photo onto the map straight from the hover preview, but the
+    // browser's default drag data is the IMG src — i.e. an absolute
+    // URL like "/api/thumbnail?file=...". The drop handler stores that
+    // verbatim as image360, producing pins that can't be matched to
+    // file listings. Override the dataTransfer to the actual GCS path.
+    thumbPopoverImg.addEventListener("dragstart", (e) => {
+      if (!activeThumbFile) { e.preventDefault(); return; }
+      e.dataTransfer.setData("text/plain", activeThumbFile);
+      e.dataTransfer.effectAllowed = "copy";
+    });
+
     function showThumbPopover(fileName, displayName, anchorEl) {
       if (activeThumbFile === fileName) {
         hideThumbPopover();
