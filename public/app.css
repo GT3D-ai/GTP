@@ -498,21 +498,37 @@ a.project-headline:hover,
   color: var(--accent);
 }
 
+/* Category pages (per-asset showcase pages + map-viewer + any future
+   category page) anchor the header content against the actual left
+   edge of the viewport — no max-width centering, no left padding —
+   so the logo sits flush left and the project name reads immediately
+   to its right. Right padding stays so the hamburger / nav cluster
+   doesn't crash into the edge. */
+body.category-page .header-inner {
+  max-width: none;
+  margin: 0;
+  padding-left: 0;
+}
+
 /* Editor-mode nav, shared across project-home and the per-asset
    showcase pages: horizontal nav suppressed, hamburger forced visible
    at every breakpoint and anchored far right, user chip rendered as
    plain text immediately to its left, logo at the far left. Each page
    adds body.editor-nav once it confirms the visitor can edit and
-   rewrites #menuDropdown's contents to the editor menu set. */
+   rewrites #menuDropdown's contents to the editor menu set.
+   Flex orders pin: logo (1) → project headline (2 — only on category
+   pages, no-op otherwise) → user chip (3, margin-left:auto pulls
+   everything from here right) → hamburger (4). */
 body.editor-nav .nav-primary { display: none !important; }
 body.editor-nav .menu-toggle { display: flex !important; }
 body.editor-nav .header-inner .logo { order: 1; }
+body.editor-nav .header-inner .project-headline { order: 2; }
 body.editor-nav .header-inner #userChip {
-  order: 2;
+  order: 3;
   margin-left: auto;
   margin-right: 8px;
 }
-body.editor-nav .header-inner .menu-toggle { order: 3; }
+body.editor-nav .header-inner .menu-toggle { order: 4; }
 body.editor-nav .user-chip.user-chip--name-only {
   border: none;
   background: transparent;
