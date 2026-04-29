@@ -1966,13 +1966,22 @@
     // detected — see the conflict-merge logic in saveMappings().
     let mappingsGeneration = "0";
 
+    // Physical GCS prefix for this project's storage. Pre-migration
+    // it's "<projectName>/" and matches the URL slug; post-migration
+    // it's "<propertyId>/<projectId>/" and diverges from the slug.
+    // Server returns it on /api/mappings as _prefix; we cache it here
+    // so level filtering and path comparisons work for both layouts.
+    let projectPrefix = project ? project + "/" : "";
+
     async function loadMappings() {
       try {
         const res = await fetch(`/api/mappings?project=${encodeURIComponent(project)}`);
         if (!res.ok) return;
         const payload = await res.json();
         mappingsGeneration = payload._generation || "0";
+        if (payload._prefix) projectPrefix = payload._prefix;
         delete payload._generation;
+        delete payload._prefix;
         mappings = payload;
       } catch {}
     }
@@ -2093,8 +2102,8 @@
         if (file.name.endsWith("/") || file.name.endsWith("mappings.json")) return;
 
         // Filter by level
-        if (currentLevelFilter && project) {
-          const levelPrefix = project + "/" + currentLevelFilter + "/";
+        if (currentLevelFilter && projectPrefix) {
+          const levelPrefix = projectPrefix + currentLevelFilter + "/";
           if (!file.name.startsWith(levelPrefix)) return;
         }
         // Show only the bare filename in the sidebar list — strip the
@@ -2109,8 +2118,8 @@
 
         // Determine file's current level from its path
         let fileCurrentLevel = "";
-        if (project) {
-          const relPath = file.name.replace(project + "/", "");
+        if (projectPrefix) {
+          const relPath = file.displayName || file.name.replace(projectPrefix, "");
           const parts = relPath.split("/");
           if (parts.length > 1) fileCurrentLevel = parts[0];
         }
@@ -2687,8 +2696,8 @@
       // Collision: was the photo dropped close enough to an existing pin
       // to count as "on top of" it? If so, snap to that pin's exact
       // coords so they group as a stack.
-      const visible = currentLevelFilter && project
-        ? mappings.pins.filter((p) => p.image360.startsWith(`${project}/${currentLevelFilter}/`))
+      const visible = currentLevelFilter && projectPrefix
+        ? mappings.pins.filter((p) => p.image360.startsWith(projectPrefix + currentLevelFilter + "/"))
         : mappings.pins;
       const collisionPin = visible.find((p) =>
         Math.abs(p.x - x) < STACK_THRESHOLD && Math.abs(p.y - y) < STACK_THRESHOLD
@@ -3282,8 +3291,8 @@
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
 
       // Filter pins by the currently selected level (show all when "All Levels")
-      const visiblePins = currentLevelFilter && project
-        ? mappings.pins.filter((p) => p.image360.startsWith(`${project}/${currentLevelFilter}/`))
+      const visiblePins = currentLevelFilter && projectPrefix
+        ? mappings.pins.filter((p) => p.image360.startsWith(projectPrefix + currentLevelFilter + "/"))
         : mappings.pins;
 
       // Group pins that share an exact (x, y) so we render one element

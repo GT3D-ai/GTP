@@ -1354,17 +1354,21 @@ app.get("/api/mappings", async (req, res) => {
   const project = req.query.project;
   if (!project) return res.status(400).json({ error: "project is required" });
   try {
+    // _prefix is the physical GCS prefix for this project ("name/" pre-
+    // migration, "propertyId/projectId/" post-migration). Frontends use
+    // it for level filtering instead of assuming URL slug == prefix.
+    const _prefix = `${project}/`;
     const file = bucket.file(`${project}/mappings.json`);
     const [exists] = await file.exists();
     // _generation is the GCS object generation. Editors send it back as
     // `expectedGeneration` on save so concurrent edits can be detected via
     // ifGenerationMatch — see the save handler below. 0 == "file does not
     // exist yet"; ifGenerationMatch:0 makes the first save atomic.
-    if (!exists) return res.json({ floorPlanImage: null, pins: [], _generation: "0" });
+    if (!exists) return res.json({ floorPlanImage: null, pins: [], _generation: "0", _prefix });
     const [content] = await file.download();
     const [metadata] = await file.getMetadata();
     const data = JSON.parse(content.toString());
-    res.json({ ...data, _generation: String(metadata.generation || "0") });
+    res.json({ ...data, _generation: String(metadata.generation || "0"), _prefix });
   } catch (err) {
     console.error("Get mappings error:", err.message);
     res.status(500).json({ error: err.message });

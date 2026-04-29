@@ -320,8 +320,12 @@
           item.className = "file-item";
 
           let fileCurrentLevel = "";
-          if (project) {
-            const relPath = file.name.replace(project + "/", "");
+          // The API returns displayName as the project-relative path,
+          // which works correctly for both pre- and post-migration
+          // layouts (the slug-based replace breaks for migrated paths
+          // since the slug != the physical prefix).
+          const relPath = file.displayName || (project ? file.name.replace(project + "/", "") : file.name);
+          if (relPath) {
             const parts = relPath.split("/");
             if (parts.length > 1) fileCurrentLevel = parts[0];
           }

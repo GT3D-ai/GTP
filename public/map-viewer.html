@@ -929,11 +929,17 @@
       } catch {}
     }
 
+    // Physical GCS prefix for this project's storage. Pre-migration
+    // it's "<projectName>/" and matches the URL slug; post-migration
+    // it's "<propertyId>/<projectId>/" and diverges from the slug.
+    let projectPrefix = project ? project + "/" : "";
+
     async function loadMappings() {
       try {
         const res = await fetch(`/api/mappings?project=${encodeURIComponent(project)}`);
         if (!res.ok) return;
         mappings = await res.json();
+        if (mappings._prefix) projectPrefix = mappings._prefix;
       } catch {}
     }
 
@@ -951,7 +957,7 @@
 
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
-      const prefix = `${project}/${currentLevel}/`;
+      const prefix = `${projectPrefix}${currentLevel}/`;
       const visiblePins = mappings.pins.filter((p) => p.image360.startsWith(prefix));
 
       // Group pins that share an exact (x, y) so a stack renders as one
@@ -1271,7 +1277,7 @@
     function openViewer(image360, displayName) {
       // Build the navigation list from pins visible on the current level, in
       // the order they appear in mappings.pins.
-      const prefix = `${project}/${currentLevel}/`;
+      const prefix = `${projectPrefix}${currentLevel}/`;
       navList = (mappings.pins || []).filter((p) => p.image360 && p.image360.startsWith(prefix));
       navIndex = navList.findIndex((p) => p.image360 === image360);
       viewerModal.classList.add("visible");

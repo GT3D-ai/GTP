@@ -1022,6 +1022,10 @@
 
     // ---- Map card: level 1 floor plan + level selector ----
     let mappings = { floorPlanImage: null, floorPlans: {}, pins: [] };
+    // Physical GCS prefix; updated from /api/mappings response so pin
+    // filtering works for both pre-migration (slug == prefix) and post-
+    // migration (propertyId/projectId/) projects.
+    let projectPrefix = project ? project + "/" : "";
     function getFloorPlanForLevel(level) {
       if (level && mappings.floorPlans && mappings.floorPlans[level]) return mappings.floorPlans[level];
       return mappings.floorPlanImage || null;
@@ -1035,6 +1039,7 @@
         ]);
         const levels = levelsRes.ok ? await levelsRes.json() : [];
         mappings = mapRes.ok ? await mapRes.json() : mappings;
+        if (mappings && mappings._prefix) projectPrefix = mappings._prefix;
 
         const levelSelect = document.getElementById("mapLevelSelect");
         levelSelect.innerHTML = "";
@@ -1107,7 +1112,7 @@
         // Overlay pins for the selected level — same 360 photo markers
         // that the map viewer shows, rendered as small circles on top of
         // the floor plan thumbnail.
-        const prefix = `${project}/${level}/`;
+        const prefix = `${projectPrefix}${level}/`;
         const pins = (mappings.pins || []).filter((p) => p.image360 && p.image360.startsWith(prefix));
         pins.forEach((pin) => {
           const dot = document.createElement("div");
@@ -1455,7 +1460,7 @@
         const up = await fetch("/api/2d/upload", { method: "POST", body: fd });
         const upJson = await up.json().catch(() => ({}));
         if (!up.ok) throw new Error(upJson.error || `Upload HTTP ${up.status}`);
-        const newPath = upJson.destName || `${project}/${file.name}`;
+        const newPath = upJson.destName || `${projectPrefix}${file.name}`;
         await refreshImageList();
         renderThumbGrid();
         await pickThumbnail(newPath);
