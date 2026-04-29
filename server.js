@@ -287,49 +287,18 @@ async function ensureProjectResolved(req) {
   if (req.params && typeof req.params.project === "string") req.params.project = physical;
 }
 
-// Cached read of migration state — once we're past Phase-2-start we
-// fail closed on migration-guard errors instead of letting writes
-// through. Pre-Phase-2 (no state file at all) we fail open so a
-// transient resolver hiccup doesn't block legitimate users.
-let migrationStateCache = { value: null, fetchedAt: 0 };
-const MIGRATION_STATE_TTL_MS = 60_000;
-async function getMigrationState() {
-  if (migrationStateCache.value !== null && Date.now() - migrationStateCache.fetchedAt < MIGRATION_STATE_TTL_MS) {
-    return migrationStateCache.value;
-  }
-  try {
-    const f = bucket.file("_platform/migration-state.json");
-    const [exists] = await f.exists();
-    if (!exists) {
-      migrationStateCache = { value: { phase: null }, fetchedAt: Date.now() };
-      return migrationStateCache.value;
-    }
-    const [content] = await f.download();
-    const parsed = JSON.parse(content.toString());
-    migrationStateCache = { value: parsed, fetchedAt: Date.now() };
-    return parsed;
-  } catch {
-    return migrationStateCache.value || { phase: null };
-  }
-}
-
 // 503 on writes whenever a project's metadata has `migrating: true`. The
 // migration script sets this flag during its copy window and clears it
-// when the slug-index flips to layout:"new". Reads pass through. After
-// Phase-2 has started we fail closed on resolver errors — the cost of
-// blocking a few writes during a transient outage is tiny next to the
-// cost of letting a write race the migration copy.
+// when the slug-index flips to layout:"new". Reads pass through.
+// Resolver miss (project not in index, or metadata read failed) is fail-
+// open: an earlier draft tried to fail-closed during active migrations,
+// but that incorrectly blocks newly-created projects which aren't in the
+// index yet. The per-project flag is the load-bearing safety check.
 async function blockedDuringMigration(req) {
   if (req.method === "GET" || req.method === "HEAD") return false;
   await ensureProjectResolved(req);
   const proj = req.projectResolved;
-  if (proj && proj.migrating === true) return true;
-  if (proj) return false;
-  // No resolved project — could be a transient lookup failure or a project
-  // that simply isn't in the index. Tighten only when we know a migration
-  // is actively underway.
-  const state = await getMigrationState();
-  return state && state.phase && state.phase !== "switched-over";
+  return !!(proj && proj.migrating === true);
 }
 
 function requireProjectRole(minRole) {
@@ -556,6 +525,13 @@ app.post("/api/create-project", requireAdmin, upload.single("coverPhoto"), async
 
     console.log(`Created project: ${name} (with ${levels.length} levels)`);
     invalidateProjectNameCache();
+    // Register the new project in the slug index so the resolver finds
+    // it on the next request without waiting for a server restart.
+    try {
+      await projectResolver.buildLegacyIndex([name]);
+    } catch (err) {
+      console.warn(`[index] failed to register new project "${name}":`, err.message);
+    }
     res.json({ success: true, project: name, metadata });
   } catch (err) {
     console.error("Create project error:", err.message);
@@ -698,6 +674,22 @@ app.post("/api/rename-project", requireAdmin, async (req, res) => {
 
     // Roster: rename project key across all users
     await userService.renameProjectInRoster(oldName, newName);
+
+    // Slug index: move the canonical entry, preserve the old slug as an
+    // alias so any in-flight bookmarks/links 301 to the new URL. The
+    // resolver invalidates its own caches on any successful mutation.
+    try {
+      await projectResolver.renameProject({ oldSlug: oldName, newSlug: newName });
+    } catch (err) {
+      // If the index didn't have the project yet (e.g. a project created
+      // before boot indexing ran), just register the new name as legacy.
+      console.warn(`[index] renameProject "${oldName}" -> "${newName}" failed: ${err.message}; registering newName as legacy`);
+      try {
+        await projectResolver.buildLegacyIndex([newName]);
+      } catch (e2) {
+        console.warn(`[index] fallback buildLegacyIndex failed:`, e2.message);
+      }
+    }
 
     console.log(`Renamed project: ${oldName} -> ${newName}`);
     invalidateProjectNameCache();
