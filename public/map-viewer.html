@@ -487,15 +487,25 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <!-- Non-editor menu (Models, GT3D Home) -->
-        <a id="modelsMenuItem" href="/models/" class="non-editor-only">Models</a>
-        <a href="https://gt3d.com" target="_blank" rel="noopener" class="non-editor-only">GT3D Home</a>
+        <!-- Viewer menu (anonymous + non-editor logged-in users) -->
+        <a id="navHomeViewer" href="#" class="non-editor-only">Project Home</a>
+        <a id="navPlansViewer" href="#" class="non-editor-only">2D Plans</a>
+        <a id="navModelsViewer" href="#" class="non-editor-only">Models</a>
+        <a id="navImagesViewer" href="#" class="non-editor-only">2D Images</a>
+        <a id="navPointcloudsViewer" href="#" class="non-editor-only">Point Clouds</a>
 
-        <!-- Editor menu (Edit Map, 2D Photos, Models, Projects) -->
-        <a id="editMapMenuItem" href="/map-editor.html" class="editor-only" style="display:none;">Edit Map</a>
-        <a id="imageViewerMenuItem" href="/image-viewer.html" class="editor-only" style="display:none;">2D Photos</a>
-        <a id="modelsMenuItemEditor" href="/models/" class="editor-only" style="display:none;">Models</a>
-        <a href="/" class="editor-only" style="display:none;">Projects</a>
+        <!-- Editor menu — same set as project-home's editor menu, plus
+             "All Projects" since editors usually want a quick way back to
+             the projects index. -->
+        <a id="navMap" href="#" class="editor-only" style="display:none;">Map</a>
+        <a id="navImages" href="#" class="editor-only" style="display:none;">2D Images</a>
+        <a id="navPlans" href="#" class="editor-only" style="display:none;">2D Plans</a>
+        <a id="navModels" href="#" class="editor-only" style="display:none;">Models</a>
+        <a id="navDocuments" href="#" class="editor-only" style="display:none;">Documents</a>
+        <a id="navVideos" href="#" class="editor-only" style="display:none;">Videos</a>
+        <a href="/users.html" class="editor-only" style="display:none;">Users</a>
+        <a id="navHome" href="#" class="editor-only" style="display:none;">Project Home</a>
+        <a href="/projects" class="editor-only" style="display:none;">All Projects</a>
       </div>
     </div>
   </header>
@@ -604,12 +614,22 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
-      // Non-editor menu items
-      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
-      // Editor menu items — href filled in now, visibility set after /api/me resolves
-      document.getElementById("editMapMenuItem").href = `/map-editor.html?project=${enc}`;
-      document.getElementById("imageViewerMenuItem").href = `/image-viewer.html?project=${enc}`;
-      document.getElementById("modelsMenuItemEditor").href = `/models/${enc}`;
+      // Viewer menu items — used by anonymous and non-editor visitors.
+      // "Project Home" is the read-only /public/<project> mirror so
+      // anonymous viewers don't get bounced into IAP.
+      document.getElementById("navHomeViewer").href = `/public/${enc}`;
+      document.getElementById("navPlansViewer").href = `/plans/${enc}`;
+      document.getElementById("navModelsViewer").href = `/models/${enc}`;
+      document.getElementById("navImagesViewer").href = `/images/${enc}`;
+      document.getElementById("navPointcloudsViewer").href = `/pointclouds/${enc}`;
+      // Editor menu items — visibility flipped after /api/me resolves below.
+      document.getElementById("navMap").href = `/map-viewer/${enc}`;
+      document.getElementById("navImages").href = `/images/${enc}`;
+      document.getElementById("navPlans").href = `/plans/${enc}`;
+      document.getElementById("navModels").href = `/models/${enc}`;
+      document.getElementById("navDocuments").href = `/document-upload.html?project=${enc}`;
+      document.getElementById("navVideos").href = `/video-upload.html?project=${enc}`;
+      document.getElementById("navHome").href = `/${enc}`;
 
       // If the viewer can edit, swap to the editor menu: hide non-editor items,
       // reveal editor items. Non-editors get the GT3D logo re-routed to the

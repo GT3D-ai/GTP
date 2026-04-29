@@ -14,35 +14,99 @@
   async function canView(project)     { const m = await getMe(); return m.isAdmin || !!m.projects?.[project]; }
   async function canEdit(project)     { const m = await getMe(); return m.isAdmin || m.projects?.[project] === "editor"; }
 
-  // Render a "user chip" into the given container — email + admin pill + logout.
+  // Render a "user chip" into the given container — just the user's
+  // display name (falls back to email when no name is set on the
+  // roster). Email is kept on the title attribute so admins can still
+  // hover to see the underlying account.
   async function renderUserChip(el) {
     if (!el) return;
     const m = await getMe();
     if (!m.email) { el.innerHTML = ""; return; }
-    const adminPill = m.isAdmin ? '<span class="admin-pill">Admin</span>' : "";
-    const initial = (m.name || m.email)[0]?.toUpperCase() || "?";
-    el.innerHTML = `
-      <div class="user-chip" title="${m.email}">
-        <div class="user-chip-avatar">${initial}</div>
-        <div class="user-chip-body">
-          <div class="user-chip-email">${m.email}</div>
-          ${adminPill}
-        </div>
-      </div>`;
+    const label = (m.name && String(m.name).trim()) || m.email;
+    const safe = String(label).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+    el.innerHTML = `<div class="user-chip user-chip--name-only" title="${m.email}">${safe}</div>`;
   }
 
-  // Auto-mount: find .site-header .header-inner and append a chip if not
-  // already present. Also inject a Users link for admins if the page has a
-  // .nav-primary (only on pages that have a nav).
+  // Standard admin hamburger menu items, used by injectAdminHamburger.
+  // Project-scoped destinations (Documents/Videos uploaders) come without
+  // a project param here — those pages already gracefully prompt for one.
+  const ADMIN_MENU = [
+    { href: "/projects",            label: "Projects" },
+    { href: "/new-project.html",    label: "New Project" },
+    { href: "/document-upload.html", label: "Documents" },
+    { href: "/video-upload.html",   label: "Videos" },
+    { href: "/users.html",          label: "Users" },
+  ];
+
+  function injectAdminHamburger(inner, header) {
+    const btn = document.createElement("button");
+    btn.className = "menu-toggle";
+    btn.id = "menuBtn";
+    btn.setAttribute("aria-label", "Menu");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", "menuDropdown");
+    btn.innerHTML = '<span class="bar"></span>';
+    inner.appendChild(btn);
+
+    const panel = document.createElement("div");
+    panel.className = "dropdown-panel";
+    panel.id = "menuDropdown";
+    const itemsHtml = ADMIN_MENU.map((m) => `<a href="${m.href}">${m.label}</a>`).join("");
+    panel.innerHTML = `<div class="dropdown-inner">${itemsHtml}</div>`;
+    header.appendChild(panel);
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = panel.classList.toggle("is-open");
+      btn.setAttribute("aria-expanded", open);
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+        panel.classList.remove("is-open");
+        btn.setAttribute("aria-expanded", "false");
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        panel.classList.remove("is-open");
+        btn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  // Auto-mount: find .site-header .header-inner and place a chip there.
+  // On admin pages (body.admin-layout) the chip sits to the LEFT of the
+  // hamburger to form a left-aligned [Logo] [Chip] [Hamburger] cluster;
+  // on every other page it goes at the end of the flex row, after the
+  // existing nav.
   async function autoMount() {
     const inner = document.querySelector(".site-header .header-inner");
     if (!inner) return;
+    const header = inner.parentElement;
 
-    // Ensure the chip appears last in the flex row
+    const isAdminLayout = document.body.classList.contains("admin-layout");
+
+    // Inject a standard admin hamburger on admin-layout pages that don't
+    // already have one, so older single-asset upload pages get the same
+    // nav cluster without per-page boilerplate.
+    if (isAdminLayout && !inner.querySelector(".menu-toggle")) {
+      injectAdminHamburger(inner, header);
+    }
+
     let chipEl = inner.querySelector("#userChip");
     if (!chipEl) {
       chipEl = document.createElement("div");
       chipEl.id = "userChip";
+    }
+    const menuBtn = inner.querySelector(".menu-toggle");
+    if (isAdminLayout && menuBtn) {
+      // Insert before the hamburger so the chip reads left-of-hamburger.
+      if (chipEl.parentElement !== inner || chipEl.nextElementSibling !== menuBtn) {
+        inner.insertBefore(chipEl, menuBtn);
+      }
+    } else if (!chipEl.parentElement) {
       inner.appendChild(chipEl);
     }
     await renderUserChip(chipEl);

@@ -433,6 +433,45 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
   .user-chip-email { max-width: 100px; }
 }
 
+/* Simplified user chip — just the user's display name in the header.
+   No avatar circle, no admin pill. Used by the updated me.js
+   renderUserChip and styled to sit cleanly next to the hamburger. */
+.user-chip.user-chip--name-only {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Admin pages use a left-aligned hamburger with the user chip
+   immediately to its left. Logo stays on the far left; everything
+   between is pulled flush so [Logo] [Chip] [Hamburger] form a
+   single left-aligned group. The hamburger is forced visible at
+   every breakpoint so admins always see the same nav. */
+body.admin-layout .menu-toggle {
+  display: flex !important;
+  margin-left: 0 !important;
+}
+body.admin-layout #userChip {
+  margin-left: var(--space-md);
+  margin-right: 8px;
+}
+body.admin-layout .nav-primary {
+  /* Admin layout is hamburger-only; suppress any horizontal nav so the
+     left-aligned cluster reads cleanly. Per-page admin links live
+     inside the hamburger menu instead. */
+  display: none !important;
+}
+
 /* ----- Users table (admin /users.html) ----- */
 .users-table {
   width: 100%;
