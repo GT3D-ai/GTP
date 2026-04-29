@@ -249,9 +249,23 @@ function resolveProjectFromRequest(req) {
   return null;
 }
 
+// Express 5 made req.query a read-only getter — assignments silently
+// fail. Replace it once with a plain object so the project mutation
+// below actually persists for downstream handlers. req.body is a
+// regular object and is mutable as-is. req.params is set per-route
+// (after middleware), so middleware-level mutation doesn't propagate;
+// URL-param routes handle the legacy/canonical redirect via
+// maybeRedirectCanonical instead.
+function makeQueryMutable(req) {
+  if (req._queryMutable) return;
+  const q = { ...req.query };
+  Object.defineProperty(req, "query", { configurable: true, writable: true, value: q });
+  req._queryMutable = true;
+}
+
 // One-shot per-request resolution: look up the project in the slug
 // index, stash the canonical/display/path forms on the request, and
-// mutate body/query/params.project to the physical prefix so existing
+// mutate body/query.project to the physical prefix so existing
 // `${project}/...` concatenation lands on the right GCS path for both
 // layout:"old" and layout:"new" projects. Idempotent: subsequent calls
 // on the same request are no-ops. Read-only handlers that need the
@@ -281,10 +295,13 @@ async function ensureProjectResolved(req) {
   req.projectDisplay = proj.name || raw;
   req.projectCanonical = proj.canonicalSlug;
   req.projectPaths = proj.paths;
+  req.projectName = proj.paths.base;
   const physical = proj.paths.base;
   if (req.body && typeof req.body.project === "string") req.body.project = physical;
-  if (req.query && typeof req.query.project === "string") req.query.project = physical;
-  if (req.params && typeof req.params.project === "string") req.params.project = physical;
+  if (req.query && typeof req.query.project === "string") {
+    makeQueryMutable(req);
+    req.query.project = physical;
+  }
 }
 
 // 503 on writes whenever a project's metadata has `migrating: true`. The
