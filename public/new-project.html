@@ -26,9 +26,20 @@
       grid-template-columns: 1fr 1fr;
       gap: var(--space-md);
     }
+    .photo-row.single-column { grid-template-columns: 1fr; }
     @media (max-width: 600px) {
       .photo-row { grid-template-columns: 1fr; }
     }
+
+    .add-project-link {
+      display: inline-block;
+      margin: var(--space-md) 0;
+      font-size: 0.875rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .add-project-link:hover { text-decoration: underline; }
 
     .cover-dropzone {
       border: 1px dashed var(--line-strong);
@@ -153,13 +164,7 @@
         <div class="field-hint" id="addressHint">Street, city, state, zip. Editing this updates the property's address.</div>
       </div>
 
-      <div class="field">
-        <label class="field-label" for="projectName">Project Name <span class="required-mark">*</span></label>
-        <input class="field-input" type="text" id="projectName" required placeholder="e.g. Existing Conditions 2026">
-        <div class="field-hint">Defaults are fine: "Existing Conditions &lt;date&gt;" for the first project on a new property.</div>
-      </div>
-
-      <div class="photo-row">
+      <div class="photo-row" id="photoRow">
         <div class="field">
           <label class="field-label" id="propertyCoverLabel">Property Cover Photo</label>
           <div class="cover-dropzone" id="propertyDropzone">
@@ -173,7 +178,7 @@
           <input type="file" id="propertyCoverInput" accept="image/*">
         </div>
 
-        <div class="field">
+        <div class="field" id="projectCoverField">
           <label class="field-label">Project Cover Photo</label>
           <div class="cover-dropzone" id="projectDropzone">
             <div id="projectPrompt">
@@ -186,23 +191,32 @@
         </div>
       </div>
 
-      <div class="levels-preview">
-        <div class="field-label" style="margin-bottom: 0.5rem;">Levels to create</div>
-        <p style="color: var(--ink-muted); font-size: 0.8125rem; margin: 0 0 0.75rem;">Click a level to include or exclude it.</p>
-        <div class="levels-chips" id="levelsChips">
-          <span class="level-chip is-selected" data-level="level 0">level 0</span>
-          <span class="level-chip is-selected" data-level="level 1">level 1</span>
-          <span class="level-chip is-selected" data-level="level 2">level 2</span>
-          <span class="level-chip is-selected" data-level="level 3">level 3</span>
-          <span class="level-chip is-selected" data-level="attic">attic</span>
-          <span class="level-chip is-selected" data-level="garage">garage</span>
-          <span class="level-chip is-selected" data-level="exterior">exterior</span>
+      <a href="#" class="add-project-link" id="addProjectLink" style="display:none;">+ Add a new project to this property</a>
+
+      <div id="projectSection">
+        <div class="field">
+          <label class="field-label" for="projectName">Project Name <span class="required-mark">*</span></label>
+          <input class="field-input" type="text" id="projectName" required placeholder="e.g. Existing Conditions 2026">
+          <div class="field-hint">Defaults are fine: "Existing Conditions &lt;date&gt;" for the first project on a new property.</div>
+        </div>
+
+        <div class="levels-preview">
+          <div class="field-label" style="margin-bottom: 0.5rem;">Levels to create</div>
+          <p style="color: var(--ink-muted); font-size: 0.8125rem; margin: 0 0 0.75rem;">Click a level to include or exclude it.</p>
+          <div class="levels-chips" id="levelsChips">
+            <span class="level-chip is-selected" data-level="level 0">level 0</span>
+            <span class="level-chip is-selected" data-level="level 1">level 1</span>
+            <span class="level-chip is-selected" data-level="level 2">level 2</span>
+            <span class="level-chip is-selected" data-level="level 3">level 3</span>
+            <span class="level-chip is-selected" data-level="attic">attic</span>
+            <span class="level-chip is-selected" data-level="garage">garage</span>
+            <span class="level-chip is-selected" data-level="exterior">exterior</span>
+          </div>
         </div>
       </div>
 
       <div style="display:flex; gap: var(--space-sm);">
         <a href="/" class="btn btn-outline">Cancel</a>
-        <button type="button" class="btn btn-outline" id="savePropertyBtn" style="display:none;">Save Property</button>
         <button type="submit" class="btn btn-primary btn-block" id="submitBtn" style="flex:1;">Create Project</button>
       </div>
       <div class="status-message" id="statusMessage"></div>
@@ -220,8 +234,42 @@
     const addressRequiredMark = document.getElementById("addressRequiredMark");
     const nameEl = document.getElementById("projectName");
     const submitBtn = document.getElementById("submitBtn");
-    const savePropertyBtn = document.getElementById("savePropertyBtn");
     const statusMessage = document.getElementById("statusMessage");
+    const photoRow = document.getElementById("photoRow");
+    const projectCoverField = document.getElementById("projectCoverField");
+    const projectSection = document.getElementById("projectSection");
+    const addProjectLink = document.getElementById("addProjectLink");
+
+    // Mode: "save-property" hides project fields and the submit button
+    // saves only the property; "create" shows them and submit creates a
+    // project (also persisting any property edits in the same call).
+    let mode = "create";
+    function setMode(next) {
+      mode = next;
+      if (mode === "save-property") {
+        projectSection.style.display = "none";
+        projectCoverField.style.display = "none";
+        photoRow.classList.add("single-column");
+        addProjectLink.style.display = "";
+        submitBtn.textContent = "Save Property";
+        // Hidden required field would block HTML5 validation on submit.
+        nameEl.removeAttribute("required");
+      } else {
+        projectSection.style.display = "";
+        projectCoverField.style.display = "";
+        photoRow.classList.remove("single-column");
+        addProjectLink.style.display = "none";
+        submitBtn.textContent = "Create Project";
+        nameEl.setAttribute("required", "");
+      }
+    }
+    addProjectLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      // Default the project name when entering create mode if it's blank.
+      if (!nameEl.value) nameEl.value = defaultProjectName();
+      setMode("create");
+      nameEl.focus();
+    });
 
     // Property cover (left)
     const propertyDropzone = document.getElementById("propertyDropzone");
@@ -384,10 +432,11 @@
       // from the address. User can rename later via the edit flow.
       propertyNameField.style.display = "none";
       propertyNameEl.value = "";
-      savePropertyBtn.style.display = "none";
       clearPropertyCoverDisplay();
-      // Default the project name to "Existing Conditions <date>" if blank.
+      // For a new property the form must produce a project too — there's
+      // no property without a first project. Always create-mode.
       if (!nameEl.value) nameEl.value = defaultProjectName();
+      setMode("create");
     }
 
     async function selectExistingProperty(propertyId) {
@@ -401,21 +450,13 @@
       addressRequiredMark.style.display = "none";
       addressHint.textContent = "Editing this updates the property's address.";
       addressHint.className = "field-hint";
-      propertyHint.textContent = `Adding a project to "${summary.name}" (${summary.projectCount} existing).`;
+      propertyHint.textContent = `Editing "${summary.name}" — ${summary.projectCount} existing project${summary.projectCount === 1 ? "" : "s"}.`;
       propertyHint.className = "field-hint";
       // Property name editable when an existing property is selected.
       propertyNameField.style.display = "";
       propertyNameEl.value = summary.name || "";
-      savePropertyBtn.style.display = "";
-      // Default project name to "Existing Conditions <date>" — even on
-      // an existing property, that's the user's stated convention for
-      // re-surveys when conditions change over time.
-      if (!nameEl.value) nameEl.value = defaultProjectName();
       // Show the property's existing cover photo if any.
       clearPropertyCoverDisplay();
-      // Fetch the full record (the list endpoint already gives us
-      // coverPhoto, but call /api/property/:id to get the freshest view
-      // in case the list was cached).
       try {
         const res = await fetch(`/api/property/${encodeURIComponent(propertyId)}`, { credentials: "same-origin" });
         if (res.ok) {
@@ -423,90 +464,72 @@
           if (full.coverPhoto) showExistingPropertyCover(full.coverPhoto);
         }
       } catch { /* fall through with no cover */ }
+      // Default to property-edit mode. User opts into "+ Add a new
+      // project to this property" link to create a project too.
+      setMode("save-property");
     }
 
     // Save property edits (name, address, cover) without creating a
-    // project. Only available when an existing property is selected.
+    // project. Used by the form submit handler when in save-property
+    // mode. Returns true on success so the submit handler can stop
+    // there; throws (or returns false) otherwise so the caller can
+    // re-enable the submit button.
     async function savePropertyChanges() {
-      if (!selectedPropertyId) return;
+      if (!selectedPropertyId) return false;
       const newName = propertyNameEl.value.trim();
       const newAddress = addressEl.value.trim();
-      // Bail out if nothing to save (no name change, no address change,
-      // no new cover file). Avoids a no-op round-trip.
       const summary = propertiesById.get(selectedPropertyId);
       const noNameChange = !newName || newName === (summary && summary.name);
       const noAddressChange = !newAddress || newAddress === (summary && summary.address);
       if (noNameChange && noAddressChange && !propertyCoverFile) {
         statusMessage.textContent = "No changes to save.";
         statusMessage.className = "status-message visible info";
-        return;
+        return true;
       }
-      savePropertyBtn.disabled = true;
-      submitBtn.disabled = true;
-      const oldLabel = savePropertyBtn.textContent;
-      savePropertyBtn.textContent = "Saving…";
-      statusMessage.textContent = "Saving property changes…";
-      statusMessage.className = "status-message visible info";
-      try {
-        const fd = new FormData();
-        if (newName) fd.append("name", newName);
-        if (newAddress) fd.append("address", newAddress);
-        if (propertyCoverFile) fd.append("propertyCoverPhoto", propertyCoverFile);
-        const res = await fetch(`/api/property/${encodeURIComponent(selectedPropertyId)}`, {
-          method: "POST",
-          credentials: "same-origin",
-          body: fd,
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          if (data && data.error === "address_needs_review") {
-            const accept = confirm(
-              "The address looks incomplete:\n  " + (data.warnings || []).join(", ") +
-              "\n\nSuggested:\n  " + (data.suggestion || "(none)") +
-              "\n\nUse the suggestion?"
-            );
-            if (accept && data.suggestion) {
-              addressEl.value = data.suggestion;
-              addressHint.textContent = "Updated to suggestion — click Save Property again to confirm.";
-              addressHint.className = "field-hint ok";
-            } else {
-              addressHint.textContent = "Please adjust the address and try again.";
-              addressHint.className = "field-hint warn";
-              addressEl.focus();
-            }
-            throw new Error("Address needs review");
+      const fd = new FormData();
+      if (newName) fd.append("name", newName);
+      if (newAddress) fd.append("address", newAddress);
+      if (propertyCoverFile) fd.append("propertyCoverPhoto", propertyCoverFile);
+      const res = await fetch(`/api/property/${encodeURIComponent(selectedPropertyId)}`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (data && data.error === "address_needs_review") {
+          const accept = confirm(
+            "The address looks incomplete:\n  " + (data.warnings || []).join(", ") +
+            "\n\nSuggested:\n  " + (data.suggestion || "(none)") +
+            "\n\nUse the suggestion?"
+          );
+          if (accept && data.suggestion) {
+            addressEl.value = data.suggestion;
+            addressHint.textContent = "Updated to suggestion — submit again to confirm.";
+            addressHint.className = "field-hint ok";
+          } else {
+            addressHint.textContent = "Please adjust the address and try again.";
+            addressHint.className = "field-hint warn";
+            addressEl.focus();
           }
-          throw new Error((data && data.error) || `HTTP ${res.status}`);
+          throw new Error("Address needs review");
         }
-        // Update in-memory state so the dropdown reflects the changes
-        // without a reload.
-        const updated = data.property || {};
-        if (summary) {
-          if (updated.name) summary.name = updated.name;
-          if (updated.address) summary.address = updated.address;
-          if (updated.coverPhoto) summary.coverPhoto = updated.coverPhoto;
-        }
-        // Refresh the option label.
-        const opt = Array.from(propertySelect.options).find((o) => o.value === selectedPropertyId);
-        if (opt && summary) opt.textContent = summary.name + (summary.projectCount > 0 ? `  (${summary.projectCount})` : "");
-        propertyHint.textContent = `Saved. Adding a project to "${(summary && summary.name) || ""}" (${(summary && summary.projectCount) || 0} existing).`;
-        // Clear the cover-file slot so a subsequent Create Project
-        // doesn't re-upload the same file as a new project cover.
-        propertyCoverFile = null;
-        // Re-display the now-current cover from the server.
-        if (updated.coverPhoto) showExistingPropertyCover(updated.coverPhoto);
-        statusMessage.textContent = "Property changes saved.";
-        statusMessage.className = "status-message visible success";
-      } catch (err) {
-        statusMessage.textContent = "Error: " + err.message;
-        statusMessage.className = "status-message visible error";
-      } finally {
-        savePropertyBtn.disabled = false;
-        submitBtn.disabled = false;
-        savePropertyBtn.textContent = oldLabel;
+        throw new Error((data && data.error) || `HTTP ${res.status}`);
       }
+      // Update in-memory state so the dropdown reflects the changes.
+      const updated = data.property || {};
+      if (summary) {
+        if (updated.name) summary.name = updated.name;
+        if (updated.address) summary.address = updated.address;
+        if (updated.coverPhoto) summary.coverPhoto = updated.coverPhoto;
+      }
+      const opt = Array.from(propertySelect.options).find((o) => o.value === selectedPropertyId);
+      if (opt && summary) opt.textContent = summary.name + (summary.projectCount > 0 ? `  (${summary.projectCount})` : "");
+      propertyHint.textContent = `Saved "${(summary && summary.name) || ""}".`;
+      propertyCoverFile = null;
+      if (updated.coverPhoto) showExistingPropertyCover(updated.coverPhoto);
+      return true;
     }
-    savePropertyBtn.addEventListener("click", savePropertyChanges);
 
     propertySelect.addEventListener("change", () => {
       const id = propertySelect.value;
@@ -571,6 +594,28 @@
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+
+      // Save-property mode short-circuits here — no project gets created.
+      if (mode === "save-property") {
+        const savedLabel = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+        statusMessage.textContent = "Saving property changes…";
+        statusMessage.className = "status-message visible info";
+        try {
+          await savePropertyChanges();
+          statusMessage.textContent = "Property changes saved.";
+          statusMessage.className = "status-message visible success";
+        } catch (err) {
+          statusMessage.textContent = "Error: " + err.message;
+          statusMessage.className = "status-message visible error";
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = savedLabel;
+        }
+        return;
+      }
+
       const projectName = nameEl.value.trim();
       if (!projectName) { nameEl.focus(); return; }
 
