@@ -874,7 +874,11 @@
       document.title = `${project} — GT Platform`;
       const projectNameEl = document.getElementById("projectName");
       projectNameEl.textContent = project;
-      projectNameEl.href = `/${enc}`;
+      // Default project-name link to the no-IAP /public/ mirror so
+      // anonymous viewers can follow it without bouncing through IAP.
+      // The editor branch below overrides to /<project> for editors,
+      // who have IAP cookies and want the editable home view.
+      projectNameEl.href = `/public/${enc}`;
       document.getElementById("mapLink").href = `/map-viewer/${enc}`;
       document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
@@ -911,6 +915,9 @@
       // required" notice if they aren't also an admin.
       if (canEditProject) {
         document.body.classList.add("editor-nav");
+        // Editors get the editable home at /<project> instead of the
+        // read-only /public/ mirror.
+        if (projectNameEl) projectNameEl.href = `/${enc}`;
         // "Edit Project Information" is admin-only — admins are also
         // editors so we re-check explicitly here. Editors who aren't
         // admins skip the link.

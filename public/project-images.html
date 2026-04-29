@@ -358,7 +358,10 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
-      projectHeadline.href = `/${enc}`;
+      // Default the project-name link to the no-IAP /public/ mirror so
+      // anonymous viewers can follow it. The editor IIFE below overrides
+      // to /<project> for editors who have IAP credentials.
+      projectHeadline.href = `/public/${enc}`;
       // Standard viewer nav links (Map / 2D Images / 2D Plans / 3D Models
       // / Point Clouds — GT3D Home is a static external link). Class-based
       // selectors so the same call wires the desktop nav and the mobile
@@ -389,6 +392,9 @@
         } else {
           document.body.classList.add("editor-nav");
           const enc = encodeURIComponent(project);
+          // Editors get the editable home at /<project> instead of the
+          // read-only /public/ mirror.
+          if (projectHeadline) projectHeadline.href = `/${enc}`;
           // "Edit Project Information" is admin-only; editors who aren't
           // admins skip the link.
           const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;

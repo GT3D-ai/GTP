@@ -201,7 +201,9 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
-      projectHeadline.href = `/${enc}`;
+      // Default to the no-IAP /public/ mirror for anonymous viewers; the
+      // editor IIFE below overrides to /<project> for editors.
+      projectHeadline.href = `/public/${enc}`;
       // Standard viewer nav links — class-based selectors wire both the
       // desktop nav and the mobile dropdown in one pass.
       document.querySelectorAll(".nav-map").forEach((a) => a.href = `/map-viewer/${enc}`);
@@ -225,6 +227,8 @@
           if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
         } else {
           document.body.classList.add("editor-nav");
+          // Editors get the editable home at /<project>.
+          if (projectHeadline) projectHeadline.href = `/${enc}`;
           const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;
           const editProjectItem = isAdminUser
             ? `<a href="/edit-project.html?project=${enc}">Edit Project Information</a>`
