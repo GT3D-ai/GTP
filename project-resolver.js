@@ -6,7 +6,8 @@
 // consistent with the resolver's view of the world.
 
 const SLUG_INDEX_PATH = "_platform/slug-index.json";
-const CACHE_TTL_MS = 60_000;
+const INDEX_CACHE_TTL_MS = 60_000;
+const META_CACHE_TTL_MS = 30_000;
 
 // Conservative kebab-case: lowercase, alphanumerics + dashes only,
 // collapsed runs, no leading/trailing dashes. Matches what the new
@@ -41,6 +42,13 @@ async function writeJson(bucket, p, data) {
 module.exports = function createProjectResolver({ bucket }) {
   let cache = { data: null, fetchedAt: 0 };
 
+  // Per-canonical-slug project.json cache. Without this the migration
+  // guard alone adds a GCS round trip to every project-scoped API call.
+  // Short TTL because metadata writes (rename, share, level edit) need
+  // to be reflected promptly; the bound is fine for "is this project
+  // currently migrating?" which is the resolver's hot path.
+  const metaCache = new Map(); // canonicalSlug -> { meta, fetchedAt }
+
   // Serialize index mutations through a promise chain so two concurrent
   // writes within one process can't clobber each other. Multi-instance
   // deployments need GCS generation-match preconditions instead — TODO
@@ -48,7 +56,7 @@ module.exports = function createProjectResolver({ bucket }) {
   let writeQueue = Promise.resolve();
 
   async function loadIndex() {
-    if (cache.data && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+    if (cache.data && Date.now() - cache.fetchedAt < INDEX_CACHE_TTL_MS) {
       return cache.data;
     }
     const data = (await readJson(bucket, SLUG_INDEX_PATH)) || emptyIndex();
@@ -58,6 +66,22 @@ module.exports = function createProjectResolver({ bucket }) {
 
   function invalidateIndex() {
     cache = { data: null, fetchedAt: 0 };
+    metaCache.clear();
+  }
+
+  function invalidateMeta(canonicalSlug) {
+    if (canonicalSlug) metaCache.delete(canonicalSlug);
+    else metaCache.clear();
+  }
+
+  async function readMetaCached(canonicalSlug, metaPath) {
+    const cached = metaCache.get(canonicalSlug);
+    if (cached && Date.now() - cached.fetchedAt < META_CACHE_TTL_MS) {
+      return cached.meta;
+    }
+    const meta = await readJson(bucket, metaPath);
+    metaCache.set(canonicalSlug, { meta, fetchedAt: Date.now() });
+    return meta;
   }
 
   function pathsFor(ref) {
@@ -83,7 +107,7 @@ module.exports = function createProjectResolver({ bucket }) {
     if (!ref) return null;
 
     const paths = pathsFor(ref);
-    const meta = await readJson(bucket, paths.meta);
+    const meta = await readMetaCached(canonicalSlug, paths.meta);
     if (!meta) return null;
 
     return {
@@ -189,6 +213,7 @@ module.exports = function createProjectResolver({ bucket }) {
     pathsFor,
     withProject,
     invalidateIndex,
+    invalidateMeta,
     registerNewProject,
     renameProject,
     recordMigration,

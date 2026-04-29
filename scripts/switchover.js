@@ -209,17 +209,58 @@ async function main() {
     console.warn("warning: manifest is empty; nothing has been migrated yet");
   }
 
-  // 2. Pre-flight: every alias entry should resolve to a canonical that
-  //    actually exists. Halt if not — almost certainly a bug in the migration.
+  // 2. Pre-flight cross-checks. Halt on any inconsistency between the
+  //    slug-index, manifest, and properties.json — these usually signal
+  //    an interrupted migration and should be resolved by hand.
+  const problems = [];
   const aliasMap = index.alias || {};
-  const canonicalSet = new Set(Object.keys(index.canonical || {}));
-  const danglingAliases = Object.entries(aliasMap).filter(
-    ([, v]) => !canonicalSet.has(v)
-  );
-  if (danglingAliases.length > 0) {
-    console.error("dangling aliases (target not in canonical):", danglingAliases);
-    throw new Error("aborting: slug-index has dangling aliases");
+  const canonicalMap = index.canonical || {};
+  const canonicalSet = new Set(Object.keys(canonicalMap));
+
+  // (a) dangling aliases
+  for (const [alias, target] of Object.entries(aliasMap)) {
+    if (!canonicalSet.has(target)) {
+      problems.push(`alias "${alias}" -> "${target}" but target not in canonical`);
+    }
   }
+
+  // (b) every layout:"new" canonical must have a matching manifest entry
+  const manifestByCompound = new Map(manifest.map((e) => [e.compoundSlug, e]));
+  for (const [slug, ref] of Object.entries(canonicalMap)) {
+    if (ref.layout !== "new") continue;
+    if (!manifestByCompound.has(slug)) {
+      problems.push(`canonical "${slug}" is layout:"new" but has no manifest entry`);
+    }
+  }
+
+  // (c) every manifest entry must be present as a layout:"new" canonical
+  for (const e of manifest) {
+    const ref = canonicalMap[e.compoundSlug];
+    if (!ref) {
+      problems.push(`manifest entry for "${e.oldProjectName}" -> "${e.compoundSlug}" missing from canonical`);
+    } else if (ref.layout !== "new") {
+      problems.push(`manifest entry "${e.compoundSlug}" exists but layout="${ref.layout}" (expected "new")`);
+    } else if (ref.propertyId !== e.propertyId || ref.projectId !== e.projectId) {
+      problems.push(`canonical "${e.compoundSlug}" IDs disagree with manifest (canonical=${ref.propertyId}/${ref.projectId}, manifest=${e.propertyId}/${e.projectId})`);
+    }
+  }
+
+  // (d) every property in properties.json should have at least one
+  //     migrated project (otherwise it's an orphan record)
+  const propsRoot = properties.properties || {};
+  const manifestPropertyIds = new Set(manifest.map((e) => e.propertyId));
+  for (const propId of Object.keys(propsRoot)) {
+    if (!manifestPropertyIds.has(propId)) {
+      problems.push(`properties.json has property "${propId}" with no manifest reference (orphan)`);
+    }
+  }
+
+  if (problems.length > 0) {
+    console.error("pre-flight failures:");
+    for (const p of problems) console.error("  -", p);
+    throw new Error(`aborting: ${problems.length} pre-flight problem(s) detected`);
+  }
+  console.log(`pre-flight ok: ${manifest.length} migrated project(s), ${Object.keys(propsRoot).length} property/properties, ${Object.keys(aliasMap).length} alias(es)`);
 
   // 3. Snapshot to _backup/ so rollback works.
   console.log("snapshot:");

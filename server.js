@@ -249,47 +249,128 @@ function resolveProjectFromRequest(req) {
   return null;
 }
 
+// One-shot per-request resolution: look up the project in the slug
+// index, stash the canonical/display/path forms on the request, and
+// mutate body/query/params.project to the physical prefix so existing
+// `${project}/...` concatenation lands on the right GCS path for both
+// layout:"old" and layout:"new" projects. Idempotent: subsequent calls
+// on the same request are no-ops. Read-only handlers that need the
+// pre-mutation slug should use `req.projectDisplay`.
+async function ensureProjectResolved(req) {
+  if (req.projectResolved !== undefined) return;
+  const raw = resolveProjectFromRequest(req);
+  if (!raw) {
+    req.projectResolved = null;
+    return;
+  }
+  let proj = null;
+  try {
+    proj = await projectResolver.resolveProject(raw);
+  } catch (err) {
+    console.warn("[resolver] resolution failed:", err.message);
+  }
+  if (!proj) {
+    // Resolution miss — preserve raw input as both display and canonical
+    // so handlers don't need to null-check before using these fields.
+    req.projectResolved = null;
+    req.projectDisplay = raw;
+    req.projectCanonical = raw;
+    return;
+  }
+  req.projectResolved = proj;
+  req.projectDisplay = proj.name || raw;
+  req.projectCanonical = proj.canonicalSlug;
+  req.projectPaths = proj.paths;
+  const physical = proj.paths.base;
+  if (req.body && typeof req.body.project === "string") req.body.project = physical;
+  if (req.query && typeof req.query.project === "string") req.query.project = physical;
+  if (req.params && typeof req.params.project === "string") req.params.project = physical;
+}
+
+// Cached read of migration state — once we're past Phase-2-start we
+// fail closed on migration-guard errors instead of letting writes
+// through. Pre-Phase-2 (no state file at all) we fail open so a
+// transient resolver hiccup doesn't block legitimate users.
+let migrationStateCache = { value: null, fetchedAt: 0 };
+const MIGRATION_STATE_TTL_MS = 60_000;
+async function getMigrationState() {
+  if (migrationStateCache.value !== null && Date.now() - migrationStateCache.fetchedAt < MIGRATION_STATE_TTL_MS) {
+    return migrationStateCache.value;
+  }
+  try {
+    const f = bucket.file("_platform/migration-state.json");
+    const [exists] = await f.exists();
+    if (!exists) {
+      migrationStateCache = { value: { phase: null }, fetchedAt: Date.now() };
+      return migrationStateCache.value;
+    }
+    const [content] = await f.download();
+    const parsed = JSON.parse(content.toString());
+    migrationStateCache = { value: parsed, fetchedAt: Date.now() };
+    return parsed;
+  } catch {
+    return migrationStateCache.value || { phase: null };
+  }
+}
+
 // 503 on writes whenever a project's metadata has `migrating: true`. The
 // migration script sets this flag during its copy window and clears it
-// when the slug-index flips to layout:"new". Reads pass through.
-async function blockedDuringMigration(req, project) {
+// when the slug-index flips to layout:"new". Reads pass through. After
+// Phase-2 has started we fail closed on resolver errors — the cost of
+// blocking a few writes during a transient outage is tiny next to the
+// cost of letting a write race the migration copy.
+async function blockedDuringMigration(req) {
   if (req.method === "GET" || req.method === "HEAD") return false;
-  try {
-    const proj = await projectResolver.resolveProject(project);
-    return proj && proj.migrating === true;
-  } catch {
-    return false;
-  }
+  await ensureProjectResolved(req);
+  const proj = req.projectResolved;
+  if (proj && proj.migrating === true) return true;
+  if (proj) return false;
+  // No resolved project — could be a transient lookup failure or a project
+  // that simply isn't in the index. Tighten only when we know a migration
+  // is actively underway.
+  const state = await getMigrationState();
+  return state && state.phase && state.phase !== "switched-over";
 }
 
 function requireProjectRole(minRole) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
-    const project = resolveProjectFromRequest(req);
+    await ensureProjectResolved(req);
     if (req.user.isAdmin) {
-      if (project && (await blockedDuringMigration(req, project))) {
+      if (await blockedDuringMigration(req)) {
         res.set("Retry-After", "60");
         return res.status(503).json({ error: "Project is being migrated; try again shortly" });
       }
       return next();
     }
-    if (!project) return res.status(400).json({ error: "project required" });
-    if (project === "_thumbs" || project === "_platform") {
+    const canonical = req.projectCanonical || resolveProjectFromRequest(req);
+    if (!canonical) return res.status(400).json({ error: "project required" });
+    if (canonical === "_thumbs" || canonical === "_platform") {
       return res.status(403).json({ error: "Access denied" });
     }
-    if (await blockedDuringMigration(req, project)) {
+    if (await blockedDuringMigration(req)) {
       res.set("Retry-After", "60");
       return res.status(503).json({ error: "Project is being migrated; try again shortly" });
     }
-    const ok = await userService.hasProjectAccess(req.user.email, project, minRole);
-    if (!ok) return res.status(403).json({ error: `${minRole} access to ${project} required` });
-    req.projectName = project;
+    // Permission roster keys by canonical slug — pre-switchover that's
+    // the project name (== canonical), post-switchover the compound slug.
+    const ok = await userService.hasProjectAccess(req.user.email, canonical, minRole);
+    if (!ok) return res.status(403).json({ error: `${minRole} access to ${req.projectDisplay || canonical} required` });
+    req.projectName = req.projectPaths ? req.projectPaths.base : canonical;
     next();
   };
 }
 
-// All /api/* routes go through resolveUser
+// All /api/* routes go through resolveUser then the project resolver.
+// The project resolver runs before multer on multipart routes (where
+// req.body isn't parsed yet) — requireProjectRole calls
+// ensureProjectResolved a second time so multipart routes still get
+// their project mutated/stashed. Idempotent.
 app.use("/api", resolveUser);
+app.use("/api", async (req, res, next) => {
+  await ensureProjectResolved(req);
+  next();
+});
 
 // List top-level project folders, filtered by what the current user can access.
 // Anonymous callers get [] — they don't enumerate projects, they arrive on a
@@ -2577,8 +2658,14 @@ function shareThrottleFile(req, project) {
 app.post("/api/share-project-public", async (req, res) => {
   if (req.body && req.body.website) return res.json({ success: true });
 
-  const project = String((req.body && req.body.project) || "").trim();
-  if (!project) return res.status(400).json({ error: "project required" });
+  // After ensureProjectResolved: req.body.project is the physical GCS
+  // prefix (use for path lookups), req.projectCanonical is the slug used
+  // as a key in users.json and in URLs, req.projectDisplay is the
+  // human-readable name for emails/UI.
+  const physical = String((req.body && req.body.project) || "").trim();
+  const canonical = String(req.projectCanonical || physical).trim();
+  const display = String(req.projectDisplay || canonical).trim();
+  if (!physical) return res.status(400).json({ error: "project required" });
   const email = String((req.body && req.body.email) || "").trim().toLowerCase();
   const name = String((req.body && req.body.name) || "").trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -2590,14 +2677,14 @@ app.post("/api/share-project-public", async (req, res) => {
     // Verify the project actually exists before logging a stranger as a
     // viewer of it — without this, a bot could pollute the user roster with
     // arbitrary project names.
-    const [exists] = await bucket.file(`${project}/`).exists();
+    const [exists] = await bucket.file(`${physical}/`).exists();
     if (!exists) return res.status(404).json({ error: "Project not found" });
 
     // Per-IP per-project cap: one anonymous share per (source IP, project)
     // every 24h. Marker file's last-modified time is the window anchor —
     // a stale marker (>24h old) is treated as expired and the share goes
     // through, refreshing the marker.
-    const throttleFile = shareThrottleFile(req, project);
+    const throttleFile = shareThrottleFile(req, canonical);
     const [throttled] = await throttleFile.exists();
     if (throttled) {
       let ageMs = Infinity;
@@ -2622,17 +2709,17 @@ app.post("/api/share-project-public", async (req, res) => {
 
     const existing = await userService.getUser(email);
     const patch = { name };
-    if (!existing) patch.projects = { [project]: "viewer" };
+    if (!existing) patch.projects = { [canonical]: "viewer" };
     await userService.upsertUser(email, patch);
-    const currentRole = existing?.projects?.[project];
+    const currentRole = existing?.projects?.[canonical];
     if (currentRole !== "editor") {
-      await userService.setProjectRole(email, project, "viewer");
+      await userService.setProjectRole(email, canonical, "viewer");
     }
 
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
     const host = req.get("x-forwarded-host") || req.get("host");
-    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(project)}`;
-    const coverPath = await resolveProjectCover(project);
+    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(canonical)}`;
+    const coverPath = await resolveProjectCover(physical);
     let thumbnailUrl = null;
     if (coverPath) {
       try {
@@ -2652,7 +2739,7 @@ app.post("/api/share-project-public", async (req, res) => {
       toName: name,
       fromName: "",
       fromEmail: "",
-      project,
+      project: display,
       projectUrl,
       thumbnailUrl,
     });
@@ -2663,7 +2750,7 @@ app.post("/api/share-project-public", async (req, res) => {
     // request the user already perceives as successful.
     try {
       await throttleFile.save(JSON.stringify({
-        project,
+        project: canonical,
         recipientEmail: email,
         recipientName: name,
         timestamp: new Date().toISOString(),
@@ -2676,7 +2763,7 @@ app.post("/api/share-project-public", async (req, res) => {
       success: true,
       email,
       name,
-      project,
+      project: canonical,
       role: currentRole === "editor" ? "editor" : "viewer",
       emailSent: invite.sent,
       emailReason: invite.sent ? undefined : invite.reason,
@@ -2689,12 +2776,13 @@ app.post("/api/share-project-public", async (req, res) => {
 });
 
 app.post("/api/share-project", requireProjectRole("editor"), async (req, res) => {
-  // requireProjectRole only sets req.projectName for non-admins (admins skip
-  // the project resolution path), so fall back to the request body. This
-  // prevents `undefined` from leaking into the roster, the email subject,
-  // and the share URL when an admin is the sharer.
-  const project = String((req.body && req.body.project) || req.projectName || "").trim();
-  if (!project) return res.status(400).json({ error: "project required" });
+  // After ensureProjectResolved + requireProjectRole: req.body.project is
+  // physical prefix (path), req.projectCanonical is the URL/users.json
+  // slug, req.projectDisplay is the human-readable name for the email.
+  const physical = String((req.body && req.body.project) || req.projectName || "").trim();
+  const canonical = String(req.projectCanonical || physical).trim();
+  const display = String(req.projectDisplay || canonical).trim();
+  if (!physical) return res.status(400).json({ error: "project required" });
   const rawEmail = (req.body && req.body.email) || "";
   const rawName = (req.body && req.body.name) || "";
   const email = String(rawEmail).trim().toLowerCase();
@@ -2706,11 +2794,11 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
   try {
     const existing = await userService.getUser(email);
     const patch = { name };
-    if (!existing) patch.projects = { [project]: "viewer" };
+    if (!existing) patch.projects = { [canonical]: "viewer" };
     await userService.upsertUser(email, patch);
-    const currentRole = existing?.projects?.[project];
+    const currentRole = existing?.projects?.[canonical];
     if (currentRole !== "editor") {
-      await userService.setProjectRole(email, project, "viewer");
+      await userService.setProjectRole(email, canonical, "viewer");
     }
 
     const proto = req.get("x-forwarded-proto") || req.protocol || "https";
@@ -2718,8 +2806,8 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
     // Send invitees to the /public/<project> mirror — that path is routed to
     // the no-IAP backend in the URL map so the recipient can land on it
     // without being on the IAP allow-list.
-    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(project)}`;
-    const coverPath = await resolveProjectCover(project);
+    const projectUrl = `${proto}://${host}/public/${encodeURIComponent(canonical)}`;
+    const coverPath = await resolveProjectCover(physical);
     // Cloud Run is fronted by IAP, so the /api/2d/image proxy isn't reachable
     // from an email client without a Google login. Sign a short-lived URL
     // straight to the GCS object instead — same pattern used for plan/model
@@ -2743,7 +2831,7 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
       toName: name,
       fromName: req.user?.name || req.user?.email || "A teammate",
       fromEmail: req.user?.email || "",
-      project,
+      project: display,
       projectUrl,
       thumbnailUrl,
     });
@@ -2752,7 +2840,7 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
       success: true,
       email,
       name,
-      project,
+      project: canonical,
       role: currentRole === "editor" ? "editor" : "viewer",
       emailSent: invite.sent,
       emailReason: invite.sent ? undefined : invite.reason,
@@ -2812,17 +2900,35 @@ app.listen(PORT, () => {
 });
 
 // Phase-1 indexing: register every existing project as layout:"old" in
-// _platform/slug-index.json. Idempotent. Fire-and-forget — startup
-// shouldn't block on a GCS round trip, and the resolver tolerates a
-// missing/empty index file on the first request after deploy.
+// _platform/slug-index.json. Idempotent. Fire-and-forget so startup isn't
+// blocked on a GCS round trip; the resolver tolerates a missing/empty
+// index file. Retries with exponential backoff because a failure leaves
+// migration-guard checks fail-open until the next deploy.
+//
+// Opt out with DISABLE_BOOT_INDEXING=1 (useful for inspecting state
+// before any indexing has happened).
 (async () => {
-  try {
-    const map = await getProjectNameMap();
-    const names = [...map.values()];
-    if (names.length === 0) return;
-    await projectResolver.buildLegacyIndex(names);
-    console.log(`[index] seeded slug-index with ${names.length} legacy project(s)`);
-  } catch (err) {
-    console.warn("[index] initial seed failed:", err.message);
+  if (process.env.DISABLE_BOOT_INDEXING === "1") {
+    console.log('[index] skipped (DISABLE_BOOT_INDEXING=1)');
+    return;
+  }
+  const delays = [0, 5_000, 20_000, 60_000];
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt]) await new Promise((r) => setTimeout(r, delays[attempt]));
+    try {
+      const map = await getProjectNameMap();
+      const names = [...map.values()];
+      if (names.length === 0) {
+        console.log('[index] no project folders found; nothing to seed');
+        return;
+      }
+      await projectResolver.buildLegacyIndex(names);
+      console.log(`[index] seeded slug-index with ${names.length} legacy project(s) (attempt ${attempt + 1})`);
+      return;
+    } catch (err) {
+      const final = attempt === delays.length - 1;
+      const level = final ? 'error' : 'warn';
+      console[level](`[index] seed attempt ${attempt + 1} failed: ${err.message}${final ? ' — giving up; migration guard will fail open until next deploy' : ''}`);
+    }
   }
 })();
