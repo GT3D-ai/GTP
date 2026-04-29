@@ -570,7 +570,7 @@
 
   <main class="container">
     <div class="page-head">
-      <h1 id="projectName">Loading…</h1>
+      <h1><a id="projectName" class="project-name-link" href="#">Loading…</a></h1>
       <div class="page-head-meta" id="projectAddress"></div>
       <button type="button" class="reset-card-order-btn" id="resetCardOrderBtn" style="display:none;" title="Clear the manual card order so cards revert to the default layout">Reset card order</button>
       <div class="card-order-status" id="cardOrderStatus"></div>
@@ -872,7 +872,9 @@
 
       // Title + header nav
       document.title = `${project} — GT Platform`;
-      document.getElementById("projectName").textContent = project;
+      const projectNameEl = document.getElementById("projectName");
+      projectNameEl.textContent = project;
+      projectNameEl.href = `/${enc}`;
       document.getElementById("mapLink").href = `/map-viewer/${enc}`;
       document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
@@ -909,6 +911,13 @@
       // required" notice if they aren't also an admin.
       if (canEditProject) {
         document.body.classList.add("editor-nav");
+        // "Edit Project Information" is admin-only — admins are also
+        // editors so we re-check explicitly here. Editors who aren't
+        // admins skip the link.
+        const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;
+        const editProjectItem = isAdminUser
+          ? `<a href="/edit-project.html?project=${enc}">Edit Project Information</a>`
+          : "";
         const dd = document.querySelector("#menuDropdown .dropdown-inner");
         if (dd) {
           dd.innerHTML = `
@@ -919,6 +928,7 @@
             <a href="/documents/${enc}">Documents</a>
             <a href="/video-upload.html?project=${enc}">Videos</a>
             <a href="/users.html">Users</a>
+            ${editProjectItem}
             <a href="/${enc}">Project Home</a>
           `;
         }

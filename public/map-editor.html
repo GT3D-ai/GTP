@@ -935,13 +935,16 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
+      <a class="project-headline" id="projectHeadline" href="#">Map Editor</a>
       <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown" style="margin-left:auto;">
         <span class="bar"></span>
       </button>
     </div>
-    <!-- Editor menu — same eight items as project-home's editor nav so
-         the experience is consistent across editor surfaces. Hrefs are
-         filled in below once the project query param is read. -->
+    <!-- Editor menu — same items as project-home's editor nav so the
+         experience is consistent across editor surfaces. Hrefs are
+         filled in below once the project query param is read.
+         "Edit Project Information" is admin-only — hidden by default
+         and revealed once me.isAdmin() resolves true. -->
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
         <a id="navMapLink" href="#">Map</a>
@@ -951,6 +954,7 @@
         <a id="navDocumentsLink" href="#">Documents</a>
         <a id="navVideosLink" href="#">Videos</a>
         <a href="/users.html">Users</a>
+        <a id="navEditProjectLink" href="#" style="display:none;">Edit Project Information</a>
         <a id="navHomeLink" href="#">Project Home</a>
       </div>
     </div>
@@ -1526,6 +1530,9 @@
 
     if (project) {
       const enc = encodeURIComponent(project);
+      // Project name in the header is a link back to the project home.
+      const ph = document.getElementById("projectHeadline");
+      if (ph) { ph.textContent = project; ph.href = `/${enc}`; }
       // Hamburger menu hrefs — same set as the editor nav on the project
       // home page so the editor experience stays consistent.
       document.getElementById("navMapLink").href = `/map-viewer/${enc}`;
@@ -1535,6 +1542,17 @@
       document.getElementById("navDocumentsLink").href = `/documents/${enc}`;
       document.getElementById("navVideosLink").href = `/video-upload.html?project=${enc}`;
       document.getElementById("navHomeLink").href = `/${enc}`;
+      // Admin-only "Edit Project Information" — href set now, reveal
+      // gated on me.isAdmin().
+      const editProjectLink = document.getElementById("navEditProjectLink");
+      if (editProjectLink) {
+        editProjectLink.href = `/edit-project.html?project=${enc}`;
+        if (window.me) {
+          window.me.isAdmin().then((isAdmin) => {
+            if (isAdmin) editProjectLink.style.display = "";
+          }).catch(() => {});
+        }
+      }
 
       // Wire the hamburger — toggle, click-outside, Escape to close.
       const menuBtn = document.getElementById("menuBtn");

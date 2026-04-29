@@ -76,6 +76,7 @@
         { href: `/documents/${enc}`, label: "Documents" },
         { href: `/video-upload.html?project=${enc}`, label: "Videos" },
         { href: `/users.html`, label: "Users" },
+        { href: `/edit-project.html?project=${enc}`, label: "Edit Project Information" },
         { href: `/${enc}`, label: "Project Home" },
       ];
     }

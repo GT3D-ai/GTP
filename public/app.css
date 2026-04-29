@@ -483,6 +483,21 @@ body:not(.editor-nav):not(.admin-layout) .menu-toggle {
   margin-left: auto;
 }
 
+/* Project-name links — every page shows the project name in its
+   header (as a span/anchor of class .project-headline on showcase
+   pages, or as the page-head h1 on project-home). Both are linkified
+   to the project home page; these rules let the anchor inherit the
+   surrounding type styling and add a subtle hover affordance. */
+a.project-headline,
+.page-head h1 a.project-name-link {
+  text-decoration: none;
+  color: inherit;
+}
+a.project-headline:hover,
+.page-head h1 a.project-name-link:hover {
+  color: var(--accent);
+}
+
 /* Editor-mode nav, shared across project-home and the per-asset
    showcase pages: horizontal nav suppressed, hamburger forced visible
    at every breakpoint and anchored far right, user chip rendered as

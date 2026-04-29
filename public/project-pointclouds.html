@@ -204,7 +204,7 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <span class="project-headline" id="projectHeadline">Point Clouds</span>
+      <a class="project-headline" id="projectHeadline" href="#">Point Clouds</a>
       <nav class="nav-primary" aria-label="Primary">
         <a class="nav-map" href="#">Map</a>
         <a class="nav-images" href="#">2D Images</a>
@@ -280,6 +280,7 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
+      projectHeadline.href = `/${enc}`;
       // Standard viewer nav links — class-based selectors wire both the
       // desktop nav and the mobile dropdown in one pass.
       document.querySelectorAll(".nav-map").forEach((a) => a.href = `/map-viewer/${enc}`);
@@ -302,6 +303,10 @@
           // Editors get the shared editor-nav hamburger cluster +
           // project-home menu set, replacing the static showcase nav.
           document.body.classList.add("editor-nav");
+          const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;
+          const editProjectItem = isAdminUser
+            ? `<a href="/edit-project.html?project=${enc}">Edit Project Information</a>`
+            : "";
           const dd = document.querySelector("#menuDropdown .dropdown-inner");
           if (dd) {
             dd.innerHTML = `
@@ -312,6 +317,7 @@
               <a href="/documents/${enc}">Documents</a>
               <a href="/video-upload.html?project=${enc}">Videos</a>
               <a href="/users.html">Users</a>
+              ${editProjectItem}
               <a href="/${enc}">Project Home</a>
             `;
           }

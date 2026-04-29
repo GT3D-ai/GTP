@@ -288,7 +288,7 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <span class="project-headline" id="projectHeadline">2D Images</span>
+      <a class="project-headline" id="projectHeadline" href="#">2D Images</a>
       <nav class="nav-primary" aria-label="Primary">
         <a class="nav-map" href="#">Map</a>
         <a class="nav-images" href="#">2D Images</a>
@@ -358,6 +358,7 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
+      projectHeadline.href = `/${enc}`;
       // Standard viewer nav links (Map / 2D Images / 2D Plans / 3D Models
       // / Point Clouds — GT3D Home is a static external link). Class-based
       // selectors so the same call wires the desktop nav and the mobile
@@ -388,6 +389,12 @@
         } else {
           document.body.classList.add("editor-nav");
           const enc = encodeURIComponent(project);
+          // "Edit Project Information" is admin-only; editors who aren't
+          // admins skip the link.
+          const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;
+          const editProjectItem = isAdminUser
+            ? `<a href="/edit-project.html?project=${enc}">Edit Project Information</a>`
+            : "";
           const dd = document.querySelector("#menuDropdown .dropdown-inner");
           if (dd) {
             dd.innerHTML = `
@@ -398,6 +405,7 @@
               <a href="/documents/${enc}">Documents</a>
               <a href="/video-upload.html?project=${enc}">Videos</a>
               <a href="/users.html">Users</a>
+              ${editProjectItem}
               <a href="/${enc}">Project Home</a>
             `;
           }
