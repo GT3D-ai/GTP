@@ -251,13 +251,30 @@
         }
 
         const formData = new FormData();
+        // Send `project` (the URL slug) so the server-side resolver can
+        // map it to the physical storage prefix for migrated projects.
+        // Without this, /api/update-project would write to the stale
+        // {projectName}/ folder rather than {propertyId}/{projectId}/.
+        formData.append("project", activeName);
         formData.append("name", activeName);
         formData.append("address", addressEl.value.trim());
         if (coverFile) formData.append("coverPhoto", coverFile);
 
         const res = await fetch("/api/update-project", { method: "POST", body: formData });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Failed to save");
+        if (!res.ok || !data.success) {
+          // Server may flag the address for review with a suggestion.
+          if (data && data.error === "address_needs_review") {
+            const accept = confirm(
+              "The address looks incomplete:\n  " + (data.warnings || []).join(", ") +
+              "\n\nSuggested:\n  " + (data.suggestion || "(none)") +
+              "\n\nUse the suggestion?"
+            );
+            if (accept && data.suggestion) addressEl.value = data.suggestion;
+            throw new Error("Address needs review");
+          }
+          throw new Error(data.error || "Failed to save");
+        }
         window.location.href = "/";
       } catch (err) {
         statusMessage.textContent = "Error: " + err.message;

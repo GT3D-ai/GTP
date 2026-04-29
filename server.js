@@ -956,14 +956,44 @@ app.post(
 );
 
 // Update project metadata (address + optional cover photo). Name is immutable.
+// For migrated projects, address lives on the property record — writes route
+// there instead of into project.json so the address stays in one place.
 app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole("editor"), async (req, res) => {
   const name = (req.body.name || "").trim();
   const address = (req.body.address || "").trim();
   if (!name) return res.status(400).json({ error: "Project name is required" });
 
+  // Storage prefix: use the resolved physical path when available so
+  // migrated projects get written to {propertyId}/{projectId}/, not the
+  // stale {projectName}/ folder.
+  const prefix = req.projectName || name;
+  const isMigrated =
+    !!(req.projectResolved && req.projectResolved.layout === "new" && req.projectResolved.propertyId);
+
   try {
-    // Verify project exists
-    const metaFile = bucket.file(`${name}/project.json`);
+    // Validate any address change first so we don't write a cover photo
+    // and then bail out on the address.
+    let addressForProperty = null;
+    if (isMigrated && address) {
+      const currentProperty = await getProperty(req.projectResolved.propertyId);
+      const currentAddress = currentProperty ? currentProperty.address : "";
+      if (address !== currentAddress) {
+        const norm = normalizeAddress(address);
+        if (norm.needsReview && !norm.autoCorrected) {
+          if (req.file) fs.unlink(req.file.path, () => {});
+          return res.status(400).json({
+            error: "address_needs_review",
+            message: "The address looks incomplete or malformed.",
+            suggestion: norm.normalized,
+            warnings: norm.warnings,
+          });
+        }
+        addressForProperty = norm.normalized;
+      }
+    }
+
+    // Verify project metadata exists at the resolved path.
+    const metaFile = bucket.file(`${prefix}/project.json`);
     const [metaExists] = await metaFile.exists();
     let existing = { name, address: null, coverPhoto: null };
     if (metaExists) {
@@ -971,12 +1001,12 @@ app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole(
       try { existing = JSON.parse(content.toString()); } catch {}
     }
 
-    // Upload new cover photo if provided
+    // Upload new cover photo if provided.
     let coverPhotoPath = existing.coverPhoto || null;
     if (req.file) {
       const ext = path.extname(req.file.originalname) || ".jpg";
       const coverName = `cover${ext}`;
-      coverPhotoPath = `${name}/${coverName}`;
+      coverPhotoPath = `${prefix}/${coverName}`;
       const gcsFile = imageBucket.file(coverPhotoPath);
       await new Promise((resolve, reject) => {
         fs.createReadStream(req.file.path)
@@ -990,16 +1020,47 @@ app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole(
       fs.unlink(req.file.path, () => {});
     }
 
+    // Persist project.json. For migrated projects, address is omitted
+    // and goes onto the property record below.
     const metadata = {
+      ...existing,
       name,
-      address,
       coverPhoto: coverPhotoPath,
       createdAt: existing.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    if (isMigrated) {
+      delete metadata.address;
+    } else {
+      metadata.address = address;
+    }
     await metaFile.save(JSON.stringify(metadata, null, 2), { contentType: "application/json" });
-    console.log(`Updated project: ${name}`);
-    res.json({ success: true, project: name, metadata });
+
+    // Address goes onto the property record for migrated projects.
+    if (isMigrated && addressForProperty !== null) {
+      try {
+        await mutateProperties((data) => {
+          const p = data.properties[req.projectResolved.propertyId];
+          if (p) {
+            p.address = addressForProperty;
+            if (p.needsAddress) p.needsAddress = false;
+            p.updatedAt = new Date().toISOString();
+          }
+        });
+      } catch (err) {
+        console.warn("[update-project] property address write failed:", err.message);
+      }
+    }
+
+    // The metadata we send back includes the address that was actually
+    // applied, regardless of whether it landed on the property or the
+    // project — the form just shows it in one field.
+    const responseMeta = {
+      ...metadata,
+      address: isMigrated ? (addressForProperty !== null ? addressForProperty : address) : metadata.address,
+    };
+    console.log(`Updated project: ${name} (${prefix})`);
+    res.json({ success: true, project: name, metadata: responseMeta });
   } catch (err) {
     console.error("Update project error:", err.message);
     if (req.file) fs.unlink(req.file.path, () => {});
@@ -1282,7 +1343,21 @@ app.get("/api/project-info", async (req, res) => {
     const [exists] = await file.exists();
     if (!exists) return res.json({ name: project, address: null, coverPhoto: null });
     const [content] = await file.download();
-    res.json(JSON.parse(content.toString()));
+    const data = JSON.parse(content.toString());
+    // For migrated projects (layout:"new"), the address lives on the
+    // property record rather than in project.json. Pull it through so
+    // the response shape matches what edit-project.html expects.
+    if (data.propertyId && !data.address) {
+      try {
+        const property = await getProperty(data.propertyId);
+        if (property) {
+          data.address = property.address || null;
+          data.propertyName = property.name || null;
+          data.propertyCoverPhoto = property.coverPhoto || null;
+        }
+      } catch { /* leave address null on error */ }
+    }
+    res.json(data);
   } catch (err) {
     console.error("Get project info error:", err.message);
     res.status(500).json({ error: err.message });
