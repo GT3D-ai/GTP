@@ -125,6 +125,44 @@ async function listAll(bucket, prefix) {
   return files;
 }
 
+async function verifyAndDeletePrefix(bucket, oldPrefix, newPrefix, dryRun, log) {
+  const oldFiles = await listAll(bucket, oldPrefix);
+  if (oldFiles.length === 0) {
+    log(`  ${bucket.name}/${oldPrefix}: nothing to clean`);
+    return 0;
+  }
+  log(`  ${bucket.name}/${oldPrefix}: ${oldFiles.length} old object(s) to verify+delete`);
+
+  const newFiles = await listAll(bucket, newPrefix);
+  const newNames = new Set(newFiles.map((f) => f.name));
+
+  const toDelete = [];
+  for (const oldFile of oldFiles) {
+    const expectedNew = newPrefix + oldFile.name.slice(oldPrefix.length);
+    if (!newNames.has(expectedNew)) {
+      throw new Error(
+        `missing counterpart in ${bucket.name}: ${oldFile.name} -> expected ${expectedNew}`
+      );
+    }
+    const [oldMeta] = await oldFile.getMetadata();
+    const [newMeta] = await bucket.file(expectedNew).getMetadata();
+    if (oldMeta.md5Hash && newMeta.md5Hash && oldMeta.md5Hash !== newMeta.md5Hash) {
+      throw new Error(
+        `md5 mismatch in ${bucket.name}: ${oldFile.name} (${oldMeta.md5Hash}) vs ${expectedNew} (${newMeta.md5Hash})`
+      );
+    }
+    toDelete.push(oldFile);
+  }
+
+  if (dryRun) {
+    log(`  ${bucket.name}/${oldPrefix}: verified ${toDelete.length}; would delete (dry run)`);
+    return 0;
+  }
+  for (const f of toDelete) await f.delete();
+  log(`  ${bucket.name}/${oldPrefix}: deleted ${toDelete.length} old object(s)`);
+  return toDelete.length;
+}
+
 async function verifyAndDeleteProject(buckets, entry, opts) {
   const { dryRun } = opts;
   const log = (...a) => console.log(`[${entry.oldProjectName}]`, ...a);
@@ -181,6 +219,17 @@ async function verifyAndDeleteProject(buckets, entry, opts) {
     }
     log(`  ${bucket.name}: deleted ${toDelete.length} old object(s)`);
   }
+
+  // Thumbnails live outside the project prefix at _thumbs/<source>/. Verify
+  // and delete those too — same md5-match requirement.
+  const main = buckets.main;
+  totalDeleted += await verifyAndDeletePrefix(
+    main,
+    `_thumbs/${entry.oldProjectName}/`,
+    `_thumbs/${entry.propertyId}/${entry.projectId}/`,
+    dryRun,
+    log
+  );
 
   return totalDeleted;
 }

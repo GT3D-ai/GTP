@@ -332,6 +332,20 @@ async function migrateProject(ctx, oldName) {
     objectCounts[role] = result.count;
   }
 
+  // 2b. Thumbnails live at _thumbs/<source-path>.jpg in the main bucket,
+  //     OUTSIDE the project prefix. Copy them so post-migration thumbnail
+  //     requests don't have to regenerate from source. Skipping is safe
+  //     (server auto-generates on miss) but wastes a slow first hit per
+  //     image and leaves the old thumbs orphaned.
+  const thumbResult = await copyPrefix(
+    main,
+    `_thumbs/${oldName}/`,
+    `_thumbs/${newPrefix}/`,
+    concurrency,
+    log
+  );
+  objectCounts.thumbs = thumbResult.count;
+
   // 3. Build the new project.json (no address, with IDs, paths rewritten).
   const newMeta = rewriteProjectMeta(
     { ...oldMeta },
