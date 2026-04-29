@@ -472,6 +472,17 @@ body.admin-layout .nav-primary {
   display: none !important;
 }
 
+/* Right-align the hamburger toggle for plain viewer pages so it sits
+   flush against the right edge of the header (this matters most on
+   mobile, where .nav-primary is hidden and otherwise wouldn't pull the
+   hamburger over). Skipped for admin-layout (hamburger is intentionally
+   left-aligned) and editor-nav (the chip's margin-left:auto already
+   pulls the cluster right; a second auto margin here would split free
+   space and create a gap). */
+body:not(.editor-nav):not(.admin-layout) .menu-toggle {
+  margin-left: auto;
+}
+
 /* ----- Users table (admin /users.html) ----- */
 .users-table {
   width: 100%;
