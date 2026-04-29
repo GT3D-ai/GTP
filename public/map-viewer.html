@@ -494,40 +494,28 @@
         Ground Truth <span>3D</span>
       </a>
       <a class="project-headline" id="projectHeadline" href="#">Map Viewer</a>
-      <div style="margin-left:auto; display:flex; align-items:center; gap:var(--space-sm);">
-        <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false">
-          <span class="bar"></span>
-        </button>
-      </div>
+      <nav class="nav-primary" aria-label="Primary">
+        <a class="nav-map" href="#">Map</a>
+        <a class="nav-images" href="#">2D Images</a>
+        <a class="nav-plans" href="#">2D Plans</a>
+        <a class="nav-models" href="#">3D Models</a>
+        <a class="nav-pointclouds" href="#">Point Clouds</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+      </nav>
+      <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
+        <span class="bar"></span>
+      </button>
     </div>
+    <!-- Standard viewer mobile dropdown — matches the showcase pages.
+         The editor-nav block in JS replaces the contents for editors. -->
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <!-- Viewer menu (anonymous + non-editor logged-in users) — same
-             standard set as the showcase pages: Map, 2D Images, 2D Plans,
-             3D Models, Point Clouds, GT3D Home. -->
-        <a id="navMapViewer" href="#" class="non-editor-only">Map</a>
-        <a id="navImagesViewer" href="#" class="non-editor-only">2D Images</a>
-        <a id="navPlansViewer" href="#" class="non-editor-only">2D Plans</a>
-        <a id="navModelsViewer" href="#" class="non-editor-only">3D Models</a>
-        <a id="navPointcloudsViewer" href="#" class="non-editor-only">Point Clouds</a>
-        <a href="https://gt3d.com" target="_blank" rel="noopener" class="non-editor-only">GT3D Home</a>
-
-        <!-- Editor menu — same set as project-home's editor menu, plus
-             "All Projects" since editors usually want a quick way back to
-             the projects index. -->
-        <a id="navMap" href="#" class="editor-only" style="display:none;">Map</a>
-        <a id="navImages" href="#" class="editor-only" style="display:none;">2D Images</a>
-        <a id="navPlans" href="#" class="editor-only" style="display:none;">2D Plans</a>
-        <a id="navModels" href="#" class="editor-only" style="display:none;">Models</a>
-        <a id="navDocuments" href="#" class="editor-only" style="display:none;">Documents</a>
-        <a id="navVideos" href="#" class="editor-only" style="display:none;">Videos</a>
-        <a href="/users.html" class="editor-only" style="display:none;">Users</a>
-        <!-- Admin-only Edit Project Information sits between Users and
-             Project Home; revealed below only when me.isAdmin() resolves
-             true (so non-admin editors don't see it). -->
-        <a id="navEditProject" href="#" class="editor-only admin-only" style="display:none;">Edit Project Information</a>
-        <a id="navHome" href="#" class="editor-only" style="display:none;">Project Home</a>
-        <a href="/projects" class="editor-only" style="display:none;">All Projects</a>
+        <a class="nav-map" href="#">Map</a>
+        <a class="nav-images" href="#">2D Images</a>
+        <a class="nav-plans" href="#">2D Plans</a>
+        <a class="nav-models" href="#">3D Models</a>
+        <a class="nav-pointclouds" href="#">Point Clouds</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </div>
     </div>
   </header>
@@ -638,58 +626,59 @@
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
       projectHeadline.href = `/${enc}`;
-      // Viewer menu items — used by anonymous and non-editor visitors.
-      // Standard 6-item set across all viewer-facing pages; "Map" is a
-      // self-link here for layout consistency.
-      document.getElementById("navMapViewer").href = `/map-viewer/${enc}`;
-      document.getElementById("navImagesViewer").href = `/images/${enc}`;
-      document.getElementById("navPlansViewer").href = `/plans/${enc}`;
-      document.getElementById("navModelsViewer").href = `/models/${enc}`;
-      document.getElementById("navPointcloudsViewer").href = `/pointclouds/${enc}`;
-      // Editor menu items — visibility flipped after /api/me resolves below.
-      document.getElementById("navMap").href = `/map-viewer/${enc}`;
-      document.getElementById("navImages").href = `/images/${enc}`;
-      document.getElementById("navPlans").href = `/plans/${enc}`;
-      document.getElementById("navModels").href = `/models/${enc}`;
-      document.getElementById("navDocuments").href = `/documents/${enc}`;
-      document.getElementById("navVideos").href = `/video-upload.html?project=${enc}`;
-      document.getElementById("navHome").href = `/${enc}`;
-      document.getElementById("navEditProject").href = `/edit-project.html?project=${enc}`;
+      // Standard viewer nav links — class-based selectors wire both the
+      // desktop nav and the mobile dropdown in one pass (same pattern as
+      // the showcase pages).
+      document.querySelectorAll(".nav-map").forEach((a) => a.href = `/map-viewer/${enc}`);
+      document.querySelectorAll(".nav-images").forEach((a) => a.href = `/images/${enc}`);
+      document.querySelectorAll(".nav-plans").forEach((a) => a.href = `/plans/${enc}`);
+      document.querySelectorAll(".nav-models").forEach((a) => a.href = `/models/${enc}`);
+      document.querySelectorAll(".nav-pointclouds").forEach((a) => a.href = `/pointclouds/${enc}`);
 
       // Admin-only "+ Edit Map" link next to the level dropdown — href
       // resolved now, visibility set after me.isAdmin() resolves.
       const editMapLink = document.getElementById("editMapLink");
       if (editMapLink) editMapLink.href = `/map-editor.html?project=${enc}`;
 
-      // If the viewer can edit, swap to the editor menu: hide non-editor items,
-      // reveal editor items. Non-editors get the GT3D logo re-routed to the
-      // project home page instead of the admin project list at /.
+      // Editor-nav swap (mirrors the showcase pages). Editors get the
+      // body.editor-nav cluster and the project-home editor menu set;
+      // admins additionally see "Edit Project Information". Non-editors
+      // get the standard 6-item viewer nav rendered above + the GT3D
+      // logo re-routed to the public project mirror so it doesn't bounce
+      // them through IAP.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
-        if (isEditor) {
-          document.querySelectorAll(".non-editor-only").forEach((el) => el.style.display = "none");
-          // Reveal editor items, but keep .admin-only items hidden until
-          // me.isAdmin() confirms (handled below).
-          document.querySelectorAll(".editor-only:not(.admin-only)").forEach((el) => el.style.display = "");
-        } else {
+        if (!isEditor) {
           const logo = document.querySelector(".site-header .logo");
-          // Non-editors land on the no-IAP /public/<project> mirror so the
-          // logo is a working "back to project home" link for anonymous
-          // viewers (the previous /<project> target hits IAP and bounces).
           if (logo) logo.href = `/public/${enc}`;
+          return;
+        }
+        document.body.classList.add("editor-nav");
+        const isAdminUser = window.me ? !!(await window.me.isAdmin()) : false;
+        const editProjectItem = isAdminUser
+          ? `<a href="/edit-project.html?project=${enc}">Edit Project Information</a>`
+          : "";
+        const dd = document.querySelector("#menuDropdown .dropdown-inner");
+        if (dd) {
+          dd.innerHTML = `
+            <a href="/map-viewer/${enc}">Map</a>
+            <a href="/images/${enc}">2D Images</a>
+            <a href="/plans/${enc}">2D Plans</a>
+            <a href="/models/${enc}">Models</a>
+            <a href="/documents/${enc}">Documents</a>
+            <a href="/video-upload.html?project=${enc}">Videos</a>
+            <a href="/users.html">Users</a>
+            ${editProjectItem}
+            <a href="/${enc}">Project Home</a>
+          `;
         }
       })();
 
-      // Reveal admin-only affordances: the "+ Edit Map" link next to the
-      // level selector and the "Edit Project Information" item in the
-      // editor menu. Both stay hidden for non-admin editors.
+      // Reveal "+ Edit Map" only for admins (separate affordance next to
+      // the level selector — not part of the hamburger menu).
       if (window.me) {
         window.me.isAdmin().then((isAdmin) => {
-          if (!isAdmin) return;
-          if (editMapLink) editMapLink.style.display = "";
-          document.querySelectorAll(".editor-only.admin-only").forEach((el) => {
-            el.style.display = "";
-          });
+          if (isAdmin && editMapLink) editMapLink.style.display = "";
         }).catch(() => {});
       }
 
