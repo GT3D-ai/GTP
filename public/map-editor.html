@@ -344,6 +344,55 @@
       100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0), 0 0 12px rgba(255, 255, 255, 0.6); transform: translate(-50%, -50%) scale(1.0); }
     }
 
+    /* "Multiple photos at this location" pin variants. Apply
+       .multi-stacked OR .multi-pair to a .pin element to swap to that
+       presentation. Both keep the same translate(-50%, -50%) origin so
+       the pin still sits on the same x/y point as a normal pin. */
+
+    /* Variant A — concentric circles (a smaller red dot inside the
+       white pin), reads as a target / bullseye. */
+    .pin.multi-stacked::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 5px;
+      height: 5px;
+      background: #dc2626;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    /* Variant B — two slightly overlapping circles. The outer .pin's
+       own background/border is dropped so only the two pseudo-element
+       circles render; width is expanded so the cluster is centered on
+       the same point thanks to translate(-50%, -50%). */
+    .pin.multi-pair {
+      width: 17px;
+      height: 11px;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .pin.multi-pair::before,
+    .pin.multi-pair::after {
+      content: "";
+      position: absolute;
+      width: 11px;
+      height: 11px;
+      background: #ffffff;
+      border: 2px solid #dc2626;
+      border-radius: 50%;
+      top: 50%;
+      transform: translateY(-50%);
+      box-sizing: border-box;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+    }
+    .pin.multi-pair::before { left: 0; }
+    .pin.multi-pair::after { left: 6px; }
+
     .pin-tooltip {
       position: absolute;
       bottom: calc(100% + 8px);
@@ -889,6 +938,133 @@
     .snapshot-modal-actions button:disabled { opacity: 0.55; cursor: progress; }
     .snapshot-modal-actions button.subtle { color: var(--ink-muted); }
 
+    /* Stack management modal — opens when an editor drops a photo on
+       top of an existing pin, or when they click an existing stacked
+       pin. Lists every photo at the location with a primary radio,
+       Replace, and Delete. Each action commits immediately and saves
+       via the standard saveMappings flow. */
+    .stack-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 10001;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .stack-modal-backdrop.visible { display: flex; }
+    .stack-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line-strong);
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 32px);
+    }
+    .stack-modal-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .stack-modal-header h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .stack-modal-close {
+      background: none; border: none; color: var(--ink-subtle);
+      font-size: 1.25rem; cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .stack-modal-close:hover { color: var(--ink); }
+    .stack-modal-body {
+      padding: 8px 0;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .stack-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .stack-row:last-child { border-bottom: none; }
+    .stack-row input[type="radio"] {
+      flex-shrink: 0;
+      width: 16px; height: 16px;
+      cursor: pointer;
+    }
+    .stack-row .stack-thumb {
+      width: 56px; height: 42px;
+      object-fit: cover;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .stack-row .stack-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.85rem;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stack-row-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .stack-row-btn {
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .stack-row-btn:hover { border-color: var(--ink); }
+    .stack-row-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .stack-row-btn.danger:hover { background: var(--danger); color: #fff; }
+    .stack-row-replace {
+      width: 100%;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+    .stack-row-replace-wrap { padding: 0 16px 12px; display: none; }
+    .stack-row-replace-wrap.visible { display: block; }
+    .stack-modal-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+    }
+    .stack-modal-footer button {
+      background: var(--ink);
+      color: #fff;
+      border: 1px solid var(--ink);
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .stack-modal-footer button:hover { background: var(--accent); border-color: var(--accent); }
+    .stack-modal-status { padding: 0 16px 8px; font-size: 0.78rem; color: var(--ink-muted); min-height: 1.1em; }
+    .stack-modal-status.error { color: var(--danger); }
+
     .fp-option {
       background: var(--bg-elevated);
       border: 1px solid var(--line);
@@ -1114,6 +1290,24 @@
     <div class="pin-context-menu-item view" id="pinContextView">&#127758; View 360</div>
     <div class="pin-context-menu-item move" id="pinContextMove">&#9995; Move</div>
     <div class="pin-context-menu-item remove" id="pinContextRemove">&#10060; Remove</div>
+  </div>
+
+  <!-- Stack management modal — shows every photo at a stacked location
+       so the editor can pick the primary, replace any photo with a
+       different unplaced 360, or delete entries. Each action commits
+       immediately via saveMappings; the footer just closes. -->
+  <div class="stack-modal-backdrop" id="stackModal" role="dialog" aria-modal="true" aria-labelledby="stackModalTitle">
+    <div class="stack-modal">
+      <div class="stack-modal-header">
+        <h3 id="stackModalTitle">Photos at this location</h3>
+        <button class="stack-modal-close" id="stackModalClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="stack-modal-status" id="stackModalStatus"></div>
+      <div class="stack-modal-body" id="stackModalBody"></div>
+      <div class="stack-modal-footer">
+        <button type="button" id="stackModalDone">Done</button>
+      </div>
+    </div>
   </div>
 
   <div class="pin-context-menu" id="mapLinkContextMenu">
@@ -2457,6 +2651,12 @@
       mapContainer.classList.remove("drop-active");
     });
 
+    // Drop threshold for treating a new placement as "on top of" an
+    // existing pin — within ~2% of the floor plan in either dimension.
+    // When triggered, the new pin snaps to the existing location's
+    // coords so they group as a stack, and the stack modal opens.
+    const STACK_THRESHOLD = 0.02;
+
     mapContainer.addEventListener("drop", (e) => {
       e.preventDefault();
       mapContainer.classList.remove("drop-active");
@@ -2476,10 +2676,23 @@
 
       if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
+      // Collision: was the photo dropped close enough to an existing pin
+      // to count as "on top of" it? If so, snap to that pin's exact
+      // coords so they group as a stack.
+      const visible = currentLevelFilter && project
+        ? mappings.pins.filter((p) => p.image360.startsWith(`${project}/${currentLevelFilter}/`))
+        : mappings.pins;
+      const collisionPin = visible.find((p) =>
+        Math.abs(p.x - x) < STACK_THRESHOLD && Math.abs(p.y - y) < STACK_THRESHOLD
+      );
+
+      const pinX = collisionPin ? collisionPin.x : Math.round(x * 10000) / 10000;
+      const pinY = collisionPin ? collisionPin.y : Math.round(y * 10000) / 10000;
+
       const pin = {
         id: "pin_" + Date.now(),
-        x: Math.round(x * 10000) / 10000,
-        y: Math.round(y * 10000) / 10000,
+        x: pinX,
+        y: pinY,
         image360: image360,
       };
 
@@ -2487,6 +2700,12 @@
       renderPins();
       render360List();
       saveMappings();
+
+      if (collisionPin) {
+        // Show the stack management modal so the editor can pick the
+        // primary photo or remove any of the stacked entries.
+        openStackModal(`${pinX},${pinY}`);
+      }
     });
 
     let activeDrag = null;
@@ -2894,6 +3113,163 @@
       if (e.key === "Escape" && levelsModal.classList.contains("visible")) closeLevelsModal();
     });
 
+    // ---- Stack management modal ----
+    // Stack key is "<x>,<y>" — derived from the pin coords saved in
+    // mappings.pins. The modal stays open across actions and looks up
+    // the current stack from `mappings.pins` each time it re-renders,
+    // so set-primary / delete / replace can mutate the array freely
+    // and the row list reflects the new state immediately.
+    const stackModal = document.getElementById("stackModal");
+    const stackModalBody = document.getElementById("stackModalBody");
+    const stackModalTitle = document.getElementById("stackModalTitle");
+    const stackModalStatus = document.getElementById("stackModalStatus");
+    const stackModalClose = document.getElementById("stackModalClose");
+    const stackModalDone = document.getElementById("stackModalDone");
+    let activeStackKey = null;
+
+    function setStackStatus(text, kind) {
+      if (!stackModalStatus) return;
+      stackModalStatus.textContent = text || "";
+      stackModalStatus.className = "stack-modal-status" + (kind ? " " + kind : "");
+    }
+
+    function pinsForStackKey(key) {
+      return mappings.pins.filter((p) => `${p.x},${p.y}` === key);
+    }
+
+    function openStackModal(stackKey) {
+      activeStackKey = stackKey;
+      setStackStatus("");
+      renderStackModalBody();
+      stackModal.classList.add("visible");
+    }
+
+    function closeStackModal() {
+      stackModal.classList.remove("visible");
+      activeStackKey = null;
+    }
+
+    function renderStackModalBody() {
+      const stack = activeStackKey ? pinsForStackKey(activeStackKey) : [];
+      stackModalTitle.textContent = stack.length === 1
+        ? "1 photo at this location"
+        : `${stack.length} photos at this location`;
+      stackModalBody.innerHTML = "";
+      if (stack.length === 0) { closeStackModal(); return; }
+
+      // Build the list of replace candidates once per render — every 360
+      // photo in the project that's in the same level as the stack and
+      // isn't already pinned somewhere else on the map. We keep "this
+      // pin's own image" available too so toggling Replace and changing
+      // your mind reverts cleanly.
+      const placedNames = new Set(mappings.pins.map((p) => p.image360));
+      // Detect the level prefix from any pin in the stack so candidate
+      // photos are scoped to that level.
+      const samplePath = stack[0].image360;
+      const segs = samplePath.split("/");
+      const levelPrefix = segs.length > 2 ? `${segs[0]}/${segs[1]}/` : null;
+      const replaceCandidates = (allFiles360 || [])
+        .map((f) => f.name)
+        .filter((n) => !!n && !n.endsWith("/") && !n.endsWith("mappings.json"))
+        .filter((n) => !levelPrefix || n.startsWith(levelPrefix));
+
+      stack.forEach((pin) => {
+        const isPrimary = pin.id === stack[0].id;
+        const displayName = pin.image360.split("/").pop();
+        const row = document.createElement("div");
+        row.className = "stack-row";
+        row.dataset.pinId = pin.id;
+        row.innerHTML = `
+          <input type="radio" name="stackPrimary" ${isPrimary ? "checked" : ""} title="Show this photo first">
+          <img class="stack-thumb" src="/api/thumbnail?file=${encodeURIComponent(pin.image360)}" alt="">
+          <div class="stack-name" title="${escapeAttr(displayName)}">${escapeAttr(displayName)}</div>
+          <div class="stack-row-actions">
+            <button type="button" class="stack-row-btn" data-action="replace">Replace</button>
+            <button type="button" class="stack-row-btn danger" data-action="delete">Delete</button>
+          </div>
+        `;
+        stackModalBody.appendChild(row);
+
+        // Replace picker (collapsed by default; appears under the row)
+        const replaceWrap = document.createElement("div");
+        replaceWrap.className = "stack-row-replace-wrap";
+        replaceWrap.innerHTML = `
+          <select class="stack-row-replace">
+            <option value="">Pick a different photo…</option>
+            ${replaceCandidates
+              .filter((n) => n === pin.image360 || !placedNames.has(n))
+              .map((n) => {
+                const label = n.split("/").pop();
+                const sel = n === pin.image360 ? " selected" : "";
+                return `<option value="${escapeAttr(n)}"${sel}>${escapeHtml(label)}</option>`;
+              }).join("")}
+          </select>
+        `;
+        stackModalBody.appendChild(replaceWrap);
+
+        const radio = row.querySelector('input[type="radio"]');
+        radio.addEventListener("change", () => {
+          if (!radio.checked) return;
+          // Reorder mappings.pins so this pin lands first within its
+          // stack. Other pins in the stack keep their relative order.
+          const stackKey = `${pin.x},${pin.y}`;
+          const stackPins = mappings.pins.filter((p) => `${p.x},${p.y}` === stackKey);
+          const others = mappings.pins.filter((p) => `${p.x},${p.y}` !== stackKey);
+          const reorderedStack = [pin, ...stackPins.filter((p) => p.id !== pin.id)];
+          mappings.pins = others.concat(reorderedStack);
+          renderPins();
+          renderStackModalBody();
+          saveMappings();
+        });
+
+        row.querySelector('[data-action="replace"]').addEventListener("click", () => {
+          replaceWrap.classList.toggle("visible");
+        });
+
+        replaceWrap.querySelector("select").addEventListener("change", (ev) => {
+          const newPath = ev.target.value;
+          if (!newPath || newPath === pin.image360) {
+            replaceWrap.classList.remove("visible");
+            return;
+          }
+          if (mappings.pins.some((p) => p.id !== pin.id && p.image360 === newPath)) {
+            setStackStatus("That photo is already placed somewhere else on the map.", "error");
+            return;
+          }
+          pin.image360 = newPath;
+          renderPins();
+          render360List();
+          renderStackModalBody();
+          saveMappings();
+        });
+
+        row.querySelector('[data-action="delete"]').addEventListener("click", () => {
+          const name = pin.image360.split("/").pop();
+          if (!confirm(`Remove "${name}" from this location?`)) return;
+          mappings.pins = mappings.pins.filter((p) => p.id !== pin.id);
+          renderPins();
+          render360List();
+          renderStackModalBody();
+          saveMappings();
+        });
+      });
+    }
+
+    stackModalClose.addEventListener("click", closeStackModal);
+    stackModalDone.addEventListener("click", closeStackModal);
+    stackModal.addEventListener("click", (e) => {
+      if (e.target === stackModal) closeStackModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && stackModal.classList.contains("visible")) closeStackModal();
+    });
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
     function renderPins() {
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
 
@@ -2902,55 +3278,78 @@
         ? mappings.pins.filter((p) => p.image360.startsWith(`${project}/${currentLevelFilter}/`))
         : mappings.pins;
 
-      visiblePins.forEach((pin) => {
+      // Group pins that share an exact (x, y) so we render one element
+      // per location. Stacks (length >= 2) get the multi-stacked icon
+      // and route clicks to the stack management modal.
+      const groups = new Map();
+      visiblePins.forEach((p) => {
+        const key = `${p.x},${p.y}`;
+        let arr = groups.get(key);
+        if (!arr) { arr = []; groups.set(key, arr); }
+        arr.push(p);
+      });
+
+      groups.forEach((group) => {
+        const primary = group[0];
+        const isStacked = group.length > 1;
+
         const el = document.createElement("div");
-        el.className = "pin";
-        el.dataset.image360 = pin.image360;
-        el.style.left = (pin.x * 100) + "%";
-        el.style.top = (pin.y * 100) + "%";
+        el.className = "pin" + (isStacked ? " multi-stacked" : "");
+        el.dataset.image360 = primary.image360;
+        el.dataset.stackKey = `${primary.x},${primary.y}`;
+        el.style.left = (primary.x * 100) + "%";
+        el.style.top = (primary.y * 100) + "%";
 
-        const displayName = pin.image360.split("/").pop();
-        el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
+        const tooltipText = isStacked
+          ? `${group.length} photos at this location`
+          : primary.image360.split("/").pop();
+        el.innerHTML = `<div class="pin-tooltip">${tooltipText}</div>`;
 
-        // Hover preview — show a small thumbnail near the pin on mouseenter
-        el.addEventListener("mouseenter", (e) => showPinHoverThumb(pin, e));
+        // Hover preview — show the primary photo's thumbnail.
+        el.addEventListener("mouseenter", (e) => showPinHoverThumb(primary, e));
         el.addEventListener("mousemove", (e) => positionPinHoverThumb(e));
         el.addEventListener("mouseleave", () => hidePinHoverThumb());
 
-        // Mousedown — if in move mode, start dragging immediately
+        // Mousedown — if in move mode, start dragging immediately. For
+        // stacked pins, every photo in the group moves together since
+        // the cluster shares one (x, y); the mouseup handler updates
+        // all stack members.
         el.addEventListener("mousedown", (e) => {
-          if (moveModePin === pin.id) {
+          if (moveModePin === primary.id) {
             e.preventDefault();
             e.stopPropagation();
             el.classList.remove("movable");
             el.classList.add("dragging");
-            activeDrag = { el, pinId: pin.id };
+            activeDrag = { el, pinId: primary.id, stackIds: group.map((p) => p.id) };
           }
         });
 
-        // Click — only open viewer if NOT in move mode and NOT just dragged
+        // Click — single photo opens the 360 viewer; stack opens the
+        // stack management modal (set primary / delete / replace).
         el.addEventListener("click", (e) => {
           e.stopPropagation();
           if (justDragged) { justDragged = false; return; }
           if (activeDrag) return;
-          if (moveModePin === pin.id) return;
-          openPanoModal(pin.image360);
+          if (moveModePin === primary.id) return;
+          if (isStacked) {
+            openStackModal(`${primary.x},${primary.y}`);
+          } else {
+            openPanoModal(primary.image360);
+          }
         });
 
-        // Right-click → show context menu
+        // Right-click → context menu (operates on the primary pin).
         el.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          // Cancel any existing move mode
           if (moveModePin) {
             mapContainer.querySelectorAll(".pin.movable").forEach((p) => p.classList.remove("movable"));
             moveModePin = null;
           }
-          showContextMenu(e, pin, el);
+          showContextMenu(e, primary, el);
         });
 
-        // Restore movable state if this pin is in move mode (after re-render)
-        if (moveModePin === pin.id) {
+        if (moveModePin === primary.id) {
           el.classList.add("movable");
         }
 
@@ -3057,7 +3456,9 @@
     // Global mouseup → drop the dragged pin or link at the new location.
     // The mousemove handler above is overlay-agnostic (it just updates
     // activeDrag.el's left/top), so the only branching needed is here when
-    // we commit the new x/y back to the right object in mappings.
+    // we commit the new x/y back to the right object in mappings. When
+    // the dragged pin belongs to a stack, every pin in that stack picks
+    // up the same coords so the cluster stays together.
     document.addEventListener("mouseup", () => {
       if (!activeDrag) return;
       const el = activeDrag.el;
@@ -3073,12 +3474,17 @@
         }
         moveModeLinkId = null;
       } else {
-        const pin = mappings.pins.find((p) => p.id === activeDrag.pinId);
-        if (pin) {
-          pin.x = Math.round(finalX * 10000) / 10000;
-          pin.y = Math.round(finalY * 10000) / 10000;
-          saveMappings();
-        }
+        const snappedX = Math.round(finalX * 10000) / 10000;
+        const snappedY = Math.round(finalY * 10000) / 10000;
+        const idsToMove = activeDrag.stackIds && activeDrag.stackIds.length
+          ? activeDrag.stackIds
+          : [activeDrag.pinId];
+        let touched = false;
+        idsToMove.forEach((pid) => {
+          const pin = mappings.pins.find((p) => p.id === pid);
+          if (pin) { pin.x = snappedX; pin.y = snappedY; touched = true; }
+        });
+        if (touched) saveMappings();
         moveModePin = null;
       }
 

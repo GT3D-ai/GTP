@@ -118,6 +118,165 @@
     }
     .pin:hover .pin-tooltip { display: block; }
 
+    /* Stack carousel — opens when a viewer clicks a multi-stacked pin.
+       Shows one photo at a time with prev/next chevrons and a row of
+       dot indicators; clicking the photo opens the standard 360
+       viewer for that file. */
+    .stack-carousel-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .stack-carousel-backdrop.visible { display: flex; }
+    .stack-carousel {
+      background: var(--ink);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 32px);
+      color: #fff;
+    }
+    .stack-carousel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .stack-carousel-title {
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.78);
+    }
+    .stack-carousel-close {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      width: 36px; height: 32px;
+      cursor: pointer;
+      font-size: 1.1rem; line-height: 1;
+    }
+    .stack-carousel-close:hover {
+      background: var(--accent); border-color: var(--accent);
+    }
+    .stack-carousel-stage {
+      position: relative;
+      flex: 1;
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a1a;
+      overflow: hidden;
+    }
+    .stack-carousel-img {
+      max-width: 100%;
+      max-height: calc(100vh - 200px);
+      object-fit: contain;
+      cursor: zoom-in;
+      display: block;
+    }
+    .stack-carousel-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px; height: 44px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      cursor: pointer;
+      font-size: 1.4rem; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stack-carousel-nav:hover {
+      background: var(--accent); border-color: var(--accent);
+    }
+    .stack-carousel-nav.prev { left: 12px; }
+    .stack-carousel-nav.next { right: 12px; }
+    .stack-carousel-caption {
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.78);
+      text-align: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .stack-carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px 14px;
+    }
+    .stack-carousel-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+    .stack-carousel-dot.active { background: var(--accent); }
+    .stack-carousel-hint {
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    /* "Multiple photos at this location" pin variants. Apply
+       .multi-stacked OR .multi-pair to a .pin element to swap to that
+       presentation. Both keep the translate(-50%, -50%) origin so the
+       cluster sits on the same x/y point as a normal pin. */
+
+    /* Variant A — concentric circles (small red dot inside the white
+       pin), reads as a target / bullseye. */
+    .pin.multi-stacked::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 6px;
+      height: 6px;
+      background: #dc2626;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    /* Variant B — two slightly overlapping circles. The outer .pin's
+       own background/border is dropped so only the two pseudo-element
+       circles render; width is expanded so the cluster is centered on
+       the same point thanks to translate(-50%, -50%). */
+    .pin.multi-pair {
+      width: 21px;
+      height: 13px;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .pin.multi-pair::before,
+    .pin.multi-pair::after {
+      content: "";
+      position: absolute;
+      width: 13px;
+      height: 13px;
+      background: #ffffff;
+      border: 2px solid #dc2626;
+      border-radius: 50%;
+      top: 50%;
+      transform: translateY(-50%);
+      box-sizing: border-box;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.4), 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .pin.multi-pair::before { left: 0; }
+    .pin.multi-pair::after { left: 8px; }
+
     /* Map link arrows — clickable overlays placed by editors that jump to
        another level in the same project. */
     .map-link {
@@ -556,6 +715,29 @@
     <div class="loading-overlay" id="modalLoading">Loading 360…</div>
   </div>
 
+  <!-- Stack carousel — shown when a viewer clicks a multi-stacked pin
+       on the map. Clicking the photo (or pressing Enter) opens the
+       standard 360 viewer for that photo. Prev/next chevrons + dots
+       cycle through the available photos at the location. -->
+  <div class="stack-carousel-backdrop" id="stackCarousel" role="dialog" aria-modal="true" aria-labelledby="stackCarouselTitle">
+    <div class="stack-carousel">
+      <div class="stack-carousel-header">
+        <span class="stack-carousel-title" id="stackCarouselTitle">Photos at this location</span>
+        <button type="button" class="stack-carousel-close" id="stackCarouselClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="stack-carousel-stage">
+        <button type="button" class="stack-carousel-nav prev" id="stackCarouselPrev" aria-label="Previous photo">&#9664;</button>
+        <img class="stack-carousel-img" id="stackCarouselImg" alt="" tabindex="0" title="Click to open 360 viewer">
+        <button type="button" class="stack-carousel-nav next" id="stackCarouselNext" aria-label="Next photo">&#9654;</button>
+      </div>
+      <div class="stack-carousel-caption">
+        <div id="stackCarouselCaption">—</div>
+        <div class="stack-carousel-hint">Click the photo to open the 360 viewer</div>
+      </div>
+      <div class="stack-carousel-dots" id="stackCarouselDots"></div>
+    </div>
+  </div>
+
   <!-- Post-capture snapshot modal — shown after the user clicks the
        snapshot button in the 360 viewer. Save to project is the primary
        action; share / download are fallbacks for non-editors and quick
@@ -771,14 +953,35 @@
       mapContainer.querySelectorAll(".pin").forEach((el) => el.remove());
       const prefix = `${project}/${currentLevel}/`;
       const visiblePins = mappings.pins.filter((p) => p.image360.startsWith(prefix));
-      visiblePins.forEach((pin) => {
+
+      // Group pins that share an exact (x, y) so a stack renders as one
+      // multi-stacked icon. Click on a stack opens the carousel modal;
+      // single pins still go straight to the 360 viewer.
+      const groups = new Map();
+      visiblePins.forEach((p) => {
+        const key = `${p.x},${p.y}`;
+        let arr = groups.get(key);
+        if (!arr) { arr = []; groups.set(key, arr); }
+        arr.push(p);
+      });
+
+      groups.forEach((group) => {
+        const primary = group[0];
+        const isStacked = group.length > 1;
         const el = document.createElement("div");
-        el.className = "pin";
-        el.style.left = (pin.x * 100) + "%";
-        el.style.top = (pin.y * 100) + "%";
-        const displayName = pin.image360.split("/").pop();
-        el.innerHTML = `<div class="pin-tooltip">${displayName}</div>`;
-        el.addEventListener("click", (e) => { e.stopPropagation(); openViewer(pin.image360, displayName); });
+        el.className = "pin" + (isStacked ? " multi-stacked" : "");
+        el.style.left = (primary.x * 100) + "%";
+        el.style.top = (primary.y * 100) + "%";
+        const displayName = primary.image360.split("/").pop();
+        const tooltipText = isStacked
+          ? `${group.length} photos at this location`
+          : displayName;
+        el.innerHTML = `<div class="pin-tooltip">${tooltipText}</div>`;
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isStacked) openStackCarousel(group);
+          else openViewer(primary.image360, displayName);
+        });
         mapContainer.appendChild(el);
       });
       renderMapLinks();
@@ -814,6 +1017,90 @@
         mapContainer.appendChild(el);
       });
     }
+
+    // ---- Stack carousel ----
+    // Cycles through the photos at a stacked pin location. Clicking
+    // the displayed image (or pressing Enter on it while focused)
+    // closes the carousel and opens the standard 360 viewer for that
+    // file via openViewer.
+    const stackCarousel = document.getElementById("stackCarousel");
+    const stackCarouselImg = document.getElementById("stackCarouselImg");
+    const stackCarouselTitle = document.getElementById("stackCarouselTitle");
+    const stackCarouselCaption = document.getElementById("stackCarouselCaption");
+    const stackCarouselPrev = document.getElementById("stackCarouselPrev");
+    const stackCarouselNext = document.getElementById("stackCarouselNext");
+    const stackCarouselClose = document.getElementById("stackCarouselClose");
+    const stackCarouselDots = document.getElementById("stackCarouselDots");
+    let carouselGroup = [];
+    let carouselIndex = 0;
+
+    function showCarouselSlide(i) {
+      if (!carouselGroup.length) return;
+      const n = carouselGroup.length;
+      carouselIndex = ((i % n) + n) % n;
+      const pin = carouselGroup[carouselIndex];
+      const name = pin.image360.split("/").pop();
+      stackCarouselImg.src = `/api/thumbnail?file=${encodeURIComponent(pin.image360)}`;
+      stackCarouselImg.alt = name;
+      stackCarouselCaption.textContent = `${name}  (${carouselIndex + 1} of ${n})`;
+      stackCarouselDots.querySelectorAll(".stack-carousel-dot").forEach((dot, idx) => {
+        dot.classList.toggle("active", idx === carouselIndex);
+      });
+    }
+
+    function openStackCarousel(group) {
+      carouselGroup = group.slice();
+      carouselIndex = 0;
+      stackCarouselTitle.textContent = `${group.length} photos at this location`;
+      // Build dots for direct jump to any photo.
+      stackCarouselDots.innerHTML = "";
+      carouselGroup.forEach((_, idx) => {
+        const dot = document.createElement("button");
+        dot.type = "button";
+        dot.className = "stack-carousel-dot";
+        dot.setAttribute("aria-label", `Show photo ${idx + 1}`);
+        dot.addEventListener("click", () => showCarouselSlide(idx));
+        stackCarouselDots.appendChild(dot);
+      });
+      // Hide chevrons + dots when there's only one photo (shouldn't
+      // happen since stacks need 2+, but keeps the UI sensible if it
+      // ever does).
+      const multi = carouselGroup.length > 1;
+      stackCarouselPrev.style.display = multi ? "" : "none";
+      stackCarouselNext.style.display = multi ? "" : "none";
+      stackCarouselDots.style.display = multi ? "" : "none";
+      showCarouselSlide(0);
+      stackCarousel.classList.add("visible");
+    }
+
+    function closeStackCarousel() {
+      stackCarousel.classList.remove("visible");
+      carouselGroup = [];
+      stackCarouselImg.removeAttribute("src");
+    }
+
+    stackCarouselPrev.addEventListener("click", () => showCarouselSlide(carouselIndex - 1));
+    stackCarouselNext.addEventListener("click", () => showCarouselSlide(carouselIndex + 1));
+    stackCarouselClose.addEventListener("click", closeStackCarousel);
+    stackCarousel.addEventListener("click", (e) => {
+      if (e.target === stackCarousel) closeStackCarousel();
+    });
+    stackCarouselImg.addEventListener("click", () => {
+      const pin = carouselGroup[carouselIndex];
+      if (!pin) return;
+      const name = pin.image360.split("/").pop();
+      closeStackCarousel();
+      openViewer(pin.image360, name);
+    });
+    stackCarouselImg.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stackCarouselImg.click(); }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (!stackCarousel.classList.contains("visible")) return;
+      if (e.key === "Escape") { e.preventDefault(); closeStackCarousel(); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); showCarouselSlide(carouselIndex - 1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); showCarouselSlide(carouselIndex + 1); }
+    });
 
     levelSelect.addEventListener("change", () => {
       currentLevel = levelSelect.value;
