@@ -182,6 +182,21 @@
     .level-bar select:hover { background: rgba(255, 255, 255, 0.14); }
     .level-bar select:focus { border-color: var(--accent); }
     .level-bar select option { background: var(--secondary-block); color: #fff; }
+    /* Admin-only "+ Edit Map" link sits next to the level dropdown.
+       Inline-flex keeps it vertically centered against the select; the
+       JS sets display only after me.isAdmin() resolves. */
+    .level-bar .level-bar-action {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 4px 8px;
+      border: 1px solid transparent;
+    }
+    .level-bar .level-bar-action:hover {
+      text-decoration: underline;
+    }
 
     /* Zoom indicator */
     .zoom-indicator {
@@ -515,6 +530,7 @@
     <select id="levelSelect">
       <option value="">Loading…</option>
     </select>
+    <a href="#" id="editMapLink" class="level-bar-action" style="display:none;">+ Edit Map</a>
   </div>
 
   <div class="map-area" id="mapArea">
@@ -631,6 +647,11 @@
       document.getElementById("navVideos").href = `/video-upload.html?project=${enc}`;
       document.getElementById("navHome").href = `/${enc}`;
 
+      // Admin-only "+ Edit Map" link next to the level dropdown — href
+      // resolved now, visibility set after me.isAdmin() resolves.
+      const editMapLink = document.getElementById("editMapLink");
+      if (editMapLink) editMapLink.href = `/map-editor.html?project=${enc}`;
+
       // If the viewer can edit, swap to the editor menu: hide non-editor items,
       // reveal editor items. Non-editors get the GT3D logo re-routed to the
       // project home page instead of the admin project list at /.
@@ -647,6 +668,15 @@
           if (logo) logo.href = `/public/${enc}`;
         }
       })();
+
+      // Reveal "+ Edit Map" only for admins. Editors aren't quite enough
+      // — the editor menu already exposes the editor surfaces; this link
+      // is meant as the explicit "go to the map editor" jump for admins.
+      if (window.me) {
+        window.me.isAdmin().then((isAdmin) => {
+          if (isAdmin && editMapLink) editMapLink.style.display = "";
+        }).catch(() => {});
+      }
 
       init();
     }
