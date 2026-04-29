@@ -20,7 +20,16 @@
     }
     .form-head p.lede { margin-bottom: var(--space-lg); }
 
-    /* Cover photo dropzone preview */
+    /* Side-by-side photo uploaders */
+    .photo-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-md);
+    }
+    @media (max-width: 600px) {
+      .photo-row { grid-template-columns: 1fr; }
+    }
+
     .cover-dropzone {
       border: 1px dashed var(--line-strong);
       background: var(--bg-elevated);
@@ -33,6 +42,7 @@
       justify-content: center;
       overflow: hidden;
       transition: border-color var(--transition), background var(--transition);
+      position: relative;
     }
     .cover-dropzone:hover, .cover-dropzone.drag-over {
       border-color: var(--accent);
@@ -45,7 +55,19 @@
     .cover-preview.visible { display: block; }
     .cover-meta { display: none; font-size: 0.75rem; color: var(--ink-subtle); margin-top: 6px; }
     .cover-meta.visible { display: block; }
-    #coverInput { display: none; }
+    .cover-existing-overlay {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+    input[type="file"] { display: none; }
 
     .levels-preview {
       background: var(--bg-elevated);
@@ -79,6 +101,14 @@
       content: "✓ ";
       font-weight: 700;
     }
+
+    .field-hint {
+      font-size: 0.8125rem;
+      color: var(--ink-muted);
+      margin-top: 4px;
+    }
+    .field-hint.warn { color: var(--warning); }
+    .field-hint.ok { color: var(--success); }
   </style>
 </head>
 <body class="admin-layout">
@@ -99,30 +129,55 @@
     <div class="form-head">
       <p class="eyebrow">Setup</p>
       <h2>Create a new project</h2>
-      <p class="lede">Sets up project folders and default levels. You can add 360 photos and 2D images after.</p>
+      <p class="lede">Add a project to an existing property, or create a new property and its first project. Property = a real-world address; one or more projects (Existing Conditions, remodels, repairs) live on it.</p>
     </div>
 
     <form id="projectForm">
       <div class="field">
+        <label class="field-label" for="propertySelect">Select Property <span class="required-mark">*</span></label>
+        <select class="field-input" id="propertySelect" required>
+          <option value="">Loading…</option>
+        </select>
+        <div class="field-hint" id="propertyHint">Pick an existing property to add a project to it, or choose "+ New Property".</div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="projectAddress">Property Address <span class="required-mark" id="addressRequiredMark">*</span></label>
+        <input class="field-input" type="text" id="projectAddress" placeholder="123 Main St, City, ST 12345">
+        <div class="field-hint" id="addressHint">Street, city, state, zip. Editing this updates the property's address.</div>
+      </div>
+
+      <div class="field">
         <label class="field-label" for="projectName">Project Name <span class="required-mark">*</span></label>
-        <input class="field-input" type="text" id="projectName" required placeholder="e.g. 123 Main Street">
+        <input class="field-input" type="text" id="projectName" required placeholder="e.g. Existing Conditions 2026">
+        <div class="field-hint">Defaults are fine: "Existing Conditions &lt;date&gt;" for the first project on a new property.</div>
       </div>
 
-      <div class="field">
-        <label class="field-label" for="projectAddress">Project Address</label>
-        <input class="field-input" type="text" id="projectAddress" placeholder="Full address">
-      </div>
-
-      <div class="field">
-        <label class="field-label">Cover Photo (optional)</label>
-        <div class="cover-dropzone" id="coverDropzone">
-          <div id="coverPrompt">
-            <p>Drag & drop an image here, or <strong>browse</strong></p>
+      <div class="photo-row">
+        <div class="field">
+          <label class="field-label" id="propertyCoverLabel">Property Cover Photo</label>
+          <div class="cover-dropzone" id="propertyDropzone">
+            <div id="propertyPrompt">
+              <p>Drag & drop an image here, or <strong>browse</strong></p>
+            </div>
+            <img class="cover-preview" id="propertyPreview" alt="">
+            <div class="cover-existing-overlay" id="propertyExistingOverlay" style="display:none;">Current — click to change</div>
           </div>
-          <img class="cover-preview" id="coverPreview" alt="">
+          <div class="cover-meta" id="propertyMeta"></div>
+          <input type="file" id="propertyCoverInput" accept="image/*">
         </div>
-        <div class="cover-meta" id="coverMeta"></div>
-        <input type="file" id="coverInput" accept="image/*">
+
+        <div class="field">
+          <label class="field-label">Project Cover Photo</label>
+          <div class="cover-dropzone" id="projectDropzone">
+            <div id="projectPrompt">
+              <p>Drag & drop an image here, or <strong>browse</strong></p>
+            </div>
+            <img class="cover-preview" id="projectPreview" alt="">
+          </div>
+          <div class="cover-meta" id="projectMeta"></div>
+          <input type="file" id="projectCoverInput" accept="image/*">
+        </div>
       </div>
 
       <div class="levels-preview">
@@ -149,17 +204,43 @@
 
   <script>
     const form = document.getElementById("projectForm");
-    const nameEl = document.getElementById("projectName");
+    const propertySelect = document.getElementById("propertySelect");
+    const propertyHint = document.getElementById("propertyHint");
     const addressEl = document.getElementById("projectAddress");
-    const dropzone = document.getElementById("coverDropzone");
-    const coverInput = document.getElementById("coverInput");
-    const coverPrompt = document.getElementById("coverPrompt");
-    const coverPreview = document.getElementById("coverPreview");
-    const coverMeta = document.getElementById("coverMeta");
+    const addressHint = document.getElementById("addressHint");
+    const addressRequiredMark = document.getElementById("addressRequiredMark");
+    const nameEl = document.getElementById("projectName");
     const submitBtn = document.getElementById("submitBtn");
     const statusMessage = document.getElementById("statusMessage");
 
-    let coverFile = null;
+    // Property cover (left)
+    const propertyDropzone = document.getElementById("propertyDropzone");
+    const propertyCoverInput = document.getElementById("propertyCoverInput");
+    const propertyPrompt = document.getElementById("propertyPrompt");
+    const propertyPreview = document.getElementById("propertyPreview");
+    const propertyMeta = document.getElementById("propertyMeta");
+    const propertyExistingOverlay = document.getElementById("propertyExistingOverlay");
+
+    // Project cover (right)
+    const projectDropzone = document.getElementById("projectDropzone");
+    const projectCoverInput = document.getElementById("projectCoverInput");
+    const projectPrompt = document.getElementById("projectPrompt");
+    const projectPreview = document.getElementById("projectPreview");
+    const projectMeta = document.getElementById("projectMeta");
+
+    let propertyCoverFile = null;       // user-selected new file (left)
+    let projectCoverFile = null;        // user-selected new file (right)
+    let propertiesById = new Map();     // propertyId -> property record
+    let selectedPropertyId = "";        // "" means "+ New Property"
+
+    function todayStamp() {
+      const d = new Date();
+      return d.toISOString().slice(0, 10);
+    }
+
+    function defaultProjectName() {
+      return `Existing Conditions ${todayStamp()}`;
+    }
 
     function formatSize(bytes) {
       if (bytes < 1024) return bytes + " B";
@@ -167,30 +248,211 @@
       return (bytes / (1024 * 1024)).toFixed(2) + " MB";
     }
 
-    function setCover(file) {
-      if (!file.type.startsWith("image/")) return;
-      coverFile = file;
+    function setCoverPreview(previewEl, promptEl, metaEl, file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        coverPreview.src = e.target.result;
-        coverPreview.classList.add("visible");
-        coverPrompt.style.display = "none";
+        previewEl.src = e.target.result;
+        previewEl.classList.add("visible");
+        promptEl.style.display = "none";
       };
       reader.readAsDataURL(file);
-      coverMeta.textContent = `${file.name} (${formatSize(file.size)}) — click or drop to replace`;
-      coverMeta.classList.add("visible");
+      metaEl.textContent = `${file.name} (${formatSize(file.size)}) — click or drop to replace`;
+      metaEl.classList.add("visible");
     }
 
-    dropzone.addEventListener("click", () => coverInput.click());
-    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); });
-    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
-    dropzone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dropzone.classList.remove("drag-over");
-      if (e.dataTransfer.files.length > 0) setCover(e.dataTransfer.files[0]);
+    function showExistingPropertyCover(coverPath) {
+      // Use the existing /api/2d/image proxy to fetch from imageBucket.
+      propertyPreview.src = `/api/2d/image?file=${encodeURIComponent(coverPath)}`;
+      propertyPreview.classList.add("visible");
+      propertyPrompt.style.display = "none";
+      propertyMeta.classList.remove("visible");
+      propertyMeta.textContent = "";
+      propertyExistingOverlay.style.display = "block";
+    }
+
+    function clearPropertyCoverDisplay() {
+      propertyCoverFile = null;
+      propertyPreview.classList.remove("visible");
+      propertyPreview.removeAttribute("src");
+      propertyPrompt.style.display = "block";
+      propertyMeta.classList.remove("visible");
+      propertyMeta.textContent = "";
+      propertyExistingOverlay.style.display = "none";
+      propertyCoverInput.value = "";
+    }
+
+    function clearProjectCoverDisplay() {
+      projectCoverFile = null;
+      projectPreview.classList.remove("visible");
+      projectPreview.removeAttribute("src");
+      projectPrompt.style.display = "block";
+      projectMeta.classList.remove("visible");
+      projectMeta.textContent = "";
+      projectCoverInput.value = "";
+    }
+
+    // ---- Dropzone wiring (factored for both left and right) ----
+    function wireDropzone({ dropzone, input, onFile }) {
+      dropzone.addEventListener("click", () => input.click());
+      dropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropzone.classList.add("drag-over");
+      });
+      dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag-over"));
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropzone.classList.remove("drag-over");
+        if (e.dataTransfer.files.length > 0) onFile(e.dataTransfer.files[0]);
+      });
+      input.addEventListener("change", () => {
+        if (input.files.length > 0) onFile(input.files[0]);
+      });
+    }
+
+    wireDropzone({
+      dropzone: propertyDropzone,
+      input: propertyCoverInput,
+      onFile: (file) => {
+        if (!file.type.startsWith("image/")) return;
+        propertyCoverFile = file;
+        propertyExistingOverlay.style.display = "none";
+        setCoverPreview(propertyPreview, propertyPrompt, propertyMeta, file);
+      },
     });
-    coverInput.addEventListener("change", () => {
-      if (coverInput.files.length > 0) setCover(coverInput.files[0]);
+
+    wireDropzone({
+      dropzone: projectDropzone,
+      input: projectCoverInput,
+      onFile: (file) => {
+        if (!file.type.startsWith("image/")) return;
+        projectCoverFile = file;
+        setCoverPreview(projectPreview, projectPrompt, projectMeta, file);
+      },
+    });
+
+    // ---- Property dropdown population ----
+    async function loadProperties() {
+      try {
+        const res = await fetch("/api/properties", { credentials: "same-origin" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const list = await res.json();
+        propertiesById = new Map();
+        // First option is always "+ New Property"
+        propertySelect.innerHTML = "";
+        const newOpt = document.createElement("option");
+        newOpt.value = "";
+        newOpt.textContent = "+ New Property";
+        propertySelect.appendChild(newOpt);
+        for (const p of list) {
+          propertiesById.set(p.propertyId, p);
+          const opt = document.createElement("option");
+          opt.value = p.propertyId;
+          opt.textContent = p.name + (p.projectCount > 0 ? `  (${p.projectCount})` : "");
+          propertySelect.appendChild(opt);
+        }
+      } catch (err) {
+        propertySelect.innerHTML = "";
+        const newOpt = document.createElement("option");
+        newOpt.value = "";
+        newOpt.textContent = "+ New Property";
+        propertySelect.appendChild(newOpt);
+        propertyHint.textContent = "Couldn't load properties — you can still create a new one.";
+        propertyHint.classList.add("warn");
+      }
+    }
+
+    function selectNewProperty() {
+      selectedPropertyId = "";
+      addressEl.value = "";
+      addressEl.removeAttribute("readonly");
+      addressRequiredMark.style.display = "";
+      addressHint.textContent = "Street, city, state, zip. We'll create the property using this address.";
+      addressHint.className = "field-hint";
+      propertyHint.textContent = "Creating a new property.";
+      propertyHint.className = "field-hint";
+      clearPropertyCoverDisplay();
+      // Default the project name to "Existing Conditions <date>" if blank.
+      if (!nameEl.value) nameEl.value = defaultProjectName();
+    }
+
+    async function selectExistingProperty(propertyId) {
+      selectedPropertyId = propertyId;
+      const summary = propertiesById.get(propertyId);
+      if (!summary) {
+        selectNewProperty();
+        return;
+      }
+      addressEl.value = summary.address || "";
+      addressRequiredMark.style.display = "none";
+      addressHint.textContent = "Editing this updates the property's address.";
+      addressHint.className = "field-hint";
+      propertyHint.textContent = `Adding a project to "${summary.name}" (${summary.projectCount} existing).`;
+      propertyHint.className = "field-hint";
+      // Default project name to "Existing Conditions <date>" — even on
+      // an existing property, that's the user's stated convention for
+      // re-surveys when conditions change over time.
+      if (!nameEl.value) nameEl.value = defaultProjectName();
+      // Show the property's existing cover photo if any.
+      clearPropertyCoverDisplay();
+      // Fetch the full record (the list endpoint already gives us
+      // coverPhoto, but call /api/property/:id to get the freshest view
+      // in case the list was cached).
+      try {
+        const res = await fetch(`/api/property/${encodeURIComponent(propertyId)}`, { credentials: "same-origin" });
+        if (res.ok) {
+          const full = await res.json();
+          if (full.coverPhoto) showExistingPropertyCover(full.coverPhoto);
+        }
+      } catch { /* fall through with no cover */ }
+    }
+
+    propertySelect.addEventListener("change", () => {
+      const id = propertySelect.value;
+      if (!id) selectNewProperty();
+      else selectExistingProperty(id);
+    });
+
+    // Live address validation on blur — purely UX feedback. The server
+    // also re-validates on submit and is the source of truth.
+    let addressValidateTimer = null;
+    addressEl.addEventListener("blur", async () => {
+      if (addressValidateTimer) clearTimeout(addressValidateTimer);
+      const value = addressEl.value.trim();
+      if (!value) {
+        addressHint.textContent = selectedPropertyId
+          ? "Editing this updates the property's address."
+          : "Street, city, state, zip. We'll create the property using this address.";
+        addressHint.className = "field-hint";
+        return;
+      }
+      try {
+        const res = await fetch("/api/validate-address", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ address: value }),
+        });
+        if (!res.ok) return;
+        const r = await res.json();
+        if (r.autoCorrected && r.normalized && r.normalized !== value) {
+          addressEl.value = r.normalized;
+          addressHint.textContent = "Auto-corrected punctuation/casing.";
+          addressHint.className = "field-hint ok";
+        } else if (r.needsReview) {
+          const friendly = (r.warnings || []).map((w) => ({
+            "missing-commas": "needs commas between street, city, state",
+            "missing-state-zip": "missing state and zip",
+            "malformed-state-zip": "state should be 2 letters + 5-digit zip",
+            "missing-street-number": "missing street number",
+            "empty": "address is empty",
+          }[w] || w)).join("; ");
+          addressHint.textContent = "Please review: " + friendly;
+          addressHint.className = "field-hint warn";
+        } else {
+          addressHint.textContent = "Looks good.";
+          addressHint.className = "field-hint ok";
+        }
+      } catch { /* silent — server will validate on submit anyway */ }
     });
 
     // Level chip toggling
@@ -207,32 +469,75 @@
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const name = nameEl.value.trim();
-      if (!name) { nameEl.focus(); return; }
+      const projectName = nameEl.value.trim();
+      if (!projectName) { nameEl.focus(); return; }
+
+      const isNewProperty = !selectedPropertyId;
+      const address = addressEl.value.trim();
+      if (isNewProperty && !address) {
+        addressHint.textContent = "Address is required for a new property.";
+        addressHint.className = "field-hint warn";
+        addressEl.focus();
+        return;
+      }
 
       submitBtn.disabled = true;
       submitBtn.textContent = "Creating project…";
-      statusMessage.textContent = "Creating folders, levels, and uploading cover photo…";
+      statusMessage.textContent = isNewProperty
+        ? "Creating new property and first project…"
+        : "Creating project on existing property…";
       statusMessage.className = "status-message visible info";
 
       try {
-        const formData = new FormData();
-        formData.append("name", name);
-        formData.append("address", addressEl.value.trim());
-        formData.append("levels", JSON.stringify(getSelectedLevels()));
-        if (coverFile) formData.append("coverPhoto", coverFile);
+        const fd = new FormData();
+        fd.append("name", projectName);
+        if (selectedPropertyId) fd.append("propertyId", selectedPropertyId);
+        if (address) fd.append("address", address);
+        fd.append("levels", JSON.stringify(getSelectedLevels()));
+        if (projectCoverFile) fd.append("coverPhoto", projectCoverFile);
+        if (propertyCoverFile) fd.append("propertyCoverPhoto", propertyCoverFile);
 
-        const res = await fetch("/api/create-project", { method: "POST", body: formData });
+        const res = await fetch("/api/create-project", {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Failed to create project");
+        if (!res.ok || !data.success) {
+          if (data && data.error === "address_needs_review") {
+            // Server normalized to a suggestion — offer it to the user.
+            const accept = confirm(
+              "The address looks incomplete:\n  " + (data.warnings || []).join(", ") +
+              "\n\nSuggested:\n  " + (data.suggestion || "(none)") +
+              "\n\nUse the suggestion?"
+            );
+            if (accept && data.suggestion) {
+              addressEl.value = data.suggestion;
+              addressHint.textContent = "Updated to suggestion — submit again to confirm.";
+              addressHint.className = "field-hint ok";
+            } else {
+              addressHint.textContent = "Please adjust the address and submit again.";
+              addressHint.className = "field-hint warn";
+              addressEl.focus();
+            }
+            throw new Error("Address needs review");
+          }
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
 
-        window.location.href = "/";
+        // Redirect to the newly created project's home page.
+        window.location.href = data.url || "/";
       } catch (err) {
         statusMessage.textContent = "Error: " + err.message;
         statusMessage.className = "status-message visible error";
         submitBtn.disabled = false;
         submitBtn.textContent = "Create Project";
       }
+    });
+
+    // Init: load properties, default to "+ New Property".
+    loadProperties().then(() => {
+      selectNewProperty();
     });
   </script>
 </body>

@@ -113,6 +113,111 @@ async function maybeRedirectCanonical(req, res, basePath, projectParam) {
   return false;
 }
 
+// ---- Address normalization ----
+// Common-case fixer for the address field on the new-project form.
+// Returns { normalized, autoCorrected, needsReview, warnings: [...] }.
+// Autocorrect rules: fix CamelCase boundary after a street type (e.g.
+// "Treat AveSan Francisco" -> "Treat Ave, San Francisco"), uppercase the
+// state abbreviation, collapse multiple spaces. Flags ambiguous cases
+// (no street number, missing state/zip, fewer than 2 commas) for user
+// review rather than guessing.
+function normalizeAddress(addr) {
+  if (typeof addr !== "string") {
+    return { normalized: "", autoCorrected: false, needsReview: true, warnings: ["empty"] };
+  }
+  let s = addr.trim();
+  if (!s) return { normalized: "", autoCorrected: false, needsReview: true, warnings: ["empty"] };
+
+  let auto = false;
+  const warnings = [];
+
+  // Collapse internal whitespace
+  const collapsed = s.replace(/\s+/g, " ");
+  if (collapsed !== s) auto = true;
+  s = collapsed;
+
+  // Insert a comma at a CamelCase boundary that follows a recognised
+  // street-type token (typical typo: typing the address with no comma
+  // between "Ave" and the city name). Conservative: only fires when the
+  // street type token is followed directly by a capital letter and a
+  // lowercase letter (i.e. "AveSan", "RoadBel"), not just any case shift.
+  const cm = s.match(
+    /^(.*?\b(?:St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Ln|Lane|Way|Ct|Court|Pl|Place|Hwy|Highway|Pkwy|Parkway|Cir|Circle|Ter|Terrace))([A-Z][a-z])(.*)$/
+  );
+  if (cm) {
+    s = cm[1] + ", " + cm[2] + cm[3];
+    auto = true;
+  }
+
+  // Tidy comma spacing: ensure exactly one space after each comma.
+  const tidied = s.replace(/\s*,\s*/g, ", ");
+  if (tidied !== s) auto = true;
+  s = tidied;
+
+  // Split into parts; common shape is [street, city, "STATE ZIP"].
+  const parts = s.split(",").map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length < 2) warnings.push("missing-commas");
+
+  // Last part should be "STATE ZIP" — uppercase the state if present.
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    const m = last.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (m) {
+      const upper = m[1].toUpperCase() + " " + m[2];
+      if (upper !== last) {
+        parts[parts.length - 1] = upper;
+        auto = true;
+      }
+    } else {
+      warnings.push("malformed-state-zip");
+    }
+  } else {
+    warnings.push("missing-state-zip");
+  }
+
+  // First part should contain a digit (street number).
+  if (parts.length >= 1 && !/\d/.test(parts[0])) {
+    warnings.push("missing-street-number");
+  }
+
+  s = parts.join(", ");
+  return { normalized: s, autoCorrected: auto, needsReview: warnings.length > 0, warnings };
+}
+
+// ---- Property store (read-modify-write of _platform/properties.json) ----
+const PROPERTIES_PATH = "_platform/properties.json";
+let propertiesWriteQueue = Promise.resolve();
+
+async function loadProperties() {
+  const f = bucket.file(PROPERTIES_PATH);
+  const [exists] = await f.exists();
+  if (!exists) return { version: 0, properties: {} };
+  const [content] = await f.download();
+  return JSON.parse(content.toString());
+}
+
+function mutateProperties(fn) {
+  // Same in-process serialization pattern as the slug-index writer.
+  const next = propertiesWriteQueue.then(async () => {
+    const data = await loadProperties();
+    if (!data.properties) data.properties = {};
+    const result = await fn(data);
+    data.version = (data.version || 0) + 1;
+    await bucket
+      .file(PROPERTIES_PATH)
+      .save(JSON.stringify(data, null, 2), { contentType: "application/json" });
+    return result;
+  });
+  propertiesWriteQueue = next.catch(() => {});
+  return next;
+}
+
+async function getProperty(propertyId) {
+  const data = await loadProperties();
+  return data.properties[propertyId] || null;
+}
+
 // Body parsing (JSON only; multer handles multipart routes)
 app.use(express.json());
 
@@ -390,6 +495,54 @@ async function saveProjectOrder(order) {
   );
 }
 
+// ---- Property endpoints ----
+// List properties for the new-project form's "Select Property" dropdown.
+// Admin-only for now; the form is admin-only too. Future work: open to
+// non-admin editors so they can add projects to properties they have
+// access to.
+app.get("/api/properties", requireAdmin, async (req, res) => {
+  try {
+    const data = await loadProperties();
+    const list = Object.values(data.properties || {})
+      .map((p) => ({
+        propertyId: p.propertyId,
+        name: p.name,
+        slug: p.slug,
+        address: p.address,
+        coverPhoto: p.coverPhoto || null,
+        needsAddress: !!p.needsAddress,
+        projectCount: (p.projectIds || []).length,
+      }))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    res.json(list);
+  } catch (err) {
+    console.error("List properties error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Single property by id — returns full record (admin only). Used by the
+// new-project form to populate address + cover photo when an existing
+// property is selected.
+app.get("/api/property/:propertyId", requireAdmin, async (req, res) => {
+  try {
+    const property = await getProperty(req.params.propertyId);
+    if (!property) return res.status(404).json({ error: "Property not found" });
+    res.json(property);
+  } catch (err) {
+    console.error("Get property error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Address punctuation/casing normalizer. Frontend can call this for
+// live feedback before submit. Server also calls it inline on
+// /api/create-project; this endpoint is purely for UX.
+app.post("/api/validate-address", requireAdmin, async (req, res) => {
+  const addr = (req.body && req.body.address) || "";
+  res.json(normalizeAddress(addr));
+});
+
 app.get("/api/projects", async (req, res) => {
   try {
     if (!req.user) return res.json([]);
@@ -482,86 +635,244 @@ app.get("/api/levels", async (req, res) => {
 // Create a new project with default levels + metadata
 const DEFAULT_LEVELS = ["level 0", "level 1", "level 2", "level 3", "attic", "garage", "exterior"];
 
-app.post("/api/create-project", requireAdmin, upload.single("coverPhoto"), async (req, res) => {
-  const name = (req.body.name || "").trim();
-  const address = (req.body.address || "").trim();
-  if (!name) {
-    return res.status(400).json({ error: "Project name is required" });
-  }
+// Create a project — always in the new (property/project) layout. Two
+// modes by `propertyId`:
+//   absent  → create a new property using the address field, then attach
+//             the first project to it.
+//   present → attach a new project to that existing property.
+//
+// Storage uses {propertyId}/{projectId}/... in all four buckets so it
+// matches the post-migration layout the resolver already understands.
+// Two photo fields: `coverPhoto` (project) and `propertyCoverPhoto`
+// (property — only set when creating a new property or replacing the
+// existing property's cover).
+function shortPropProjId() {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
 
-  try {
-    // Create project folder in 360 bucket
-    await bucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
+app.post(
+  "/api/create-project",
+  requireAdmin,
+  upload.fields([
+    { name: "coverPhoto", maxCount: 1 },
+    { name: "propertyCoverPhoto", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const cleanupTmp = () => {
+      const f = req.files || {};
+      if (f.coverPhoto?.[0]?.path) fs.unlink(f.coverPhoto[0].path, () => {});
+      if (f.propertyCoverPhoto?.[0]?.path) fs.unlink(f.propertyCoverPhoto[0].path, () => {});
+    };
 
-    // Create level folders. The client sends a "levels" field (JSON array of
-     // selected level names); fall back to DEFAULT_LEVELS when absent.
-     let levels = DEFAULT_LEVELS;
-     if (typeof req.body.levels === "string" && req.body.levels.trim()) {
-       try {
-         const parsed = JSON.parse(req.body.levels);
-         if (Array.isArray(parsed)) {
-           levels = parsed
-             .map((l) => String(l || "").trim().toLowerCase())
-             .filter(Boolean)
-             // Only allow levels from the default set (prevents arbitrary folder names)
-             .filter((l) => DEFAULT_LEVELS.includes(l));
-         }
-       } catch { /* ignore bad JSON — use defaults */ }
-     }
-     for (const lvl of levels) {
-       await bucket.file(`${name}/${lvl}/`).save("", { contentType: "application/x-directory" });
-     }
+    const projectName = (req.body.name || "").trim();
+    const propertyIdInput = (req.body.propertyId || "").trim();
+    const rawAddress = (req.body.address || "").trim();
+    if (!projectName) {
+      cleanupTmp();
+      return res.status(400).json({ error: "Project name is required" });
+    }
 
-    // Create project folder in 2D image bucket
-    await imageBucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
+    // Parse levels (same defaulting as before).
+    let levels = DEFAULT_LEVELS;
+    if (typeof req.body.levels === "string" && req.body.levels.trim()) {
+      try {
+        const parsed = JSON.parse(req.body.levels);
+        if (Array.isArray(parsed)) {
+          levels = parsed
+            .map((l) => String(l || "").trim().toLowerCase())
+            .filter(Boolean)
+            .filter((l) => DEFAULT_LEVELS.includes(l));
+        }
+      } catch { /* use defaults */ }
+    }
 
-    // Also create folders in the model bucket (for consistency with new-project.js)
     try {
-      const modelBucket = storage.bucket("gt-platform-model-storage");
-      await modelBucket.file(`${name}/`).save("", { contentType: "application/x-directory" });
-    } catch (e) { /* non-fatal */ }
+      let propertyId, propertySlug, propertyName, propertyAddress;
+      let isNewProperty;
+      let updatedAddress = false;
 
-    // Upload cover photo if provided
-    let coverPhotoPath = null;
-    if (req.file) {
-      const ext = path.extname(req.file.originalname) || ".jpg";
-      const coverName = `cover${ext}`;
-      coverPhotoPath = `${name}/${coverName}`;
-      const gcsFile = imageBucket.file(coverPhotoPath);
-      await new Promise((resolve, reject) => {
-        fs.createReadStream(req.file.path)
-          .pipe(gcsFile.createWriteStream({
-            resumable: false,
-            metadata: { contentType: req.file.mimetype || "image/jpeg" },
-          }))
-          .on("error", reject)
-          .on("finish", resolve);
+      if (propertyIdInput) {
+        // ---- Add to existing property ----
+        const existing = await getProperty(propertyIdInput);
+        if (!existing) {
+          cleanupTmp();
+          return res.status(404).json({ error: "Selected property not found" });
+        }
+        propertyId = existing.propertyId;
+        propertySlug = existing.slug;
+        propertyName = existing.name;
+        propertyAddress = existing.address || "";
+        isNewProperty = false;
+        // Editor can also amend the address from this form. Validate
+        // only if they actually changed it.
+        if (rawAddress && rawAddress !== existing.address) {
+          const norm = normalizeAddress(rawAddress);
+          if (norm.needsReview && !norm.autoCorrected) {
+            cleanupTmp();
+            return res.status(400).json({
+              error: "address_needs_review",
+              message: "The address looks incomplete or malformed.",
+              suggestion: norm.normalized,
+              warnings: norm.warnings,
+            });
+          }
+          propertyAddress = norm.normalized;
+          updatedAddress = true;
+        }
+      } else {
+        // ---- New property ----
+        if (!rawAddress) {
+          cleanupTmp();
+          return res.status(400).json({ error: "Address is required for a new property" });
+        }
+        const norm = normalizeAddress(rawAddress);
+        if (norm.needsReview && !norm.autoCorrected) {
+          cleanupTmp();
+          return res.status(400).json({
+            error: "address_needs_review",
+            message: "The address looks incomplete or malformed.",
+            suggestion: norm.normalized,
+            warnings: norm.warnings,
+          });
+        }
+        propertyAddress = norm.normalized;
+        propertyId = `prop_${shortPropProjId()}`;
+        propertyName = propertyAddress;
+        propertySlug =
+          projectResolver.slugify(propertyAddress) ||
+          projectResolver.slugify(projectName) ||
+          "property";
+        isNewProperty = true;
+      }
+
+      const projectId = `proj_${shortPropProjId()}`;
+      const projectSlug = projectResolver.slugify(projectName) || `project-${Date.now()}`;
+      const compoundSlug = `${propertySlug}--${projectSlug}`;
+      const newPrefix = `${propertyId}/${projectId}`;
+
+      // Folder markers — same shape as the migration script produces.
+      await bucket.file(`${newPrefix}/`).save("", { contentType: "application/x-directory" });
+      for (const lvl of levels) {
+        await bucket.file(`${newPrefix}/${lvl}/`).save("", { contentType: "application/x-directory" });
+      }
+      await imageBucket.file(`${newPrefix}/`).save("", { contentType: "application/x-directory" });
+      try {
+        await modelBucket.file(`${newPrefix}/`).save("", { contentType: "application/x-directory" });
+      } catch { /* non-fatal */ }
+
+      // Project cover photo (right uploader on the form).
+      let projectCoverPath = null;
+      const projectCoverFile = req.files?.coverPhoto?.[0];
+      if (projectCoverFile) {
+        const ext = path.extname(projectCoverFile.originalname) || ".jpg";
+        projectCoverPath = `${newPrefix}/cover${ext}`;
+        const gcs = imageBucket.file(projectCoverPath);
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(projectCoverFile.path)
+            .pipe(
+              gcs.createWriteStream({
+                resumable: false,
+                metadata: { contentType: projectCoverFile.mimetype || "image/jpeg" },
+              })
+            )
+            .on("error", reject)
+            .on("finish", resolve);
+        });
+        fs.unlink(projectCoverFile.path, () => {});
+      }
+
+      // Property cover photo (left uploader on the form). Stored at
+      // imageBucket/{propertyId}/_property-cover.{ext} so it sits next
+      // to the project subfolders without colliding with any.
+      let propertyCoverPath = null;
+      const propertyCoverFile = req.files?.propertyCoverPhoto?.[0];
+      if (propertyCoverFile) {
+        const ext = path.extname(propertyCoverFile.originalname) || ".jpg";
+        propertyCoverPath = `${propertyId}/_property-cover${ext}`;
+        const gcs = imageBucket.file(propertyCoverPath);
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(propertyCoverFile.path)
+            .pipe(
+              gcs.createWriteStream({
+                resumable: false,
+                metadata: { contentType: propertyCoverFile.mimetype || "image/jpeg" },
+              })
+            )
+            .on("error", reject)
+            .on("finish", resolve);
+        });
+        fs.unlink(propertyCoverFile.path, () => {});
+      }
+
+      // Project metadata at the new layout's project.json.
+      const projectMeta = {
+        name: projectName,
+        propertyId,
+        projectId,
+        slug: compoundSlug,
+        coverPhoto: projectCoverPath,
+        createdAt: new Date().toISOString(),
+      };
+      await bucket.file(`${newPrefix}/project.json`).save(
+        JSON.stringify(projectMeta, null, 2),
+        { contentType: "application/json" }
+      );
+
+      // Property record — create or update under a single mutation so
+      // concurrent /api/create-project calls don't clobber each other.
+      await mutateProperties((data) => {
+        let prop = data.properties[propertyId];
+        if (!prop) {
+          prop = {
+            propertyId,
+            name: propertyName,
+            slug: propertySlug,
+            address: propertyAddress,
+            needsAddress: false,
+            createdAt: new Date().toISOString(),
+            createdBy: req.user?.email || null,
+            projectIds: [],
+          };
+          data.properties[propertyId] = prop;
+        } else if (updatedAddress) {
+          prop.address = propertyAddress;
+          prop.needsAddress = false;
+        }
+        if (propertyCoverPath) prop.coverPhoto = propertyCoverPath;
+        if (!prop.projectIds.includes(projectId)) prop.projectIds.push(projectId);
       });
-      fs.unlink(req.file.path, () => {});
-    }
 
-    // Save project metadata as JSON in 360 bucket
-    const metadata = { name, address, coverPhoto: coverPhotoPath, createdAt: new Date().toISOString() };
-    await bucket.file(`${name}/project.json`).save(JSON.stringify(metadata, null, 2), {
-      contentType: "application/json",
-    });
+      // Slug-index registration — layout:"new" so the resolver picks it
+      // up immediately. registerNewProject does not write any aliases;
+      // a fresh project has no historical names to redirect from.
+      try {
+        await projectResolver.registerNewProject({ propertyId, projectId, compoundSlug });
+      } catch (err) {
+        console.warn(`[index] failed to register new project "${compoundSlug}":`, err.message);
+      }
 
-    console.log(`Created project: ${name} (with ${levels.length} levels)`);
-    invalidateProjectNameCache();
-    // Register the new project in the slug index so the resolver finds
-    // it on the next request without waiting for a server restart.
-    try {
-      await projectResolver.buildLegacyIndex([name]);
+      console.log(
+        `Created project: ${projectName} (${compoundSlug}) on ${isNewProperty ? "new" : "existing"} property ${propertyId}`
+      );
+      invalidateProjectNameCache();
+
+      res.json({
+        success: true,
+        propertyId,
+        projectId,
+        slug: compoundSlug,
+        url: `/${encodeURIComponent(compoundSlug)}`,
+        propertyCoverPhoto: propertyCoverPath,
+        projectCoverPhoto: projectCoverPath,
+        isNewProperty,
+      });
     } catch (err) {
-      console.warn(`[index] failed to register new project "${name}":`, err.message);
+      console.error("Create project error:", err.message);
+      cleanupTmp();
+      res.status(500).json({ error: err.message });
     }
-    res.json({ success: true, project: name, metadata });
-  } catch (err) {
-    console.error("Create project error:", err.message);
-    if (req.file) fs.unlink(req.file.path, () => {});
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
 // Update project metadata (address + optional cover photo). Name is immutable.
 app.post("/api/update-project", upload.single("coverPhoto"), requireProjectRole("editor"), async (req, res) => {
