@@ -397,7 +397,9 @@ app.get("/api/projects", async (req, res) => {
     const prefixes = apiResponse.prefixes || [];
     const allProjects = prefixes
       .map((p) => p.replace(/\/$/, ""))
-      .filter((p) => p !== "_thumbs" && p !== "_platform");
+      // Filter out reserved prefixes and the post-migration property-id
+      // folders (`prop_<16hex>/`) which are storage roots, not projects.
+      .filter((p) => p !== "_thumbs" && p !== "_platform" && !/^prop_[0-9a-f]{16}$/.test(p));
     const accessible = await userService.accessibleProjects(req.user.email, allProjects);
     // Apply the admin-managed order: items in the saved order first (only
     // those still accessible), then any remaining accessible projects in
@@ -647,6 +649,24 @@ app.post("/api/rename-project", requireAdmin, async (req, res) => {
   if (!isValidProjectName(newName)) return res.status(400).json({ error: "newName is invalid" });
   if (oldName === newName) return res.json({ success: true, project: newName });
 
+  // Refuse for migrated projects — the move-folder + rewrite-mappings
+  // logic below assumes a single layout:"old" prefix. Renaming a
+  // layout:"new" project should change project.json.name and the
+  // canonical slug while leaving the propertyId/projectId storage
+  // roots untouched, which has design choices (does the URL change?
+  // does the property name change?) that need the property/project
+  // edit UI to land first.
+  try {
+    const existing = await projectResolver.resolveProject(oldName);
+    if (existing && existing.layout === "new") {
+      return res.status(400).json({
+        error: "This project has been migrated to the property model. Renaming via this endpoint is not yet supported — use the property/project edit UI when it ships.",
+      });
+    }
+  } catch (err) {
+    console.warn("[rename-project] resolver lookup failed:", err.message);
+  }
+
   try {
     // Block when newName already exists
     const [collision] = await bucket.file(`${newName}/`).exists();
@@ -726,6 +746,23 @@ app.post("/api/delete-project", requireAdmin, async (req, res) => {
   const confirm = req.body.confirm === true || req.body.confirm === "true";
   if (!name) return res.status(400).json({ error: "name is required" });
   if (!confirm) return res.status(400).json({ error: "confirmation required" });
+
+  // Refuse for migrated projects — proper deletion needs to remove the
+  // {propertyId}/{projectId}/ tree, _thumbs/{propertyId}/{projectId}/,
+  // the slug-index canonical + aliases, and the projectId from
+  // properties.json (deleting the property entry if it was the last
+  // project). Out of scope until the property/project edit UI lands.
+  try {
+    const existing = await projectResolver.resolveProject(name);
+    if (existing && existing.layout === "new") {
+      return res.status(400).json({
+        error: "This project has been migrated to the property model. Deletion via this endpoint is not yet supported — use the property/project edit UI when it ships.",
+      });
+    }
+  } catch (err) {
+    console.warn("[delete-project] resolver lookup failed:", err.message);
+  }
+
   try {
     const prefix = `${name}/`;
     await deleteAllInBucket(bucket, prefix);
@@ -2558,6 +2595,25 @@ app.get("/api/me", async (req, res) => {
   if (!profile) {
     return res.json({ email, authorized: false, isAdmin: false, projects: {} });
   }
+  // Expand the projects map so canEdit/canView work whether the URL
+  // slug is the original project name (pre-switchover) or the
+  // canonical compound slug (post-switchover, post-301). Each user
+  // permission gets indexed under both its stored key and its
+  // canonical form.
+  const stored = profile.projects || {};
+  const expanded = { ...stored };
+  for (const [k, role] of Object.entries(stored)) {
+    try {
+      const canonical = await projectResolver.getCanonicalSlug(k);
+      if (canonical && canonical !== k && !expanded[canonical]) {
+        expanded[canonical] = role;
+      }
+    } catch (err) {
+      // Resolver hiccup — just skip the expansion for this entry; the
+      // original key still works for unmigrated projects.
+      console.warn(`[me] alias expansion failed for ${k}:`, err.message);
+    }
+  }
   res.json({
     email: profile.email,
     authorized: true,
@@ -2566,7 +2622,7 @@ app.get("/api/me", async (req, res) => {
     address: profile.address,
     phone: profile.phone,
     createdAt: profile.createdAt,
-    projects: profile.projects || {},
+    projects: expanded,
   });
 });
 

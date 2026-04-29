@@ -74,6 +74,23 @@ module.exports = function createProjectResolver({ bucket }) {
     else metaCache.clear();
   }
 
+  // Lightweight alias resolution — returns just the canonical slug
+  // without reading project.json. Cheaper than resolveProject when the
+  // caller only needs the canonical form (e.g. /api/me expanding the
+  // projects map, /api/projects driving from the index).
+  async function getCanonicalSlug(slug) {
+    if (!slug) return slug;
+    const idx = await loadIndex();
+    return (idx.alias && idx.alias[slug]) || slug;
+  }
+
+  // Expose the loaded index (read-only — caller must not mutate). Used
+  // by handlers that need to drive a project list from the index
+  // rather than from a GCS prefix listing.
+  async function getIndex() {
+    return await loadIndex();
+  }
+
   async function readMetaCached(canonicalSlug, metaPath) {
     const cached = metaCache.get(canonicalSlug);
     if (cached && Date.now() - cached.fetchedAt < META_CACHE_TTL_MS) {
@@ -223,6 +240,8 @@ module.exports = function createProjectResolver({ bucket }) {
 
   return {
     resolveProject,
+    getCanonicalSlug,
+    getIndex,
     pathsFor,
     withProject,
     invalidateIndex,
