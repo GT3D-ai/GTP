@@ -535,9 +535,28 @@
        primary horizontal nav is suppressed and the hamburger menu is
        used at every breakpoint instead. The dropdown is rebuilt in JS
        to contain the editor-only set of links (Map, 2D Images, 2D
-       Plans, Models, Documents, Videos, Users, Project Home). */
+       Plans, Models, Documents, Videos, Users, Project Home).
+       The header items use flex `order` so the cluster sits flush
+       right: [Logo] ________ [Chip] [Hamburger]. The user chip's
+       margin-left:auto pulls everything from itself onward to the
+       right edge without us having to reorder DOM nodes. */
     body.editor-nav .nav-primary { display: none !important; }
     body.editor-nav .menu-toggle { display: flex !important; }
+    body.editor-nav .header-inner .logo { order: 1; }
+    body.editor-nav .header-inner #userChip {
+      order: 2;
+      margin-left: auto;
+      margin-right: 8px;
+    }
+    body.editor-nav .header-inner .menu-toggle { order: 3; }
+    /* Drop the box border / background from the user chip in editor
+       mode so the name reads as plain header text next to the
+       hamburger. Email is still on the title attribute for hover. */
+    body.editor-nav .user-chip.user-chip--name-only {
+      border: none;
+      background: transparent;
+      padding: 6px 4px;
+    }
   </style>
 </head>
 <body>
