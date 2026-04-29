@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { Storage } = require("@google-cloud/storage");
 const { generateThumbnail, generateThumbnailFromGCS, getThumbPath, deleteThumbnail } = require("./thumbnail");
 const createUserService = require("./user-service");
+const createProjectResolver = require("./project-resolver");
 const emailService = require("./email-service");
 
 const BUCKET_NAME = "gt-platform-360-photos-bucket";
@@ -29,6 +30,7 @@ const POINTCLOUD_BUCKET_NAME = "gt_platform_pointcloud_storage";
 const pointcloudBucket = storage.bucket(POINTCLOUD_BUCKET_NAME);
 
 const userService = createUserService({ bucket });
+const projectResolver = createProjectResolver({ bucket });
 
 // Case-insensitive project URL canonicalization. Project folders in GCS
 // are case-sensitive (so `gs://.../SFYC-Pilings/...` is distinct from
@@ -84,6 +86,20 @@ async function maybeRedirectCanonical(req, res, basePath, projectParam) {
   let input;
   try { input = decodeURIComponent(projectParam || ""); } catch { input = projectParam || ""; }
   if (!input) return false;
+  // Slug index is the source of truth: it knows about both case-canonical
+  // legacy names and post-migration compound slugs (via the alias map).
+  // 301 on alias hit so old links eventually update; fall back to the
+  // legacy lowercase->canonical lookup for projects not yet indexed.
+  try {
+    const proj = await projectResolver.resolveProject(input);
+    if (proj && proj.isAlias) {
+      res.redirect(301, `${basePath}/${encodeURIComponent(proj.canonicalSlug)}`);
+      return true;
+    }
+    if (proj) return false;
+  } catch (err) {
+    console.warn("[resolver] redirect lookup failed:", err.message);
+  }
   const canonical = await resolveCanonicalProjectName(input);
   if (canonical && canonical !== input) {
     const target = `${basePath}/${encodeURIComponent(canonical)}`;
@@ -233,14 +249,37 @@ function resolveProjectFromRequest(req) {
   return null;
 }
 
+// 503 on writes whenever a project's metadata has `migrating: true`. The
+// migration script sets this flag during its copy window and clears it
+// when the slug-index flips to layout:"new". Reads pass through.
+async function blockedDuringMigration(req, project) {
+  if (req.method === "GET" || req.method === "HEAD") return false;
+  try {
+    const proj = await projectResolver.resolveProject(project);
+    return proj && proj.migrating === true;
+  } catch {
+    return false;
+  }
+}
+
 function requireProjectRole(minRole) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
-    if (req.user.isAdmin) return next();
     const project = resolveProjectFromRequest(req);
+    if (req.user.isAdmin) {
+      if (project && (await blockedDuringMigration(req, project))) {
+        res.set("Retry-After", "60");
+        return res.status(503).json({ error: "Project is being migrated; try again shortly" });
+      }
+      return next();
+    }
     if (!project) return res.status(400).json({ error: "project required" });
     if (project === "_thumbs" || project === "_platform") {
       return res.status(403).json({ error: "Access denied" });
+    }
+    if (await blockedDuringMigration(req, project)) {
+      res.set("Retry-After", "60");
+      return res.status(503).json({ error: "Project is being migrated; try again shortly" });
     }
     const ok = await userService.hasProjectAccess(req.user.email, project, minRole);
     if (!ok) return res.status(403).json({ error: `${minRole} access to ${project} required` });
@@ -2771,3 +2810,19 @@ app.get("/:project", async (req, res, next) => {
 app.listen(PORT, () => {
   console.log(`GCS Uploader running on port ${PORT}`);
 });
+
+// Phase-1 indexing: register every existing project as layout:"old" in
+// _platform/slug-index.json. Idempotent. Fire-and-forget — startup
+// shouldn't block on a GCS round trip, and the resolver tolerates a
+// missing/empty index file on the first request after deploy.
+(async () => {
+  try {
+    const map = await getProjectNameMap();
+    const names = [...map.values()];
+    if (names.length === 0) return;
+    await projectResolver.buildLegacyIndex(names);
+    console.log(`[index] seeded slug-index with ${names.length} legacy project(s)`);
+  } catch (err) {
+    console.warn("[index] initial seed failed:", err.message);
+  }
+})();
