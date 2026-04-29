@@ -870,10 +870,15 @@
         // IAP-protected /api/share-project endpoint.
       }
 
-      // Title + header nav
+      // Title + header nav. Show the short project name (info.name
+      // from /api/project-info) rather than the URL slug, which is
+      // the long compound for migrated projects.
       document.title = `${project} — GT Platform`;
       const projectNameEl = document.getElementById("projectName");
-      projectNameEl.textContent = project;
+      window.me.applyProjectHeadline(project, projectNameEl);
+      window.me.getProjectInfo(project).then((info) => {
+        if (info && info.name) document.title = `${info.name} — GT Platform`;
+      });
       // Default project-name link to the no-IAP /public/ mirror so
       // anonymous viewers can follow it without bouncing through IAP.
       // The editor branch below overrides to /<project> for editors,

@@ -14,6 +14,38 @@
   async function canView(project)     { const m = await getMe(); return m.isAdmin || !!m.projects?.[project]; }
   async function canEdit(project)     { const m = await getMe(); return m.isAdmin || m.projects?.[project] === "editor"; }
 
+  // Per-page memo so multiple consumers on the same page don't refetch.
+  const projectInfoCache = new Map();
+
+  // Fetch /api/project-info for a project, cached. The server enriches
+  // the response with the property's address/name/cover for migrated
+  // projects, so this also surfaces the human-readable display name —
+  // which is the short, original name (e.g. "500-treat-ave") rather
+  // than the URL's compound canonical slug.
+  async function getProjectInfo(slug) {
+    if (!slug) return null;
+    if (projectInfoCache.has(slug)) return projectInfoCache.get(slug);
+    try {
+      const res = await fetch("/api/project-info?project=" + encodeURIComponent(slug), { credentials: "same-origin" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      projectInfoCache.set(slug, data);
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  // Apply the short project name to a header element. Sets the slug
+  // immediately as a fallback so the element isn't blank during the
+  // network round trip, then upgrades to info.name when it returns.
+  async function applyProjectHeadline(slug, el) {
+    if (!el) return;
+    el.textContent = slug || "";
+    const info = await getProjectInfo(slug);
+    if (info && info.name) el.textContent = info.name;
+  }
+
   // Render a "user chip" into the given container — just the user's
   // display name (falls back to email when no name is set on the
   // roster). Email is kept on the title attribute so admins can still
@@ -199,5 +231,5 @@
     autoMount();
   }
 
-  window.me = { getMe, isAdmin, canView, canEdit, renderUserChip };
+  window.me = { getMe, isAdmin, canView, canEdit, renderUserChip, getProjectInfo, applyProjectHeadline };
 })();

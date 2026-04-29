@@ -1745,8 +1745,11 @@
     if (project) {
       const enc = encodeURIComponent(project);
       // Project name in the header is a link back to the project home.
+      // Show the short project name (info.name from /api/project-info)
+      // rather than the URL slug, which is the long compound for
+      // migrated projects.
       const ph = document.getElementById("projectHeadline");
-      if (ph) { ph.textContent = project; ph.href = `/${enc}`; }
+      if (ph) { ph.href = `/${enc}`; window.me.applyProjectHeadline(project, ph); }
       // Hamburger menu hrefs — same set as the editor nav on the project
       // home page so the editor experience stays consistent.
       document.getElementById("navMapLink").href = `/map-viewer/${enc}`;

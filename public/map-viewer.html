@@ -805,7 +805,9 @@
     if (!project) {
       mapPlaceholder.innerHTML = '<div class="placeholder-icon">&#128679;</div><p>No project specified</p>';
     } else {
-      projectHeadline.textContent = project;
+      // Set the short project name (info.name from /api/project-info)
+      // — the URL slug is the long compound for migrated projects.
+      window.me.applyProjectHeadline(project, projectHeadline);
       const enc = encodeURIComponent(project);
       // Default to the no-IAP /public/ mirror for anonymous viewers; the
       // editor IIFE below overrides to /<project> for editors.

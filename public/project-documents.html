@@ -200,7 +200,9 @@
     if (!project) {
       wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /documents/&lt;project-name&gt;.</div>';
     } else {
-      projectHeadline.textContent = project;
+      // Set the short project name (info.name from /api/project-info)
+      // — the URL slug is the long compound for migrated projects.
+      window.me.applyProjectHeadline(project, projectHeadline);
       const enc = encodeURIComponent(project);
       // Default to the no-IAP /public/ mirror for anonymous viewers; the
       // editor IIFE below overrides to /<project> for editors.
