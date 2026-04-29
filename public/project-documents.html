@@ -152,7 +152,12 @@
       </a>
       <span class="project-headline" id="projectHeadline">Documents</span>
       <nav class="nav-primary" aria-label="Primary">
-        <a id="mapViewerLink" href="#">Map</a>
+        <a class="nav-map" href="#">Map</a>
+        <a class="nav-images" href="#">2D Images</a>
+        <a class="nav-plans" href="#">2D Plans</a>
+        <a class="nav-models" href="#">3D Models</a>
+        <a class="nav-pointclouds" href="#">Point Clouds</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </nav>
       <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
         <span class="bar"></span>
@@ -160,13 +165,11 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <a id="homeMenuItem" href="#">Project Home</a>
-        <a id="mapMenuItem" href="#">Map</a>
-        <a id="imagesMenuItem" href="#">2D Images</a>
-        <a id="plansMenuItem" href="#">2D Plans</a>
-        <a id="modelsMenuItem" href="#">3D Models</a>
-        <a id="pointcloudsMenuItem" href="#">Point Clouds</a>
-        <a id="documentsMenuItem" href="#">Documents</a>
+        <a class="nav-map" href="#">Map</a>
+        <a class="nav-images" href="#">2D Images</a>
+        <a class="nav-plans" href="#">2D Plans</a>
+        <a class="nav-models" href="#">3D Models</a>
+        <a class="nav-pointclouds" href="#">Point Clouds</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
       </div>
     </div>
@@ -198,14 +201,13 @@
     } else {
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
-      document.getElementById("mapViewerLink").href = `/map-viewer/${enc}`;
-      document.getElementById("homeMenuItem").href = `/public/${enc}`;
-      document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
-      document.getElementById("imagesMenuItem").href = `/images/${enc}`;
-      document.getElementById("plansMenuItem").href = `/plans/${enc}`;
-      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
-      document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
-      document.getElementById("documentsMenuItem").href = `/documents/${enc}`;
+      // Standard viewer nav links — class-based selectors wire both the
+      // desktop nav and the mobile dropdown in one pass.
+      document.querySelectorAll(".nav-map").forEach((a) => a.href = `/map-viewer/${enc}`);
+      document.querySelectorAll(".nav-images").forEach((a) => a.href = `/images/${enc}`);
+      document.querySelectorAll(".nav-plans").forEach((a) => a.href = `/plans/${enc}`);
+      document.querySelectorAll(".nav-models").forEach((a) => a.href = `/models/${enc}`);
+      document.querySelectorAll(".nav-pointclouds").forEach((a) => a.href = `/pointclouds/${enc}`);
 
       // Admin shortcut + non-editor logo redirect, mirroring other showcase
       // pages so anonymous viewers don't bounce into IAP via the brand mark.

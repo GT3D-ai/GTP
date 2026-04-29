@@ -502,12 +502,15 @@
     </div>
     <div class="dropdown-panel" id="menuDropdown">
       <div class="dropdown-inner">
-        <!-- Viewer menu (anonymous + non-editor logged-in users) -->
-        <a id="navHomeViewer" href="#" class="non-editor-only">Project Home</a>
-        <a id="navPlansViewer" href="#" class="non-editor-only">2D Plans</a>
-        <a id="navModelsViewer" href="#" class="non-editor-only">Models</a>
+        <!-- Viewer menu (anonymous + non-editor logged-in users) — same
+             standard set as the showcase pages: Map, 2D Images, 2D Plans,
+             3D Models, Point Clouds, GT3D Home. -->
+        <a id="navMapViewer" href="#" class="non-editor-only">Map</a>
         <a id="navImagesViewer" href="#" class="non-editor-only">2D Images</a>
+        <a id="navPlansViewer" href="#" class="non-editor-only">2D Plans</a>
+        <a id="navModelsViewer" href="#" class="non-editor-only">3D Models</a>
         <a id="navPointcloudsViewer" href="#" class="non-editor-only">Point Clouds</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener" class="non-editor-only">GT3D Home</a>
 
         <!-- Editor menu — same set as project-home's editor menu, plus
              "All Projects" since editors usually want a quick way back to
@@ -631,12 +634,12 @@
       projectHeadline.textContent = project;
       const enc = encodeURIComponent(project);
       // Viewer menu items — used by anonymous and non-editor visitors.
-      // "Project Home" is the read-only /public/<project> mirror so
-      // anonymous viewers don't get bounced into IAP.
-      document.getElementById("navHomeViewer").href = `/public/${enc}`;
+      // Standard 6-item set across all viewer-facing pages; "Map" is a
+      // self-link here for layout consistency.
+      document.getElementById("navMapViewer").href = `/map-viewer/${enc}`;
+      document.getElementById("navImagesViewer").href = `/images/${enc}`;
       document.getElementById("navPlansViewer").href = `/plans/${enc}`;
       document.getElementById("navModelsViewer").href = `/models/${enc}`;
-      document.getElementById("navImagesViewer").href = `/images/${enc}`;
       document.getElementById("navPointcloudsViewer").href = `/pointclouds/${enc}`;
       // Editor menu items — visibility flipped after /api/me resolves below.
       document.getElementById("navMap").href = `/map-viewer/${enc}`;
