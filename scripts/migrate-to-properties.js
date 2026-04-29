@@ -137,6 +137,32 @@ function rewriteProjectMeta(meta, oldName, newPrefix) {
   return meta;
 }
 
+// mappings.json holds floor-plan image paths and per-pin 360 image
+// paths — all need rewriting from {oldName}/... to {newPrefix}/... or
+// the map editor can't match its pin records to the listed photos.
+function rewriteMappingsJson(mapping, oldName, newPrefix) {
+  if (!mapping) return mapping;
+  const oldP = `${oldName}/`;
+  const newP = `${newPrefix}/`;
+  const r = (s) =>
+    typeof s === "string" && s.startsWith(oldP) ? newP + s.slice(oldP.length) : s;
+
+  if (mapping.floorPlanImage) mapping.floorPlanImage = r(mapping.floorPlanImage);
+  if (mapping.floorPlans && typeof mapping.floorPlans === "object") {
+    for (const k of Object.keys(mapping.floorPlans)) {
+      mapping.floorPlans[k] = r(mapping.floorPlans[k]);
+    }
+  }
+  if (Array.isArray(mapping.pins)) {
+    for (const pin of mapping.pins) {
+      if (pin && typeof pin.image360 === "string") {
+        pin.image360 = r(pin.image360);
+      }
+    }
+  }
+  return mapping;
+}
+
 // ---------------------------------------------------------------------------
 // project discovery
 // ---------------------------------------------------------------------------
@@ -319,6 +345,22 @@ async function migrateProject(ctx, oldName) {
   newMeta.slug = compoundSlug;
   newMeta.migratedAt = new Date().toISOString();
   await writeJson(main, `${newPrefix}/project.json`, newMeta);
+
+  // 3b. Rewrite mappings.json paths in place at the new prefix. The
+  //     server-side copy preserves contents, but pin records and floor-
+  //     plan paths reference the old prefix and the map editor matches
+  //     pins to listed photos by path — they'd silently mismatch
+  //     without this pass.
+  const newMappingsPath = `${newPrefix}/mappings.json`;
+  const mappings = await readJson(main, newMappingsPath);
+  if (mappings) {
+    const before = JSON.stringify(mappings);
+    rewriteMappingsJson(mappings, oldName, newPrefix);
+    if (JSON.stringify(mappings) !== before) {
+      await writeJson(main, newMappingsPath, mappings);
+      log(`   mappings.json: rewrote internal paths`);
+    }
+  }
 
   // 4. Build the Property record.
   const property = {
@@ -520,6 +562,7 @@ if (require.main === module) {
 module.exports = {
   parseArgs,
   rewriteProjectMeta,
+  rewriteMappingsJson,
   isCompleteAddress,
   shortId,
   slugify,
