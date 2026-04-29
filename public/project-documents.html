@@ -209,6 +209,7 @@
 
       // Admin shortcut + non-editor logo redirect, mirroring other showcase
       // pages so anonymous viewers don't bounce into IAP via the brand mark.
+      // Editors get the shared editor-nav hamburger cluster + project menu.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
         if (window.me && await window.me.isAdmin()) {
@@ -219,6 +220,21 @@
         if (!isEditor) {
           const logo = document.querySelector(".site-header .logo");
           if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
+        } else {
+          document.body.classList.add("editor-nav");
+          const dd = document.querySelector("#menuDropdown .dropdown-inner");
+          if (dd) {
+            dd.innerHTML = `
+              <a href="/map-viewer/${enc}">Map</a>
+              <a href="/images/${enc}">2D Images</a>
+              <a href="/plans/${enc}">2D Plans</a>
+              <a href="/models/${enc}">Models</a>
+              <a href="/documents/${enc}">Documents</a>
+              <a href="/video-upload.html?project=${enc}">Videos</a>
+              <a href="/users.html">Users</a>
+              <a href="/${enc}">Project Home</a>
+            `;
+          }
         }
       })();
 

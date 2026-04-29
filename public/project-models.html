@@ -311,7 +311,8 @@
       document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
 
       // Admin "+ Upload model" shortcut when applicable; for non-editors,
-      // re-route the GT3D logo home target to the project home page.
+      // re-route the GT3D logo home target to the project home page; for
+      // editors, swap to the shared editor-nav hamburger cluster.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
         if (window.me && await window.me.isAdmin()) {
@@ -325,6 +326,21 @@
           // logo is a working "back to project home" link for anonymous
           // viewers (the previous /<project> target hits IAP and bounces).
           if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
+        } else {
+          document.body.classList.add("editor-nav");
+          const dd = document.querySelector("#menuDropdown .dropdown-inner");
+          if (dd) {
+            dd.innerHTML = `
+              <a href="/map-viewer/${enc}">Map</a>
+              <a href="/images/${enc}">2D Images</a>
+              <a href="/plans/${enc}">2D Plans</a>
+              <a href="/models/${enc}">Models</a>
+              <a href="/documents/${enc}">Documents</a>
+              <a href="/video-upload.html?project=${enc}">Videos</a>
+              <a href="/users.html">Users</a>
+              <a href="/${enc}">Project Home</a>
+            `;
+          }
         }
       })();
 

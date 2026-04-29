@@ -294,6 +294,23 @@
         if (!isEditor) {
           const logo = document.querySelector(".site-header .logo");
           if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
+        } else {
+          // Editors get the shared editor-nav hamburger cluster +
+          // project-home menu set, replacing the static showcase nav.
+          document.body.classList.add("editor-nav");
+          const dd = document.querySelector("#menuDropdown .dropdown-inner");
+          if (dd) {
+            dd.innerHTML = `
+              <a href="/map-viewer/${enc}">Map</a>
+              <a href="/images/${enc}">2D Images</a>
+              <a href="/plans/${enc}">2D Plans</a>
+              <a href="/models/${enc}">Models</a>
+              <a href="/documents/${enc}">Documents</a>
+              <a href="/video-upload.html?project=${enc}">Videos</a>
+              <a href="/users.html">Users</a>
+              <a href="/${enc}">Project Home</a>
+            `;
+          }
         }
       })();
 
