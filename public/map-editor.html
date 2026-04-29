@@ -20,6 +20,14 @@
       overflow: hidden;
     }
 
+    /* Body content (toolbar, main) is full-width; let the header match so
+       the hamburger right-edge lines up with the toolbar's right edge. */
+    .site-header .header-inner {
+      max-width: none;
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+
     .project-headline {
       font-family: var(--font-display);
       font-weight: 600;
@@ -1104,7 +1112,7 @@
     .error-msg { color: var(--danger); text-align: center; padding: 20px; }
   </style>
 </head>
-<body>
+<body class="editor-nav">
   <header class="site-header">
     <div class="header-inner">
       <a class="logo" href="/">
@@ -1112,7 +1120,7 @@
         Ground Truth <span>3D</span>
       </a>
       <a class="project-headline" id="projectHeadline" href="#">Map Editor</a>
-      <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown" style="margin-left:auto;">
+      <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
         <span class="bar"></span>
       </button>
     </div>
