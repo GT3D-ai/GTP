@@ -147,6 +147,14 @@ app.get("/images/:project", async (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-images.html"));
 });
 
+// Per-project documents listing: /documents/<project-name>. Anyone with
+// the URL can land on the page; the document list is filtered by role
+// inside /api/document/files (non-admins see only visibility=public).
+app.get("/documents/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/documents", req.params.project)) return;
+  res.sendFile(path.join(__dirname, "public", "project-documents.html"));
+});
+
 // Public-view mirror of the project home page at /public/<project-name>.
 // This is the stable share URL the URL map routes to the no-IAP backend so
 // invited viewers can land on it without passing IAP. Serves the same
@@ -1704,8 +1712,11 @@ async function writeDocumentMeta(filePath, meta) {
   );
 }
 
-// List documents in a project — admin only.
-app.get("/api/document/files", requireAdmin, async (req, res) => {
+// List documents in a project. Public route, but content is filtered by
+// caller role: admins see every document with full metadata; everyone
+// else (anonymous viewers and authenticated non-admins) sees only those
+// flagged visibility=public. The /documents/<project> page consumes this.
+app.get("/api/document/files", async (req, res) => {
   try {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
@@ -1714,19 +1725,27 @@ app.get("/api/document/files", requireAdmin, async (req, res) => {
     const docs = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"));
-    const list = await Promise.all(docs.map(async (f) => {
+    const isAdminCaller = !!req.user?.isAdmin;
+    const list = (await Promise.all(docs.map(async (f) => {
       const meta = await readDocumentMeta(f.name);
-      return {
+      const visibility = meta.visibility === "public" ? "public" : "private";
+      // Skip private documents for non-admin callers — they shouldn't even
+      // know they exist.
+      if (!isAdminCaller && visibility !== "public") return null;
+      const entry = {
         name: f.name,
         displayName: f.name.replace(prefix, ""),
         size: Number(f.metadata.size),
         updated: f.metadata.updated,
         contentType: f.metadata.contentType,
-        uploadedBy: meta.uploadedBy || null,
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
-        visibility: meta.visibility === "public" ? "public" : "private",
       };
-    }));
+      if (isAdminCaller) {
+        entry.uploadedBy = meta.uploadedBy || null;
+        entry.visibility = visibility;
+      }
+      return entry;
+    }))).filter(Boolean);
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
     res.json(list);
   } catch (err) {
@@ -1764,12 +1783,20 @@ app.post("/api/document/uploaded", requireAdmin, async (req, res) => {
   }
 });
 
-// Signed download URL for a document — admin only (15-min expiry).
-app.get("/api/document/download-url", requireAdmin, async (req, res) => {
+// Signed download URL for a document — public route, but private docs
+// require admin. Non-admins (including anonymous viewers) can only
+// download a document whose visibility metadata is "public".
+app.get("/api/document/download-url", async (req, res) => {
   try {
     const filePath = req.query.file;
     if (!filePath) return res.status(400).json({ error: "file is required" });
     if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+    if (!req.user?.isAdmin) {
+      const meta = await readDocumentMeta(filePath);
+      if (meta.visibility !== "public") {
+        return res.status(403).json({ error: "This document is private" });
+      }
+    }
     const [url] = await imageBucket.file(filePath).getSignedUrl({
       version: "v4",
       action: "read",
@@ -2640,7 +2667,7 @@ app.get("/:project", async (req, res, next) => {
   if (!project || project.includes(".") || project.startsWith("_")) return next();
   // Reserved top-level words that are not projects
   const reserved = new Set([
-    "api", "map-viewer", "models", "pointclouds", "plans", "images", "projects", "public",
+    "api", "map-viewer", "models", "pointclouds", "plans", "images", "documents", "projects", "public",
     "robots.txt", "tokens.css", "app.css", "me.js",
   ]);
   if (reserved.has(project)) return next();

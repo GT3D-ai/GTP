@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    .project-headline {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    @media (max-width: 640px) {
+      .header-inner { flex-wrap: wrap; row-gap: 4px; }
+      .project-headline {
+        order: 3; flex-basis: 100%;
+        font-size: 0.85rem; color: var(--ink-muted);
+        padding-top: 4px; border-top: 1px solid var(--line);
+      }
+    }
+
+    .page-head { margin-bottom: var(--space-md); display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+    .page-head h1 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 3vw, 1.875rem);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .page-head .upload-link {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .page-head .upload-link:hover { text-decoration: underline; }
+
+    .docs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+    }
+    .docs-table th, .docs-table td {
+      text-align: left;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    .docs-table tr:last-child td { border-bottom: none; }
+    .docs-table th {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      background: var(--bg);
+    }
+    .docs-table td.empty { text-align: center; color: var(--ink-subtle); padding: var(--space-md); }
+    .docs-table .col-name { min-width: 200px; }
+    .docs-table .col-type { width: 100px; white-space: nowrap; color: var(--ink-muted); text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.04em; }
+    .docs-table .col-size { width: 110px; white-space: nowrap; color: var(--ink-muted); }
+    .docs-table .col-uploaded { white-space: nowrap; color: var(--ink-muted); font-size: 0.8rem; }
+    .docs-table .col-by { white-space: nowrap; color: var(--ink-muted); font-size: 0.8rem; }
+    .docs-table .col-vis { width: 110px; }
+    .docs-table .col-actions { width: 1px; white-space: nowrap; text-align: right; }
+
+    .doc-name {
+      font-weight: 500;
+      color: var(--ink);
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .doc-name.editable {
+      cursor: text;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      border-radius: 3px;
+    }
+    .doc-name.editable:focus {
+      outline: 2px solid var(--accent);
+      background: var(--bg);
+    }
+
+    .doc-vis-select {
+      padding: 4px 6px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+      font-size: 0.8rem;
+      font-family: inherit;
+    }
+
+    .doc-action-btn {
+      background: none;
+      border: 1px solid var(--line-strong);
+      color: var(--ink-muted);
+      padding: 5px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-left: 4px;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .doc-action-btn:hover { color: var(--ink); border-color: var(--ink); }
+    .doc-action-btn.primary {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .doc-action-btn.primary:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .doc-action-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .doc-action-btn.danger:hover { background: var(--danger); color: #fff; }
+    .doc-action-btn:disabled { opacity: 0.55; cursor: progress; }
+
+    .placeholder {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-md);
+      color: var(--ink-subtle);
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
+    }
+    .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <span class="project-headline" id="projectHeadline">Documents</span>
+      <nav class="nav-primary" aria-label="Primary">
+        <a id="mapViewerLink" href="#">Map</a>
+      </nav>
+      <button class="menu-toggle mobile-only" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown">
+        <span class="bar"></span>
+      </button>
+    </div>
+    <div class="dropdown-panel" id="menuDropdown">
+      <div class="dropdown-inner">
+        <a id="homeMenuItem" href="#">Project Home</a>
+        <a id="mapMenuItem" href="#">Map</a>
+        <a id="imagesMenuItem" href="#">2D Images</a>
+        <a id="plansMenuItem" href="#">2D Plans</a>
+        <a id="modelsMenuItem" href="#">3D Models</a>
+        <a id="pointcloudsMenuItem" href="#">Point Clouds</a>
+        <a id="documentsMenuItem" href="#">Documents</a>
+        <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Documents</h1>
+      <a href="#" class="upload-link" id="adminUploadLink" style="display:none;">+ Manage documents</a>
+    </div>
+
+    <div id="docsWrap">
+      <div class="placeholder">
+        <p>Loading…</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let project = null;
+    const pathMatch = window.location.pathname.match(/^\/documents\/(.+?)\/?$/);
+    if (pathMatch) project = decodeURIComponent(pathMatch[1]);
+
+    const wrap = document.getElementById("docsWrap");
+    const projectHeadline = document.getElementById("projectHeadline");
+
+    if (!project) {
+      wrap.innerHTML = '<div class="error-msg">No project specified. URL should be /documents/&lt;project-name&gt;.</div>';
+    } else {
+      projectHeadline.textContent = project;
+      const enc = encodeURIComponent(project);
+      document.getElementById("mapViewerLink").href = `/map-viewer/${enc}`;
+      document.getElementById("homeMenuItem").href = `/public/${enc}`;
+      document.getElementById("mapMenuItem").href = `/map-viewer/${enc}`;
+      document.getElementById("imagesMenuItem").href = `/images/${enc}`;
+      document.getElementById("plansMenuItem").href = `/plans/${enc}`;
+      document.getElementById("modelsMenuItem").href = `/models/${enc}`;
+      document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
+      document.getElementById("documentsMenuItem").href = `/documents/${enc}`;
+
+      // Admin shortcut + non-editor logo redirect, mirroring other showcase
+      // pages so anonymous viewers don't bounce into IAP via the brand mark.
+      (async () => {
+        const isEditor = window.me ? await window.me.canEdit(project) : false;
+        if (window.me && await window.me.isAdmin()) {
+          const a = document.getElementById("adminUploadLink");
+          a.href = `/document-upload.html?project=${encodeURIComponent(project)}`;
+          a.style.display = "";
+        }
+        if (!isEditor) {
+          const logo = document.querySelector(".site-header .logo");
+          if (logo) logo.href = `/public/${encodeURIComponent(project)}`;
+        }
+      })();
+
+      loadDocuments(project);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+    function formatSize(bytes) {
+      if (!bytes && bytes !== 0) return "—";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+    function formatWhen(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString();
+    }
+    function fileTypeFor(name) {
+      const m = String(name || "").match(/\.([a-z0-9]+)$/i);
+      return m ? m[1].toUpperCase() : "FILE";
+    }
+
+    async function loadDocuments(project) {
+      const isAdmin = !!(window.me && await window.me.isAdmin());
+      try {
+        const res = await fetch(`/api/document/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        const docs = await res.json();
+        // Server already sorts by uploadedAt desc, but re-sort defensively
+        // to guard against stale clients hitting an older server build.
+        docs.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+
+        if (docs.length === 0) {
+          wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#128196;</div><p>No documents available for this project yet.</p></div>';
+          return;
+        }
+
+        const table = document.createElement("table");
+        table.className = "docs-table";
+
+        // Build header — extra columns are added when an admin is viewing.
+        const adminCols = isAdmin
+          ? `<th class="col-uploaded">Uploaded</th><th class="col-by">By</th><th class="col-vis">Visibility</th>`
+          : `<th class="col-uploaded">Uploaded</th>`;
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th class="col-name">File name</th>
+              <th class="col-type">Type</th>
+              <th class="col-size">Size</th>
+              ${adminCols}
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector("tbody");
+        docs.forEach((d) => {
+          const tr = document.createElement("tr");
+          tr.dataset.file = d.name;
+          const typeLabel = fileTypeFor(d.displayName);
+          const nameCell = isAdmin
+            ? `<span class="doc-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>`
+            : `<span class="doc-name" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>`;
+          const adminCells = isAdmin
+            ? `
+              <td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>
+              <td class="col-by">${escapeHtml(d.uploadedBy || "—")}</td>
+              <td class="col-vis">
+                <select class="doc-vis-select">
+                  <option value="private"${d.visibility === "private" ? " selected" : ""}>Private</option>
+                  <option value="public"${d.visibility === "public" ? " selected" : ""}>Public</option>
+                </select>
+              </td>`
+            : `<td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>`;
+          const actionsCell = isAdmin
+            ? `<button type="button" class="doc-action-btn primary doc-download-btn">Download</button>
+               <button type="button" class="doc-action-btn danger doc-delete-btn">Delete</button>`
+            : `<button type="button" class="doc-action-btn primary doc-download-btn">Download</button>`;
+          tr.innerHTML = `
+            <td class="col-name">${nameCell}</td>
+            <td class="col-type">${typeLabel}</td>
+            <td class="col-size">${formatSize(d.size)}</td>
+            ${adminCells}
+            <td class="col-actions">${actionsCell}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        wrap.innerHTML = "";
+        wrap.appendChild(table);
+
+        // Download — works for everyone the API allows (non-admins are only
+        // shown public docs to begin with).
+        table.querySelectorAll(".doc-download-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const tr = btn.closest("tr");
+            const filePath = tr.dataset.file;
+            btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
+            try {
+              const r = await fetch(`/api/document/download-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              const { downloadUrl } = await r.json();
+              window.location.href = downloadUrl;
+            } catch (err) {
+              alert("Download failed: " + err.message);
+            } finally {
+              btn.disabled = false; btn.textContent = orig;
+            }
+          });
+        });
+
+        if (!isAdmin) return;
+
+        // Inline rename on blur / Enter (admin only)
+        table.querySelectorAll(".doc-name.editable").forEach((el) => {
+          const original = el.textContent;
+          el.dataset.original = original;
+          el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") { e.preventDefault(); el.blur(); }
+            if (e.key === "Escape") { el.textContent = el.dataset.original; el.blur(); }
+          });
+          el.addEventListener("blur", async () => {
+            const newName = el.textContent.trim();
+            if (!newName || newName === el.dataset.original) {
+              el.textContent = el.dataset.original;
+              return;
+            }
+            const tr = el.closest("tr");
+            const filePath = tr.dataset.file;
+            try {
+              const r = await fetch("/api/document/rename", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: filePath, newName }),
+              });
+              const data = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+              loadDocuments(project);
+            } catch (err) {
+              alert("Rename failed: " + err.message);
+              el.textContent = el.dataset.original;
+            }
+          });
+        });
+
+        // Visibility selector (admin only)
+        table.querySelectorAll(".doc-vis-select").forEach((sel) => {
+          const previous = sel.value;
+          sel.dataset.previous = previous;
+          sel.addEventListener("change", async () => {
+            const tr = sel.closest("tr");
+            const filePath = tr.dataset.file;
+            const prev = sel.dataset.previous;
+            sel.disabled = true;
+            try {
+              const r = await fetch("/api/document/visibility", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: filePath, visibility: sel.value }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              sel.dataset.previous = sel.value;
+            } catch (err) {
+              alert("Visibility change failed: " + err.message);
+              sel.value = prev;
+            } finally {
+              sel.disabled = false;
+            }
+          });
+        });
+
+        // Delete (admin only)
+        table.querySelectorAll(".doc-delete-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const tr = btn.closest("tr");
+            const filePath = tr.dataset.file;
+            const displayName = tr.querySelector(".doc-name")?.textContent || filePath;
+            if (!confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
+            btn.disabled = true; btn.textContent = "Deleting…";
+            try {
+              const r = await fetch("/api/document/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: filePath }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadDocuments(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false; btn.textContent = "Delete";
+            }
+          });
+        });
+      } catch (err) {
+        wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    // Mobile hamburger menu — toggle, click-outside, Escape to close
+    (function () {
+      const btn = document.getElementById("menuBtn");
+      const panel = document.getElementById("menuDropdown");
+      if (!btn || !panel) return;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = panel.classList.toggle("is-open");
+        btn.setAttribute("aria-expanded", open);
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          panel.classList.remove("is-open");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
