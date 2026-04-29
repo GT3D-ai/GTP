@@ -11,21 +11,23 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
   <style>
-    .project-headline {
+    /* Project name lives in the body above the category title rather
+       than the header — long names were wrapping the user chip and
+       hamburger onto a second row on mobile. Eyebrow styling so it
+       reads as page context, not nav. */
+    a.project-headline {
+      display: block;
       font-family: var(--font-display);
+      font-size: 0.75rem;
       font-weight: 600;
-      font-size: 1rem;
-      letter-spacing: -0.01em;
-      color: var(--ink);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-subtle);
+      text-decoration: none;
+      margin-bottom: 4px;
+      overflow-wrap: anywhere;
     }
-    @media (max-width: 640px) {
-      .header-inner { flex-wrap: wrap; row-gap: 4px; }
-      .project-headline {
-        order: 3; flex-basis: 100%;
-        font-size: 0.85rem; color: var(--ink-muted);
-        padding-top: 4px; border-top: 1px solid var(--line);
-      }
-    }
+    a.project-headline:hover { color: var(--accent); }
 
     .page-head { margin-bottom: var(--space-md); display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
     .page-head h1 {
@@ -227,7 +229,6 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <a class="project-headline" id="projectHeadline" href="#">Models</a>
       <nav class="nav-primary" aria-label="Primary">
         <a class="nav-map" href="#">Map</a>
         <a class="nav-images" href="#">2D Images</a>
@@ -253,6 +254,7 @@
   </header>
 
   <main class="container">
+    <a class="project-headline" id="projectHeadline" href="#"></a>
     <div class="page-head">
       <h1>Models</h1>
       <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload model</a>
