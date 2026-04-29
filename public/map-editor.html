@@ -935,13 +935,24 @@
         <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
         Ground Truth <span>3D</span>
       </a>
-      <nav class="nav-primary" aria-label="Primary" style="margin-left:auto; flex-wrap:nowrap; white-space:nowrap;">
-        <a id="projectHomeLink" href="/">Project Home</a>
-        <a id="mapEditorLink" href="#" class="is-active">Map Editor</a>
-        <a id="viewerLink" href="/viewer.html">360 Images</a>
-        <a id="imageViewerLink" href="/image-viewer.html">2D Images</a>
-        <a id="modelsLink" href="/models/">Models</a>
-      </nav>
+      <button class="menu-toggle" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menuDropdown" style="margin-left:auto;">
+        <span class="bar"></span>
+      </button>
+    </div>
+    <!-- Editor menu — same eight items as project-home's editor nav so
+         the experience is consistent across editor surfaces. Hrefs are
+         filled in below once the project query param is read. -->
+    <div class="dropdown-panel" id="menuDropdown">
+      <div class="dropdown-inner">
+        <a id="navMapLink" href="#">Map</a>
+        <a id="navImagesLink" href="#">2D Images</a>
+        <a id="navPlansLink" href="#">2D Plans</a>
+        <a id="navModelsLink" href="#">Models</a>
+        <a id="navDocumentsLink" href="#">Documents</a>
+        <a id="navVideosLink" href="#">Videos</a>
+        <a href="/users.html">Users</a>
+        <a id="navHomeLink" href="#">Project Home</a>
+      </div>
     </div>
   </header>
 
@@ -1515,10 +1526,39 @@
 
     if (project) {
       const enc = encodeURIComponent(project);
-      document.getElementById("projectHomeLink").href = `/${enc}`;
-      document.getElementById("viewerLink").href = `/viewer.html?project=${enc}`;
-      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${enc}`;
-      document.getElementById("modelsLink").href = `/models/${enc}`;
+      // Hamburger menu hrefs — same set as the editor nav on the project
+      // home page so the editor experience stays consistent.
+      document.getElementById("navMapLink").href = `/map-viewer/${enc}`;
+      document.getElementById("navImagesLink").href = `/images/${enc}`;
+      document.getElementById("navPlansLink").href = `/plans/${enc}`;
+      document.getElementById("navModelsLink").href = `/models/${enc}`;
+      document.getElementById("navDocumentsLink").href = `/document-upload.html?project=${enc}`;
+      document.getElementById("navVideosLink").href = `/video-upload.html?project=${enc}`;
+      document.getElementById("navHomeLink").href = `/${enc}`;
+
+      // Wire the hamburger — toggle, click-outside, Escape to close.
+      const menuBtn = document.getElementById("menuBtn");
+      const menuPanel = document.getElementById("menuDropdown");
+      if (menuBtn && menuPanel) {
+        menuBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const open = menuPanel.classList.toggle("is-open");
+          menuBtn.setAttribute("aria-expanded", open);
+        });
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest("#menuDropdown") && !e.target.closest("#menuBtn")) {
+            menuPanel.classList.remove("is-open");
+            menuBtn.setAttribute("aria-expanded", "false");
+          }
+        });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            menuPanel.classList.remove("is-open");
+            menuBtn.setAttribute("aria-expanded", "false");
+          }
+        });
+      }
+
       init();
     }
 
