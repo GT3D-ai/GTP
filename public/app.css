@@ -499,15 +499,14 @@ a.project-headline:hover,
 }
 
 /* Category pages (per-asset showcase pages + map-viewer + any future
-   category page) anchor the header content against the actual left
-   edge of the viewport — no max-width centering, no left padding —
-   so the logo sits flush left and the project name reads immediately
-   to its right. Right padding stays so the hamburger / nav cluster
-   doesn't crash into the edge. */
+   category page). The default .header-inner already centers within
+   the same max-width container as .container in the body, so the
+   logo lines up vertically with the body-content's left edge and the
+   project name reads immediately to its right. The body class is
+   kept as a marker so future per-category styling can hook off it
+   without revisiting markup. */
 body.category-page .header-inner {
-  max-width: none;
-  margin: 0;
-  padding-left: 0;
+  /* no overrides needed for left alignment; intentional. */
 }
 
 /* Editor-mode nav, shared across project-home and the per-asset
