@@ -1598,13 +1598,13 @@ app.post("/api/upload-url", async (req, res) => {
 
   // Authorization
   if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud" || bucketKind === "document" || bucketKind === "video") {
-    // Per-file thumbnails (<file>.thumb.jpg) for models and point clouds pair
-    // with files editors already manage on the showcase pages, so they're
-    // editor-gated. Everything else in the model/plan/pointcloud/document/video
-    // buckets stays admin-only — documents and videos are admin-only across
-    // the board.
+    // Per-file thumbnails (<file>.thumb.jpg) for plans, models and point
+    // clouds pair with files editors already manage on the showcase pages,
+    // so they're editor-gated. Everything else in the model/plan/pointcloud
+    // /document/video buckets stays admin-only — documents and videos are
+    // admin-only across the board.
     const isAssetThumbnail =
-      (bucketKind === "model" || bucketKind === "pointcloud") &&
+      (bucketKind === "model" || bucketKind === "pointcloud" || bucketKind === "plan") &&
       fileName.endsWith(".thumb.jpg");
     if (isAssetThumbnail) {
       if (!req.user?.isAdmin) {
@@ -2309,8 +2309,42 @@ app.get("/api/admin/2d/image", requireAdmin, async (req, res) => {
 // Parallel to models but stored inside the image bucket under a reserved
 // prefix. Thumbnails stored as <file>.thumb.jpg sibling objects.
 
-// List plans in a project — PUBLIC
+// List plans in a project — PUBLIC. Hidden plans are filtered out so
+// anonymous viewers never see them; editors get the full list (including
+// hidden ones, with the flag) via /api/plan/files-with-hidden below.
 app.get("/api/plan/files", async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = `${project}/_plans/`;
+    const [files] = await imageBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+        };
+      });
+    res.json(list);
+  } catch (err) {
+    console.error("List plans error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: list plans including hidden ones plus the flag — used by
+// project-plans.html so editors see what they've hidden and can unhide
+// without bouncing somewhere else. Mirrors /api/2d/files-with-hidden.
+app.get("/api/plan/files-with-hidden", requireProjectRole("editor"), async (req, res) => {
   try {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
@@ -2329,11 +2363,119 @@ app.get("/api/plan/files", async (req, res) => {
           updated: f.metadata.updated,
           contentType: f.metadata.contentType,
           thumbnail: allNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
         };
       });
     res.json(list);
   } catch (err) {
-    console.error("List plans error:", err.message);
+    console.error("List plans (with hidden) error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: toggle the hidden flag on a plan. Same shape as /api/2d/visibility.
+app.post("/api/plan/visibility", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!filePath.includes("/_plans/")) return res.status(400).json({ error: "not a plan path" });
+  if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot hide a thumbnail directly" });
+  try {
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("Plan visibility toggle error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: replace a plan in place. Overwrites the GCS object with new
+// bytes, preserves the hidden flag, and deletes the cached <file>.thumb.jpg
+// so the next thumbnail upload (or fallback to the file itself) reflects
+// the new content. Same end-to-end pattern as /api/2d/replace.
+app.post("/api/plan/replace", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file provided" });
+  const tmpPath = req.file.path;
+  const filePath = req.body && req.body.destName;
+  try {
+    if (!filePath) return res.status(400).json({ error: "destName (existing plan path) required" });
+    if (!filePath.includes("/_plans/")) return res.status(400).json({ error: "not a plan path" });
+    if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot replace a thumbnail directly" });
+
+    const gcsFile = imageBucket.file(filePath);
+    const [exists] = await gcsFile.exists();
+    if (!exists) return res.status(404).json({ error: "Plan not found" });
+
+    const [oldMetadata] = await gcsFile.getMetadata();
+    const preservedCustom = (oldMetadata.metadata && typeof oldMetadata.metadata === "object")
+      ? { ...oldMetadata.metadata }
+      : null;
+
+    const readStream = fs.createReadStream(tmpPath);
+    const writeStream = gcsFile.createWriteStream({
+      resumable: true,
+      metadata: {
+        contentType: req.file.mimetype || oldMetadata.contentType || "application/octet-stream",
+        ...(preservedCustom ? { metadata: preservedCustom } : {}),
+      },
+    });
+    await new Promise((resolve, reject) => {
+      readStream.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+
+    // Drop any stale cached thumbnail — the editor re-uploads via
+    // /api/upload-url (bucket=plan, fileName=<base>.thumb.jpg) when they
+    // want a fresh preview. Best-effort: a missing thumb just falls back
+    // to whatever the page renders for "no thumbnail".
+    try {
+      const thumb = imageBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) await thumb.delete();
+    } catch (err) {
+      console.warn(`[plan/replace] thumb cleanup failed for ${filePath}:`, err.message);
+    }
+
+    res.json({ success: true, file: filePath, fileSize: req.file.size });
+  } catch (err) {
+    console.error("Plan replace error:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
+});
+
+// Editor: persist plan ordering on project.json (planOrder). Mirrors
+// /api/2d/order — empty array clears the override and the page falls
+// back to chronological (newest first) on render.
+app.post("/api/plan/order", requireProjectRole("editor"), async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of plan paths or null" });
+  }
+  const planPrefix = `${project}/_plans/`;
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.startsWith(planPrefix) && !s.endsWith(".thumb.jpg"))
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.planOrder;
+    else meta.planOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, planOrder: meta.planOrder || [] });
+  } catch (err) {
+    console.error("plan order error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
