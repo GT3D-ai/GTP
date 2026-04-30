@@ -9,6 +9,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
+  <!-- Hide the landing until /api/me resolves so authorized visitors who
+       land here briefly (e.g. clicking the logo from a project page) get
+       redirected without flashing the "GTP Home" landing first. The
+       inline script below reveals the page for unauthorized visitors and
+       has a safety timeout so a slow/failed /api/me can't leave the page
+       permanently blank. -->
+  <style>html.pre-auth { visibility: hidden; }</style>
+  <script>
+    document.documentElement.classList.add("pre-auth");
+    // Safety net: never hide the landing for more than 1.5s, even if
+    // /api/me hangs or me.js fails to load.
+    setTimeout(() => document.documentElement.classList.remove("pre-auth"), 1500);
+  </script>
   <script src="/me.js"></script>
   <style>
     body {
@@ -148,13 +161,21 @@
   <script>
     // Authorized users (admins / editors / viewers in the gt3d.com Workspace)
     // get auto-forwarded to the project list. Anonymous visitors stay on this
-    // landing page and can submit the contact form.
+    // landing page and can submit the contact form. The page is initially
+    // hidden via .pre-auth (set in <head>) so the redirect happens without
+    // flashing the landing; reveal once we know the visitor isn't being
+    // bounced. If me.js failed to load, reveal immediately rather than
+    // waiting on the safety timer.
     if (window.me) {
       window.me.getMe().then((profile) => {
         if (profile && profile.authorized) {
           window.location.replace("/projects");
+          return;
         }
+        document.documentElement.classList.remove("pre-auth");
       });
+    } else {
+      document.documentElement.classList.remove("pre-auth");
     }
 
     const overlay = document.getElementById("contactOverlay");
