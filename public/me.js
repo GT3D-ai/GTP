@@ -83,7 +83,7 @@
       "uploads.html", "users.html", "new-project.html", "edit-project.html",
       "document-upload.html", "video-upload.html", "model-upload.html",
       "pointcloud-upload.html", "plan-upload.html", "upload.html", "images.html",
-      "image-viewer.html", "viewer.html", "model-viewer.html", "map-editor.html",
+      "viewer.html", "model-viewer.html", "map-editor.html",
       "robots.txt", "tokens.css", "app.css", "me.js", "favicon.ico",
     ]);
     if (segments.length === 1 && !segments[0].includes(".") && !reservedTop.has(segments[0])) {

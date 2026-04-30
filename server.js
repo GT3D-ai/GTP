@@ -2193,6 +2193,64 @@ app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), 
   }
 });
 
+// Replace a 2D image in place — editor only. Overwrites the GCS object
+// at the same path with the new bytes, preserves any custom metadata
+// (e.g. the hidden flag), and refreshes the cached _thumbs/ thumbnail
+// so the gallery picks up the change. The file path/name is unchanged
+// so existing references (cardThumbnails, mappings, etc.) keep working.
+app.post("/api/2d/replace", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file provided" });
+  const tmpPath = req.file.path;
+  const filePath = req.body && req.body.destName;
+  try {
+    if (!filePath) return res.status(400).json({ error: "destName (existing image path) required" });
+    if (filePath.startsWith("_thumbs/") || filePath.includes("/_thumbs/")) {
+      return res.status(400).json({ error: "Cannot replace a thumbnail directly" });
+    }
+    const gcsFile = imageBucket.file(filePath);
+    const [exists] = await gcsFile.exists();
+    if (!exists) return res.status(404).json({ error: "Image not found" });
+
+    // Read existing custom metadata (e.g. hidden flag) so we can re-apply
+    // it after the overwrite — createWriteStream replaces the whole
+    // metadata block, not just the bytes.
+    const [oldMetadata] = await gcsFile.getMetadata();
+    const preservedCustom = (oldMetadata.metadata && typeof oldMetadata.metadata === "object")
+      ? { ...oldMetadata.metadata }
+      : null;
+
+    const readStream = fs.createReadStream(tmpPath);
+    const writeStream = gcsFile.createWriteStream({
+      resumable: true,
+      metadata: {
+        contentType: req.file.mimetype || oldMetadata.contentType || "application/octet-stream",
+        ...(preservedCustom ? { metadata: preservedCustom } : {}),
+      },
+    });
+    await new Promise((resolve, reject) => {
+      readStream.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+
+    console.log(`Replaced 2D: gs://${IMAGE_BUCKET_NAME}/${filePath} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`);
+
+    // Refresh the cached thumbnail. Best-effort: if anything fails the
+    // proxy will fall back to the original on next read.
+    try { await deleteThumbnail(filePath); } catch (err) {
+      console.warn(`[2d/replace] thumb delete failed for ${filePath}:`, err.message);
+    }
+    try { await generateThumbnailFromGCS(filePath); } catch (err) {
+      console.warn(`[2d/replace] thumb regen failed for ${filePath}:`, err.message);
+    }
+
+    res.json({ success: true, file: filePath, fileSize: req.file.size });
+  } catch (err) {
+    console.error("2D replace error:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
+});
+
 // Delete 2D image
 app.post("/api/2d/delete", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body;

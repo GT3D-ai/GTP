@@ -169,7 +169,6 @@
       </a>
       <nav class="nav-primary" aria-label="Primary">
         <a href="/">Projects</a>
-        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
         <a id="mapEditorLink" href="/map-editor.html">Map</a>
         <a id="imagesLink" href="/images.html">Upload 2D</a>
         <a id="uploadLink" href="/upload.html">Upload 360</a>
@@ -242,7 +241,6 @@
       if (currentLevel) upload += `&level=${encodeURIComponent(currentLevel)}`;
       document.getElementById("uploadLink").href = upload;
       document.getElementById("imagesLink").href = `/images.html?project=${encodeURIComponent(project)}`;
-      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
       document.getElementById("mapEditorLink").href = `/map-editor.html?project=${encodeURIComponent(project)}`;
     }
 

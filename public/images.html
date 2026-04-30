@@ -65,7 +65,6 @@
       </a>
       <nav class="nav-primary" aria-label="Primary">
         <a href="/">Projects</a>
-        <a id="imageViewerLink" href="/image-viewer.html">2D Viewer</a>
         <a id="viewerLink" href="/viewer.html">360 Viewer</a>
       </nav>
     </div>
@@ -153,7 +152,6 @@
 
     function updateProjectLinks(project) {
       viewerLink.href = `/viewer.html?project=${encodeURIComponent(project)}`;
-      document.getElementById("imageViewerLink").href = `/image-viewer.html?project=${encodeURIComponent(project)}`;
     }
 
     function getSelectedProject() {
