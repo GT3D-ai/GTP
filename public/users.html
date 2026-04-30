@@ -28,6 +28,19 @@
     }
     .btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
     .btn-danger:hover { background: var(--danger); color: #fff; }
+    a.project-headline {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-subtle);
+      text-decoration: none;
+      margin-bottom: 4px;
+      overflow-wrap: anywhere;
+    }
+    a.project-headline:hover { color: var(--accent); }
   </style>
 </head>
 <body class="admin-layout">
@@ -39,15 +52,16 @@
       </a>
       <nav class="nav-primary" aria-label="Primary">
         <a href="/">Projects</a>
-        <a href="/users.html" class="is-active">Users</a>
+        <a id="usersSelfLink" href="/users.html" class="is-active">Users</a>
       </nav>
       <div id="userChip"></div>
     </div>
   </header>
 
   <main class="container">
+    <a class="project-headline" id="projectHeadline" href="#" style="display:none;"></a>
     <div class="page-actions">
-      <h1>Users</h1>
+      <h1 id="usersHeading">Users</h1>
       <button class="btn btn-primary" id="addBtn">+ Add User</button>
     </div>
 
@@ -127,6 +141,11 @@
 
     let allProjects = [];
     let editingEmail = null; // null = new user
+    // When users.html is opened from inside a project (Users link in the
+    // editor hamburger / project nav), `?project=<slug>` scopes the
+    // listing to users with access to that project. Without the param the
+    // page falls back to the global all-users view.
+    const projectScope = new URLSearchParams(window.location.search).get("project") || null;
 
     (async () => {
       me.renderUserChip(document.getElementById("userChip"));
@@ -137,6 +156,17 @@
           ? "You need admin privileges to view this page."
           : "You are not authorized. Ask an admin to add you to the platform.";
         return;
+      }
+
+      if (projectScope) {
+        const enc = encodeURIComponent(projectScope);
+        const headline = document.getElementById("projectHeadline");
+        headline.style.display = "";
+        headline.href = `/${enc}`;
+        me.applyProjectHeadline(projectScope, headline);
+        document.getElementById("usersHeading").textContent = "Project Users";
+        document.title = `Users — ${projectScope} — GT Platform`;
+        document.getElementById("usersSelfLink").href = `/users.html?project=${enc}`;
       }
 
       try {
@@ -152,11 +182,19 @@
       try {
         const res = await fetch("/api/users");
         if (!res.ok) throw new Error(await res.text());
-        const users = await res.json();
+        let users = await res.json();
+        // Project-scoped view: keep platform admins (they can access every
+        // project) and users with an explicit role on this project.
+        if (projectScope) {
+          users = users.filter((u) => u.isAdmin || (u.projects && u.projects[projectScope]));
+        }
         users.sort((a, b) => a.email.localeCompare(b.email));
         tbody.innerHTML = "";
         if (users.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" style="color:var(--ink-subtle); text-align:center;">No users yet.</td></tr>`;
+          const msg = projectScope
+            ? "No users have access to this project yet."
+            : "No users yet.";
+          tbody.innerHTML = `<tr><td colspan="5" style="color:var(--ink-subtle); text-align:center;">${msg}</td></tr>`;
           return;
         }
         for (const u of users) {
@@ -229,6 +267,11 @@
         emailEl.readOnly = false;
         form.reset();
         deleteBtn.style.display = "none";
+        // Adding from a project context: pre-fill the access table with a
+        // row for the current project so the admin only has to set the role.
+        if (projectScope) {
+          projectRows.appendChild(projectRow(projectScope, "viewer"));
+        }
       }
       overlay.classList.add("visible");
     }

@@ -1137,7 +1137,7 @@
         <a id="navModelsLink" href="#">Models</a>
         <a id="navDocumentsLink" href="#">Documents</a>
         <a id="navVideosLink" href="#">Videos</a>
-        <a href="/users.html">Users</a>
+        <a id="navUsersLink" href="#">Users</a>
         <a id="navEditProjectLink" href="#" style="display:none;">Edit Project Information</a>
         <a id="navHomeLink" href="#">Project Home</a>
       </div>
@@ -1758,6 +1758,7 @@
       document.getElementById("navModelsLink").href = `/models/${enc}`;
       document.getElementById("navDocumentsLink").href = `/documents/${enc}`;
       document.getElementById("navVideosLink").href = `/video-upload.html?project=${enc}`;
+      document.getElementById("navUsersLink").href = `/users.html?project=${enc}`;
       document.getElementById("navHomeLink").href = `/${enc}`;
       // Admin-only "Edit Project Information" — href set now, reveal
       // gated on me.isAdmin().

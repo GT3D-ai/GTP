@@ -107,7 +107,7 @@
         { href: `/models/${enc}`, label: "Models" },
         { href: `/documents/${enc}`, label: "Documents" },
         { href: `/video-upload.html?project=${enc}`, label: "Videos" },
-        { href: `/users.html`, label: "Users" },
+        { href: `/users.html?project=${enc}`, label: "Users" },
         { href: `/edit-project.html?project=${enc}`, label: "Edit Project Information" },
         { href: `/${enc}`, label: "Project Home" },
       ];
@@ -215,9 +215,10 @@
           a.textContent = "Videos";
           nav.appendChild(a);
         }
-        if (!nav.querySelector('a[href="/users.html"]')) {
+        if (!nav.querySelector('a[href^="/users.html"]')) {
           const a = document.createElement("a");
-          a.href = "/users.html";
+          const proj = detectProject();
+          a.href = proj ? `/users.html?project=${encodeURIComponent(proj)}` : "/users.html";
           a.textContent = "Users";
           nav.appendChild(a);
         }
