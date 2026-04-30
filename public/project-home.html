@@ -1098,9 +1098,14 @@
       document.getElementById("documentThumbLink").href = `/documents/${enc}`;
       document.getElementById("documentCardOpen").href = `/documents/${enc}`;
 
-      // Kick off all loads in parallel
+      // loadProjectInfo populates the shared cardThumbnails (and applies
+      // cardOrder) — every other card reads from it, so it must finish
+      // first. Otherwise the documents card's early-return (empty docs
+      // + no override) races with project-info and clobbers the editor's
+      // saved thumbnail on reload. Other cards latently race for the
+      // same reason but happen to mask it via their own data fallbacks.
+      await loadProjectInfo();
       await Promise.all([
-        loadProjectInfo(),
         loadMapCard(),
         loadImageCard(),
         loadPlanCard(),
