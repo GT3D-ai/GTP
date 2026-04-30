@@ -3284,6 +3284,19 @@ app.post("/api/share-project-public", async (req, res) => {
       thumbnailUrl,
     });
 
+    // Heads-up to the platform owner — same as the authed share endpoint,
+    // marked isPublicLink so the email reflects there's no identified
+    // sharer to set Reply-To against.
+    emailService.sendShareNotification({
+      project: display,
+      projectUrl,
+      recipientEmail: email,
+      recipientName: name,
+      sharerName: "",
+      sharerEmail: "",
+      isPublicLink: true,
+    }).catch((err) => console.warn("[share-public] notification failed:", err.message));
+
     // Record the per-IP throttle marker only after the share succeeded — if
     // the upsert or invite blew up we don't want to lock the visitor out of
     // retrying. Best-effort write; a marker failure shouldn't fail the
@@ -3375,6 +3388,18 @@ app.post("/api/share-project", requireProjectRole("editor"), async (req, res) =>
       projectUrl,
       thumbnailUrl,
     });
+
+    // Heads-up to the platform owner. Best-effort — log and move on if it
+    // fails so the share itself still reports success.
+    emailService.sendShareNotification({
+      project: display,
+      projectUrl,
+      recipientEmail: email,
+      recipientName: name,
+      sharerName: req.user?.name || "",
+      sharerEmail: req.user?.email || "",
+      isPublicLink: false,
+    }).catch((err) => console.warn("[share] notification failed:", err.message));
 
     res.json({
       success: true,

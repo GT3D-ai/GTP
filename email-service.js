@@ -151,4 +151,67 @@ async function sendContactRequest({ name, company, email }) {
   }
 }
 
-module.exports = { sendShareInvite, sendContactRequest, isEnabled };
+// Heads-up to the platform owner whenever a project is shared (either
+// through the authenticated /api/share-project flow or via the anonymous
+// public link). Best-effort — the caller treats a non-sent result as a
+// log-and-continue, so a hard failure here never breaks the share itself.
+async function sendShareNotification({
+  project,
+  projectUrl,
+  recipientEmail,
+  recipientName,
+  sharerName,
+  sharerEmail,
+  isPublicLink,
+}) {
+  init();
+  if (!sgMail) return { sent: false, reason: "email-not-configured" };
+
+  const sharerLabel = isPublicLink
+    ? "(anonymous public-link share)"
+    : `${sharerName || "Someone"}${sharerEmail ? ` <${sharerEmail}>` : ""}`;
+  const subject = `GTP project shared — ${project}`;
+
+  const text =
+    `${sharerLabel} shared the "${project}" project.\n\n` +
+    `Recipient: ${recipientName || "(no name)"} <${recipientEmail}>\n` +
+    `Project URL: ${projectUrl}\n` +
+    `Time: ${new Date().toISOString()}\n`;
+
+  const html = `
+    <div style="font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #0d0d0d;">
+      <h2 style="margin: 0 0 12px; font-size: 1.125em;">Project shared</h2>
+      <p style="margin: 0 0 16px; color: #4a4a4a;">${escapeHtml(sharerLabel)} shared the <strong>${escapeHtml(project)}</strong> project.</p>
+      <table style="border-collapse: collapse; width: 100%; font-size: 0.95em;">
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Recipient</td><td style="padding: 6px 0;">${escapeHtml(recipientName || "(no name)")} &lt;<a href="mailto:${escapeHtml(recipientEmail)}" style="color: #0a66c2;">${escapeHtml(recipientEmail)}</a>&gt;</td></tr>
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Project</td><td style="padding: 6px 0;"><a href="${escapeHtml(projectUrl)}" style="color: #0a66c2; word-break: break-all;">${escapeHtml(projectUrl)}</a></td></tr>
+        <tr><td style="padding: 6px 12px 6px 0; color: #6b6b6b; vertical-align: top;">Time</td><td style="padding: 6px 0;">${new Date().toISOString()}</td></tr>
+      </table>
+    </div>
+  `;
+
+  const msg = {
+    to: { email: "j@gt3d.com" },
+    from: {
+      email: process.env.SENDGRID_FROM_EMAIL,
+      name: process.env.SENDGRID_FROM_NAME || "Ground Truth 3D",
+    },
+    subject,
+    text,
+    html,
+    replyTo: !isPublicLink && sharerEmail
+      ? { email: sharerEmail, name: sharerName || undefined }
+      : undefined,
+  };
+
+  try {
+    await sgMail.send(msg);
+    return { sent: true };
+  } catch (err) {
+    const detail = err.response?.body || err.message;
+    console.error("[email-service] SendGrid send failed (share-notification):", JSON.stringify(detail));
+    return { sent: false, reason: "send-failed", error: err.message };
+  }
+}
+
+module.exports = { sendShareInvite, sendContactRequest, sendShareNotification, isEnabled };
