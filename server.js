@@ -2683,11 +2683,14 @@ app.get("/api/video/files", requireAdmin, async (req, res) => {
     const prefix = `${project}/_videos/`;
     const [files] = await imageBucket.getFiles({ prefix });
     const videos = files
+      // Skip the _thumbs/ subtree — those are sidecar images for the
+      // videos themselves, not videos we want to list.
       .filter((f) => !f.name.endsWith("/"))
-      .filter((f) => !f.name.endsWith(".meta.json"));
+      .filter((f) => !f.name.endsWith(".meta.json"))
+      .filter((f) => !f.name.startsWith(`${prefix}_thumbs/`));
     const list = await Promise.all(videos.map(async (f) => {
       const meta = await readVideoMeta(f.name);
-      return {
+      const entry = {
         name: f.name,
         displayName: f.name.replace(prefix, ""),
         size: Number(f.metadata.size),
@@ -2696,11 +2699,141 @@ app.get("/api/video/files", requireAdmin, async (req, res) => {
         uploadedBy: meta.uploadedBy || null,
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
       };
+      // Thumbnail is stored as a sibling image under _videos/_thumbs/ and
+      // tracked by GCS path on the meta sidecar (so renames don't break it).
+      // Sign a 15-min URL inline — admins consume the listing immediately.
+      if (meta.thumbnail) {
+        try {
+          const [signed] = await imageBucket.file(meta.thumbnail).getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 15 * 60 * 1000,
+          });
+          entry.thumbnail = meta.thumbnail;
+          entry.thumbnailUrl = signed;
+        } catch (err) {
+          console.warn(`[video] thumbnail signed-url failed for ${meta.thumbnail}:`, err.message);
+        }
+      }
+      return entry;
     }));
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
     res.json(list);
   } catch (err) {
     console.error("List videos error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Inline streaming URL — same signed-URL pattern as download-url, but
+// without the attachment Content-Disposition so a <video src> tag can
+// play it directly in the browser. Admin-only.
+app.get("/api/video/stream-url", requireAdmin, async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+    });
+    res.json({ streamUrl: url });
+  } catch (err) {
+    console.error("Video stream-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set / replace the thumbnail for a video — admin only. Multipart form
+// with `file` (the video's GCS path) and `thumbnail` (the image upload).
+// Stores under _videos/_thumbs/ with a unique-ish basename so an old URL
+// embedded in someone's open tab doesn't accidentally surface a new
+// image, and writes the GCS path onto the video's meta sidecar.
+app.post("/api/admin/video/thumbnail", upload.single("thumbnail"), requireAdmin, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "thumbnail file required" });
+  const filePath = req.body && req.body.file;
+  const tmpPath = req.file.path;
+  try {
+    if (!filePath) return res.status(400).json({ error: "file (video path) required" });
+    if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+    const [exists] = await imageBucket.file(filePath).exists();
+    if (!exists) return res.status(404).json({ error: "Video not found" });
+
+    // Project prefix is everything up to /_videos/. Thumb lands under
+    // {project}/_videos/_thumbs/<videoBase>-<timestamp>.<ext>.
+    const sepIdx = filePath.indexOf(VIDEOS_PREFIX_SEG);
+    const project = filePath.slice(0, sepIdx);
+    const videoBase = filePath.slice(sepIdx + VIDEOS_PREFIX_SEG.length).replace(/\.[^.]+$/, "");
+    const origName = req.file.originalname || "thumb";
+    const extMatch = origName.match(/\.([a-z0-9]+)$/i);
+    const ext = (extMatch && extMatch[1].toLowerCase()) || "jpg";
+    const thumbPath = `${project}/_videos/_thumbs/${videoBase}-${Date.now()}.${ext}`;
+
+    // Best-effort delete of any previous thumbnail before we write the new
+    // sidecar pointer — keeps the bucket from accumulating orphans on
+    // every re-upload. Failure is non-fatal: the meta still gets repointed.
+    const existingMeta = await readVideoMeta(filePath);
+    if (existingMeta.thumbnail && existingMeta.thumbnail !== thumbPath) {
+      try {
+        const old = imageBucket.file(existingMeta.thumbnail);
+        const [oldExists] = await old.exists();
+        if (oldExists) await old.delete();
+      } catch (err) {
+        console.warn(`[video] old thumbnail cleanup failed for ${existingMeta.thumbnail}:`, err.message);
+      }
+    }
+
+    const gcsFile = imageBucket.file(thumbPath);
+    const readStream = fs.createReadStream(tmpPath);
+    const writeStream = gcsFile.createWriteStream({
+      resumable: false,
+      metadata: { contentType: req.file.mimetype || "image/jpeg" },
+    });
+    await new Promise((resolve, reject) => {
+      readStream.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+
+    const newMeta = { ...existingMeta, thumbnail: thumbPath };
+    await writeVideoMeta(filePath, newMeta);
+
+    const [signed] = await gcsFile.getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+    });
+    res.json({ success: true, thumbnail: thumbPath, thumbnailUrl: signed });
+  } catch (err) {
+    console.error("Video thumbnail upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
+});
+
+// Clear the thumbnail for a video — admin only. Removes the sidecar
+// pointer and best-effort deletes the GCS object.
+app.post("/api/admin/video/thumbnail-clear", requireAdmin, async (req, res) => {
+  const { file: filePath } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+  try {
+    const meta = await readVideoMeta(filePath);
+    if (meta.thumbnail) {
+      try {
+        const old = imageBucket.file(meta.thumbnail);
+        const [oldExists] = await old.exists();
+        if (oldExists) await old.delete();
+      } catch (err) {
+        console.warn(`[video] thumbnail-clear cleanup failed:`, err.message);
+      }
+      const newMeta = { ...meta };
+      delete newMeta.thumbnail;
+      await writeVideoMeta(filePath, newMeta);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Video thumbnail-clear error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2790,7 +2923,9 @@ app.post("/api/video/rename", requireAdmin, async (req, res) => {
   }
 });
 
-// Delete a video — admin only. Also removes the sidecar metadata.
+// Delete a video — admin only. Also removes the sidecar metadata and
+// the thumbnail GCS object (if any) so deletes don't leak orphan files
+// into _thumbs/.
 app.post("/api/video/delete", requireAdmin, async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
@@ -2802,13 +2937,22 @@ app.post("/api/video/delete", requireAdmin, async (req, res) => {
     const f = imageBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    // Read meta before deleting it so we know which thumbnail to clean up.
+    const meta = await readVideoMeta(filePath);
     await f.delete();
     console.log(`Deleted video: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
     try {
-      const meta = imageBucket.file(videoMetaPathFor(filePath));
-      const [metaExists] = await meta.exists();
-      if (metaExists) await meta.delete();
+      const metaFile = imageBucket.file(videoMetaPathFor(filePath));
+      const [metaExists] = await metaFile.exists();
+      if (metaExists) await metaFile.delete();
     } catch (e) { /* non-fatal */ }
+    if (meta.thumbnail) {
+      try {
+        const thumb = imageBucket.file(meta.thumbnail);
+        const [thumbExists] = await thumb.exists();
+        if (thumbExists) await thumb.delete();
+      } catch (e) { /* non-fatal */ }
+    }
     res.json({ success: true });
   } catch (err) {
     console.error("Video delete error:", err.message);

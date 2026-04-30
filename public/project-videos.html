@@ -9,6 +9,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
+  <!-- Plyr (MIT) — modern HTML5 player. Loaded from CDN so we don't have to
+       bundle/host it ourselves; the polyfilled bundle keeps the player
+       working on older Safaris. -->
+  <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+  <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
   <script src="/me.js"></script>
   <style>
     /* Mirrors project-images.html — see that page for layout comments. */
@@ -59,8 +64,8 @@
       position: relative;
     }
 
-    /* Videos don't have server-side thumbnails, so the card thumb is a
-       solid placeholder with a centered video glyph. */
+    /* Card thumb shows the admin-uploaded thumbnail when present, or a
+       centered video glyph otherwise. Click to play in the modal. */
     .video-card-thumb {
       width: 100%;
       aspect-ratio: 4 / 3;
@@ -72,8 +77,59 @@
       border-bottom: 1px solid var(--line);
       position: relative;
       overflow: hidden;
+      cursor: pointer;
     }
-    .video-card-thumb svg { width: 64px; height: 64px; }
+    .video-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .video-card-thumb .placeholder-glyph svg { width: 64px; height: 64px; }
+    /* Subtle play overlay so the user knows the thumb is clickable.
+       Always visible (even on hover) so it reads as a play affordance. */
+    .video-card-thumb::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 28px, rgba(0,0,0,0.18) 28px);
+      opacity: 0.85;
+      pointer-events: none;
+      transition: opacity var(--transition);
+    }
+    .video-card-thumb:hover::after { opacity: 1; }
+    .video-card-thumb .play-badge {
+      position: absolute;
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: rgba(13, 13, 13, 0.78);
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+      transition: transform 0.15s, background var(--transition);
+    }
+    .video-card-thumb .play-badge svg { width: 28px; height: 28px; color: #fff; }
+    .video-card-thumb:hover .play-badge { background: var(--accent); transform: scale(1.05); }
+
+    /* Editor-only "Set thumbnail" button in the corner of each thumb. */
+    .video-card .thumb-edit-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      z-index: 4;
+      transition: background var(--transition);
+    }
+    .video-card .thumb-edit-btn:hover { background: var(--accent); }
+    .video-card .thumb-edit-btn:disabled { opacity: 0.55; cursor: progress; }
 
     .video-card-body {
       padding: var(--space-md);
@@ -144,6 +200,57 @@
       text-align: center;
       font-size: 0.9rem;
     }
+
+    /* Full-screen video player modal — same shell as the image lightbox
+       in project-images.html. Plyr renders inside the body. */
+    .video-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .video-modal.visible { display: flex; }
+    .video-modal-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .video-modal-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+    }
+    .video-modal-download, .video-modal-close {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .video-modal-download:hover, .video-modal-close:hover {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .video-modal-close { width: 36px; padding: 0.4rem; font-size: 1.1rem; }
+    .video-modal-body {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #000; min-height: 0; overflow: hidden;
+      padding: 12px;
+    }
+    .video-modal-body .plyr {
+      width: 100%; max-width: 100%; max-height: 100%;
+    }
   </style>
 </head>
 <body class="category-page">
@@ -192,6 +299,23 @@
       </div>
     </div>
   </main>
+
+  <!-- Full-screen video player modal (Plyr renders into #plyrVideo) -->
+  <div class="video-modal" id="videoModal" role="dialog" aria-modal="true">
+    <div class="video-modal-bar">
+      <span class="video-modal-title" id="videoModalTitle"></span>
+      <a class="video-modal-download" id="videoModalDownload" href="#" download>Download</a>
+      <button class="video-modal-close" id="videoModalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="video-modal-body">
+      <video id="plyrVideo" controls playsinline crossorigin></video>
+    </div>
+  </div>
+
+  <!-- Hidden file input for the per-card "Set thumbnail" flow. The card's
+       click handler stamps the active video path onto data-active-file
+       before clicking this. -->
+  <input type="file" id="thumbFileInput" accept="image/*" style="display:none;">
 
   <script>
     // Extract project from URL: /videos/<project-name>
@@ -274,6 +398,9 @@
     }
 
     const VIDEO_GLYPH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>';
+    // Triangle play marker shown over every thumbnail so the user knows
+    // the surface is clickable. White on dark via the .play-badge bg.
+    const PLAY_GLYPH_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
 
     async function loadVideos(project) {
       const isAdmin = !!(window.me && await window.me.isAdmin());
@@ -302,8 +429,20 @@
           const card = document.createElement("div");
           card.className = "video-card";
           card.dataset.file = v.name;
+          card.dataset.display = v.displayName;
+          // Thumbnail: admin-uploaded image when present, otherwise the
+          // gradient placeholder + video glyph. Either way the thumb is
+          // clickable and triggers the player modal.
+          const thumbInner = v.thumbnailUrl
+            ? `<img src="${escapeAttr(v.thumbnailUrl)}" alt="${escapeAttr(v.displayName)}" loading="lazy" draggable="false">`
+            : `<span class="placeholder-glyph">${VIDEO_GLYPH_SVG}</span>`;
+          const editThumbBtnLabel = v.thumbnailUrl ? "Replace thumb" : "Set thumb";
           card.innerHTML = `
-            <div class="video-card-thumb">${VIDEO_GLYPH_SVG}</div>
+            <div class="video-card-thumb" data-action="play">
+              ${thumbInner}
+              <span class="play-badge">${PLAY_GLYPH_SVG}</span>
+              <button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="Upload a card thumbnail for this video">${editThumbBtnLabel}</button>
+            </div>
             <div class="video-card-body">
               <span class="video-card-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>
               <div class="video-card-meta">
@@ -313,6 +452,7 @@
               </div>
               <div class="video-card-actions">
                 <button type="button" class="btn btn-outline btn-sm download-btn">Download</button>
+                ${v.thumbnailUrl ? '<button type="button" class="btn btn-outline btn-sm clear-thumb-btn">Clear thumb</button>' : ""}
                 <button type="button" class="btn btn-outline btn-sm btn-danger delete-btn">Delete</button>
               </div>
             </div>
@@ -322,6 +462,48 @@
 
         wrap.innerHTML = "";
         wrap.appendChild(grid);
+
+        // Click the thumb (anywhere except the Edit-thumb button) → open
+        // the Plyr modal. Edit-thumb takes precedence so admins can swap
+        // a thumbnail without accidentally launching the player.
+        grid.querySelectorAll(".video-card-thumb").forEach((thumb) => {
+          thumb.addEventListener("click", (e) => {
+            const editBtn = e.target.closest('[data-action="edit-thumb"]');
+            if (editBtn) {
+              e.stopPropagation();
+              const card = thumb.closest(".video-card");
+              promptThumbnailUpload(card.dataset.file);
+              return;
+            }
+            const card = thumb.closest(".video-card");
+            openPlayer(card.dataset.file, card.dataset.display);
+          });
+        });
+
+        // Clear-thumbnail per card.
+        grid.querySelectorAll(".clear-thumb-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const card = btn.closest(".video-card");
+            const filePath = card.dataset.file;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = "Clearing…";
+            try {
+              const r = await fetch("/api/admin/video/thumbnail-clear", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: filePath }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadVideos(project);
+            } catch (err) {
+              alert("Clear thumbnail failed: " + err.message);
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
+          });
+        });
 
         // Inline rename — commits via /api/video/rename on blur or Enter.
         grid.querySelectorAll(".video-card-name.editable").forEach((el) => {
@@ -401,6 +583,110 @@
         wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
       }
     }
+
+    // ---- Player modal (Plyr) ----
+    // One Plyr instance shared across all cards. Source swaps on each
+    // open; pause + clear on close so the next open starts clean.
+    const videoModal = document.getElementById("videoModal");
+    const videoModalTitle = document.getElementById("videoModalTitle");
+    const videoModalDownload = document.getElementById("videoModalDownload");
+    const videoModalClose = document.getElementById("videoModalClose");
+    const plyrVideoEl = document.getElementById("plyrVideo");
+    let plyrInstance = null;
+
+    function ensurePlyr() {
+      if (plyrInstance) return plyrInstance;
+      // Plyr global is provided by plyr.polyfilled.js loaded in <head>.
+      plyrInstance = new Plyr(plyrVideoEl, {
+        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "settings", "fullscreen"],
+        settings: ["speed"],
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        keyboard: { focused: true, global: false },
+      });
+      return plyrInstance;
+    }
+
+    async function openPlayer(filePath, displayName) {
+      videoModalTitle.textContent = displayName || "";
+      videoModalDownload.removeAttribute("href");
+      videoModal.classList.add("visible");
+      try {
+        const [streamRes, dlRes] = await Promise.all([
+          fetch(`/api/video/stream-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" }),
+          fetch(`/api/video/download-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" }),
+        ]);
+        if (!streamRes.ok) throw new Error((await streamRes.json().catch(() => ({}))).error || `HTTP ${streamRes.status}`);
+        const { streamUrl } = await streamRes.json();
+        if (dlRes.ok) {
+          const { downloadUrl } = await dlRes.json();
+          videoModalDownload.href = downloadUrl;
+        }
+        const plyr = ensurePlyr();
+        plyr.source = {
+          type: "video",
+          title: displayName || "",
+          sources: [{ src: streamUrl }],
+        };
+        // Auto-play once metadata is ready. If the browser blocks the
+        // autoplay (e.g. no user gesture), Plyr's play-large overlay
+        // remains and the user can click it.
+        plyr.play().catch(() => {});
+      } catch (err) {
+        alert("Could not load video: " + err.message);
+        closePlayer();
+      }
+    }
+
+    function closePlayer() {
+      videoModal.classList.remove("visible");
+      if (plyrInstance) {
+        try { plyrInstance.pause(); } catch {}
+        try { plyrInstance.source = { type: "video", sources: [] }; } catch {}
+      }
+    }
+
+    videoModalClose.addEventListener("click", closePlayer);
+    videoModal.addEventListener("click", (e) => {
+      // Click on the dark border (outside the bar / body) closes the modal.
+      if (e.target === videoModal) closePlayer();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && videoModal.classList.contains("visible")) closePlayer();
+    });
+
+    // ---- Thumbnail upload ----
+    // The hidden file input is reused for every card. We stash the
+    // currently-edited video path on the input and read it back when
+    // the user picks a file. Re-rendering after success refreshes the
+    // signed thumbnail URL on the card.
+    const thumbFileInput = document.getElementById("thumbFileInput");
+    function promptThumbnailUpload(filePath) {
+      thumbFileInput.dataset.activeFile = filePath;
+      thumbFileInput.value = "";
+      thumbFileInput.click();
+    }
+    thumbFileInput.addEventListener("change", async () => {
+      const filePath = thumbFileInput.dataset.activeFile;
+      const file = thumbFileInput.files && thumbFileInput.files[0];
+      if (!filePath || !file) return;
+      const fd = new FormData();
+      fd.append("file", filePath);
+      fd.append("thumbnail", file);
+      try {
+        const r = await fetch("/api/admin/video/thumbnail", {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+        loadVideos(project);
+      } catch (err) {
+        alert("Thumbnail upload failed: " + err.message);
+      } finally {
+        thumbFileInput.value = "";
+        delete thumbFileInput.dataset.activeFile;
+      }
+    });
 
     // Mobile hamburger menu — toggle, click-outside, Escape to close
     (function () {
