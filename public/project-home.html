@@ -1346,25 +1346,25 @@
       }
     }
 
-    // ---- Document card: most recently uploaded unhidden document ----
+    // ---- Document card: most recently uploaded document the caller is
+    // allowed to see. The server filters per role: viewers only get
+    // visibility=public docs; admins/editors get everything. The card
+    // surfaces the most recent of whatever came back so admins can see
+    // their own private uploads at a glance, and viewers only see what's
+    // been published to them.
     async function loadDocumentCard() {
       try {
         const res = await fetch(`/api/document/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const files = await res.json();
-        // Admin callers receive private docs too (with a `visibility` field).
-        // Filter them out — the card always reflects what a non-admin viewer
-        // would see. Non-admin responses omit the field, so unfiltered entries
-        // pass through.
-        const visibleFiles = files.filter((d) => !d.visibility || d.visibility === "public");
-        if (visibleFiles.length === 0 && !cardThumbnails.documents) {
+        if (files.length === 0 && !cardThumbnails.documents) {
           document.getElementById("documentCardTitle").textContent = "No documents yet";
           document.getElementById("documentCardMeta").innerHTML = '<span class="skeleton">Uploaded documents will appear here.</span>';
           return;
         }
         // Server already sorts by uploadedAt desc, but re-sort defensively.
-        visibleFiles.sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
-        const latest = visibleFiles[0];
+        files.sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
+        const latest = files[0];
         if (latest) {
           document.getElementById("documentCardTitle").textContent = latest.displayName;
           document.getElementById("documentCardMeta").textContent =
