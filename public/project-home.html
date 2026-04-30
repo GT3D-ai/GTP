@@ -546,6 +546,69 @@
     .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
     .skeleton { color: var(--ink-subtle); font-style: italic; font-size: 0.875rem; }
 
+    /* Document card: when the latest doc is a PDF and the caller can
+       view it, the thumbnail anchor + title double as a "open viewer"
+       affordance. The title gets a hover underline so it reads as a
+       link rather than plain text. */
+    #documentCardTitle.is-pdf-link { cursor: pointer; color: var(--ink); }
+    #documentCardTitle.is-pdf-link:hover { color: var(--accent); text-decoration: underline; }
+
+    /* Inline PDF viewer modal — same shell as project-plans /
+       project-documents. Native browser PDF rendering via <iframe>. */
+    .pdf-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1100;
+      display: none;
+      flex-direction: column;
+    }
+    .pdf-modal.visible { display: flex; }
+    .pdf-modal-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .pdf-modal-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+    }
+    .pdf-modal-download, .pdf-modal-close {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .pdf-modal-download:hover, .pdf-modal-close:hover {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .pdf-modal-close { width: 36px; padding: 0.4rem; font-size: 1.1rem; }
+    .pdf-modal-body { flex: 1; display: flex; align-items: center; justify-content: center; background: #3b4048; min-height: 0; }
+    .pdf-modal-body iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+    .pdf-modal-body .no-preview {
+      text-align: center; color: rgba(255, 255, 255, 0.8);
+      padding: var(--space-lg);
+      font-size: 0.95rem;
+    }
+    .pdf-modal-body .no-preview p { margin: 0 0 var(--space-md); }
+    .pdf-modal-loading {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.85rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
     /* Editor-mode nav (body.editor-nav) styles live in app.css and are
        shared with the per-asset showcase pages. */
   </style>
@@ -830,6 +893,17 @@
         <button class="btn btn-primary" id="shareModalSubmit" type="button">Share</button>
       </div>
     </div>
+  </div>
+
+  <!-- Inline PDF viewer modal (used by the document card when the
+       latest doc is a PDF and the caller is signed in). -->
+  <div class="pdf-modal" id="pdfModal" role="dialog" aria-modal="true">
+    <div class="pdf-modal-bar">
+      <span class="pdf-modal-title" id="pdfTitle"></span>
+      <a class="pdf-modal-download" id="pdfDownload" href="#" download>Download</a>
+      <button class="pdf-modal-close" id="pdfClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="pdf-modal-body" id="pdfBody"></div>
   </div>
 
   <script>
@@ -1388,10 +1462,47 @@
         // Server already sorts by uploadedAt desc, but re-sort defensively.
         files.sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
         const latest = files[0];
+        const titleEl = document.getElementById("documentCardTitle");
+        const thumbLink = document.getElementById("documentThumbLink");
         if (latest) {
-          document.getElementById("documentCardTitle").textContent = latest.displayName;
+          titleEl.textContent = latest.displayName;
           document.getElementById("documentCardMeta").textContent =
             `${formatDate(latest.uploadedAt || latest.updated)} · ${formatSize(latest.size)}`;
+
+          // PDF + signed-in viewer → make the thumbnail link AND the
+          // featured doc name double as "open inline viewer" affordances.
+          // For everyone else (anonymous viewers, non-PDF latest doc),
+          // they keep the default behavior of navigating to /documents.
+          const me = window.me ? await window.me.getMe() : { email: null };
+          const isSignedIn = !!me.email;
+          const isPdf = isPdfDoc(latest);
+          if (isSignedIn && isPdf) {
+            const filePath = latest.name;
+            const displayName = latest.displayName;
+            // Override the thumbnail anchor: stop the default /documents
+            // navigation and open the inline viewer instead.
+            if (thumbLink && !thumbLink.dataset.viewerWired) {
+              thumbLink.addEventListener("click", (e) => {
+                e.preventDefault();
+                openPdfPreview(filePath, displayName);
+              });
+              thumbLink.dataset.viewerWired = "1";
+            }
+            // Make the title look + act like a link.
+            titleEl.classList.add("is-pdf-link");
+            titleEl.setAttribute("role", "button");
+            titleEl.setAttribute("tabindex", "0");
+            if (!titleEl.dataset.viewerWired) {
+              titleEl.addEventListener("click", () => openPdfPreview(filePath, displayName));
+              titleEl.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openPdfPreview(filePath, displayName);
+                }
+              });
+              titleEl.dataset.viewerWired = "1";
+            }
+          }
         }
         // Editor override → use a 2D image; otherwise leave the placeholder
         // glyph since documents have no native server-side thumbnails.
@@ -1403,6 +1514,78 @@
           `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
       }
     }
+    function isPdfDoc(d) {
+      if ((d.contentType || "").toLowerCase() === "application/pdf") return true;
+      const ext = String(d.displayName || d.name || "").match(/\.([a-z0-9]+)$/i);
+      return !!(ext && ext[1].toLowerCase() === "pdf");
+    }
+
+    // Minimal HTML/attribute escapers for the PDF modal below — the
+    // signed GCS URL contains `&` and `?` so it must be attribute-safe.
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+
+    // ---- Inline PDF viewer modal (used by the document card) ----
+    // Mirrors project-documents.html. Hands rendering to the browser's
+    // native PDF viewer via <iframe>. /api/document/view-url is IAP-
+    // gated and respects visibility, so only signed-in callers who can
+    // read the document end up with a working signed URL.
+    const pdfModal = document.getElementById("pdfModal");
+    const pdfBody = document.getElementById("pdfBody");
+    const pdfTitle = document.getElementById("pdfTitle");
+    const pdfClose = document.getElementById("pdfClose");
+    const pdfDownload = document.getElementById("pdfDownload");
+
+    async function openPdfPreview(filePath, displayName) {
+      pdfTitle.textContent = displayName;
+      pdfBody.innerHTML = '<div class="pdf-modal-loading">Loading…</div>';
+      pdfDownload.removeAttribute("href");
+      pdfModal.classList.add("visible");
+      document.body.style.overflow = "hidden";
+
+      try {
+        const res = await fetch(`/api/document/view-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        const { viewUrl } = await res.json();
+        pdfBody.innerHTML = `<iframe src="${escapeAttr(viewUrl)}#toolbar=1&navpanes=0" title="${escapeAttr(displayName)}"></iframe>`;
+
+        try {
+          const isAdminCaller = !!(window.me && await window.me.isAdmin());
+          const dlUrl = isAdminCaller
+            ? `/api/admin/document/download-url?file=${encodeURIComponent(filePath)}`
+            : `/api/document/download-url?file=${encodeURIComponent(filePath)}`;
+          const dl = await fetch(dlUrl, { credentials: "same-origin" });
+          if (dl.ok) {
+            const { downloadUrl } = await dl.json();
+            pdfDownload.href = downloadUrl;
+          } else {
+            pdfDownload.href = viewUrl;
+          }
+        } catch {
+          pdfDownload.href = viewUrl;
+        }
+      } catch (err) {
+        pdfBody.innerHTML = `<div class="no-preview"><p>Failed to load preview: ${escapeHtml(err.message)}</p></div>`;
+      }
+    }
+
+    function closePdfPreview() {
+      pdfModal.classList.remove("visible");
+      pdfBody.innerHTML = "";
+      document.body.style.overflow = "";
+    }
+
+    pdfClose.addEventListener("click", closePdfPreview);
+    pdfModal.addEventListener("click", (e) => {
+      if (e.target === pdfModal) closePdfPreview();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && pdfModal.classList.contains("visible")) closePdfPreview();
+    });
 
     // ---- Thumbnail picker modal ----
     const thumbModal = document.getElementById("thumbModal");

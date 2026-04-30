@@ -142,6 +142,63 @@
     }
     .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
     .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+
+    /* Inline PDF viewer modal — same shell as project-plans.html. The
+       <iframe> hands rendering to the browser's built-in PDF viewer
+       (PDFium / WebKit / etc.); no PDF.js dependency. */
+    .pdf-modal {
+      position: fixed;
+      inset: 0;
+      background: var(--ink);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .pdf-modal.visible { display: flex; }
+    .pdf-modal-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .pdf-modal-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+    }
+    .pdf-modal-download, .pdf-modal-close {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .pdf-modal-download:hover, .pdf-modal-close:hover {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .pdf-modal-close { width: 36px; padding: 0.4rem; font-size: 1.1rem; }
+    .pdf-modal-body { flex: 1; display: flex; align-items: center; justify-content: center; background: #3b4048; min-height: 0; }
+    .pdf-modal-body iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+    .pdf-modal-body .no-preview {
+      text-align: center; color: rgba(255, 255, 255, 0.8);
+      padding: var(--space-lg);
+      font-size: 0.95rem;
+    }
+    .pdf-modal-body .no-preview p { margin: 0 0 var(--space-md); }
+    .pdf-modal-loading {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.85rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
   </style>
 </head>
 <body class="category-page">
@@ -188,6 +245,16 @@
       </div>
     </div>
   </main>
+
+  <!-- Inline PDF viewer modal -->
+  <div class="pdf-modal" id="pdfModal" role="dialog" aria-modal="true">
+    <div class="pdf-modal-bar">
+      <span class="pdf-modal-title" id="pdfTitle"></span>
+      <a class="pdf-modal-download" id="pdfDownload" href="#" download>Download</a>
+      <button class="pdf-modal-close" id="pdfClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="pdf-modal-body" id="pdfBody"></div>
+  </div>
 
   <script>
     let project = null;
@@ -279,9 +346,19 @@
       const m = String(name || "").match(/\.([a-z0-9]+)$/i);
       return m ? m[1].toUpperCase() : "FILE";
     }
+    function isPdfDoc(d) {
+      if ((d.contentType || "").toLowerCase() === "application/pdf") return true;
+      const ext = String(d.displayName || d.name || "").match(/\.([a-z0-9]+)$/i);
+      return !!(ext && ext[1].toLowerCase() === "pdf");
+    }
 
     async function loadDocuments(project) {
-      const isAdmin = !!(window.me && await window.me.isAdmin());
+      const me = window.me ? await window.me.getMe() : { email: null, isAdmin: false };
+      // Non-anonymous = any signed-in role (admin/editor/viewer). The
+      // /api/document/view-url endpoint lives behind IAP and rejects
+      // anonymous callers, so the "View" button is gated to mirror.
+      const isSignedIn = !!me.email;
+      const isAdmin = !!me.isAdmin;
       try {
         // Admins must hit the admin-routed endpoint — the public listing
         // sits behind the no-IAP backend (so /documents/<project> is
@@ -342,10 +419,18 @@
                 </select>
               </td>`
             : `<td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>`;
+          // PDF docs get an inline "View" button when the caller is
+          // signed in. /api/document/view-url is IAP-gated so anonymous
+          // viewers shouldn't see the button — it would 401.
+          const viewBtn = (isSignedIn && isPdfDoc(d))
+            ? `<button type="button" class="doc-action-btn doc-view-btn">View</button>`
+            : "";
           const actionsCell = isAdmin
-            ? `<button type="button" class="doc-action-btn primary doc-download-btn">Download</button>
+            ? `${viewBtn}
+               <button type="button" class="doc-action-btn primary doc-download-btn">Download</button>
                <button type="button" class="doc-action-btn danger doc-delete-btn">Delete</button>`
-            : `<button type="button" class="doc-action-btn primary doc-download-btn">Download</button>`;
+            : `${viewBtn}
+               <button type="button" class="doc-action-btn primary doc-download-btn">Download</button>`;
           tr.innerHTML = `
             <td class="col-name">${nameCell}</td>
             <td class="col-type">${typeLabel}</td>
@@ -358,6 +443,18 @@
 
         wrap.innerHTML = "";
         wrap.appendChild(table);
+
+        // View (PDFs only, signed-in callers only). Opens an inline
+        // <iframe> against the IAP-gated /api/document/view-url; the
+        // browser's native PDF viewer renders without forcing a download.
+        table.querySelectorAll(".doc-view-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const tr = btn.closest("tr");
+            const filePath = tr.dataset.file;
+            const displayName = tr.querySelector(".doc-name")?.textContent || filePath;
+            openPdfPreview(filePath, displayName);
+          });
+        });
 
         // Download — admins go through the admin-routed download-url
         // endpoint so they can download private docs (the public route
@@ -472,6 +569,66 @@
         wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
       }
     }
+
+    // ---- Inline PDF viewer modal ----
+    // Hands rendering to the browser's built-in PDF viewer via an
+    // <iframe> pointed at a signed inline URL. /api/document/view-url
+    // is IAP-gated and respects visibility, so only signed-in callers
+    // who can read the document end up with a working URL.
+    const pdfModal = document.getElementById("pdfModal");
+    const pdfBody = document.getElementById("pdfBody");
+    const pdfTitle = document.getElementById("pdfTitle");
+    const pdfClose = document.getElementById("pdfClose");
+    const pdfDownload = document.getElementById("pdfDownload");
+
+    async function openPdfPreview(filePath, displayName) {
+      pdfTitle.textContent = displayName;
+      pdfBody.innerHTML = '<div class="pdf-modal-loading">Loading…</div>';
+      pdfDownload.removeAttribute("href");
+      pdfModal.classList.add("visible");
+      document.body.style.overflow = "hidden";
+
+      try {
+        const res = await fetch(`/api/document/view-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        const { viewUrl } = await res.json();
+        pdfBody.innerHTML = `<iframe src="${escapeAttr(viewUrl)}#toolbar=1&navpanes=0" title="${escapeAttr(displayName)}"></iframe>`;
+
+        // Wire the toolbar Download button to a proper attachment URL
+        // (admins via the admin route so private docs work too).
+        try {
+          const isAdminCaller = !!(window.me && await window.me.isAdmin());
+          const dlUrl = isAdminCaller
+            ? `/api/admin/document/download-url?file=${encodeURIComponent(filePath)}`
+            : `/api/document/download-url?file=${encodeURIComponent(filePath)}`;
+          const dl = await fetch(dlUrl, { credentials: "same-origin" });
+          if (dl.ok) {
+            const { downloadUrl } = await dl.json();
+            pdfDownload.href = downloadUrl;
+          } else {
+            pdfDownload.href = viewUrl;
+          }
+        } catch {
+          pdfDownload.href = viewUrl;
+        }
+      } catch (err) {
+        pdfBody.innerHTML = `<div class="no-preview"><p>Failed to load preview: ${escapeHtml(err.message)}</p></div>`;
+      }
+    }
+
+    function closePdfPreview() {
+      pdfModal.classList.remove("visible");
+      pdfBody.innerHTML = "";
+      document.body.style.overflow = "";
+    }
+
+    pdfClose.addEventListener("click", closePdfPreview);
+    pdfModal.addEventListener("click", (e) => {
+      if (e.target === pdfModal) closePdfPreview();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && pdfModal.classList.contains("visible")) closePdfPreview();
+    });
 
     // Mobile hamburger menu — toggle, click-outside, Escape to close
     (function () {

@@ -2753,6 +2753,37 @@ app.get("/api/document/download-url", async (req, res) => {
   }
 });
 
+// Signed inline-view URL for a document — for non-anonymous viewers
+// (any signed-in role) so the browser can render PDFs in an <iframe>
+// without forcing a download. Kept OFF the public URL-map matcher so
+// IAP enforces sign-in before the request reaches us; if somehow an
+// anonymous request slips through (req.user null), we 401 explicitly.
+// Visibility is still respected: non-admin viewers can only view
+// documents flagged visibility=public.
+app.get("/api/document/view-url", async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Sign in to view documents" });
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
+    if (!req.user.isAdmin) {
+      const meta = await readDocumentMeta(filePath);
+      if (meta.visibility !== "public") {
+        return res.status(403).json({ error: "This document is private" });
+      }
+    }
+    const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+    });
+    res.json({ viewUrl: url });
+  } catch (err) {
+    console.error("Document view-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Rename a document — admin only. GCS has no rename, so copy + delete on
 // both the file and its sidecar metadata. The new name must stay inside
 // the same project's _documents/ folder.
