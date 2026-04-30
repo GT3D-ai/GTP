@@ -280,6 +280,15 @@ app.get("/documents/:project", async (req, res) => {
   res.sendFile(path.join(__dirname, "public", "project-documents.html"));
 });
 
+// Per-project videos listing: /videos/<project-name>. Page renders for
+// anyone (so the URL doesn't 404 when an editor/admin shares it), but
+// /api/video/files is admin-only and the page surfaces an "admin-only"
+// notice for non-admin visitors instead of firing the request.
+app.get("/videos/:project", async (req, res) => {
+  if (await maybeRedirectCanonical(req, res, "/videos", req.params.project)) return;
+  res.sendFile(path.join(__dirname, "public", "project-videos.html"));
+});
+
 // Public-view mirror of the project home page at /public/<project-name>.
 // This is the stable share URL the URL map routes to the no-IAP backend so
 // invited viewers can land on it without passing IAP. Serves the same

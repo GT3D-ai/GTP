@@ -654,13 +654,13 @@
                 </svg>
                 <span>Documents</span>
               </a>
-              <span class="placeholder-link" id="mainVideosLink" title="Coming soon" aria-disabled="true">
+              <a href="#" id="mainVideosLink">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polygon points="23 7 16 12 23 17 23 7"/>
                   <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                 </svg>
                 <span>Videos</span>
-              </span>
+              </a>
               <a href="#" id="mainPointcloudsLink">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="5" cy="6" r="1"/>
@@ -991,7 +991,7 @@
             <a href="/plans/${enc}">2D Plans</a>
             <a href="/models/${enc}">Models</a>
             <a href="/documents/${enc}">Documents</a>
-            <a href="/video-upload.html?project=${enc}">Videos</a>
+            <a href="/videos/${enc}">Videos</a>
             <a href="/users.html?project=${enc}">Users</a>
             ${editProjectItem}
             <a href="/${enc}">Project Home</a>
@@ -1005,6 +1005,7 @@
       document.getElementById("mainPlansLink").href = `/plans/${enc}`;
       document.getElementById("mainModelsLink").href = `/models/${enc}`;
       document.getElementById("mainDocumentsLink").href = `/documents/${enc}`;
+      document.getElementById("mainVideosLink").href = `/videos/${enc}`;
       document.getElementById("mainPointcloudsLink").href = `/pointclouds/${enc}`;
 
       // Map card links (default open map; level param updated later)

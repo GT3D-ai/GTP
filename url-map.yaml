@@ -19,6 +19,7 @@ pathMatchers:
     - /plans/*
     - /images/*
     - /documents/*
+    - /videos/*
     - /model-viewer.html
     - /tokens.css
     - /app.css
