@@ -110,26 +110,124 @@
     .video-card-thumb .play-badge svg { width: 28px; height: 28px; color: #fff; }
     .video-card-thumb:hover .play-badge { background: var(--accent); transform: scale(1.05); }
 
-    /* Editor-only "Set thumbnail" button in the corner of each thumb. */
+    /* Admin-only "Set thumbnail" pencil in the lower-left of the thumb,
+       matching the images / plans / models / pointclouds pattern. The
+       upper-right is reserved for the hide-toggle eye. */
     .video-card .thumb-edit-btn {
       position: absolute;
-      top: 8px;
-      right: 8px;
+      bottom: 8px;
+      left: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       background: rgba(13, 13, 13, 0.7);
       color: #fff;
       border: none;
+      border-radius: 6px;
+      padding: 0;
+      cursor: pointer;
+      z-index: 6;
+      transition: background var(--transition), transform 0.1s;
+    }
+    .video-card .thumb-edit-btn:hover { background: var(--accent); }
+    .video-card .thumb-edit-btn:active { transform: scale(0.94); }
+    .video-card .thumb-edit-btn:disabled { opacity: 0.55; cursor: progress; }
+    .video-card .thumb-edit-btn svg { display: block; }
+
+    /* Admin hide/unhide eye in the upper-right of each card. Hidden
+       videos get a "Hidden" badge plus reduced opacity on the thumbnail. */
+    .video-card .hide-toggle-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0;
+      cursor: pointer;
+      z-index: 6;
+      transition: background var(--transition), transform 0.1s;
+    }
+    .video-card .hide-toggle-btn:hover { background: var(--accent); }
+    .video-card .hide-toggle-btn:active { transform: scale(0.94); }
+    .video-card .hide-toggle-btn:disabled { opacity: 0.55; cursor: progress; }
+    .video-card .hide-toggle-btn svg { display: block; }
+    .video-card.is-hidden .video-card-thumb { opacity: 0.45; }
+    .video-card.is-hidden .video-card-thumb::before {
+      content: "Hidden";
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(13, 13, 13, 0.82);
+      color: #fff;
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border-radius: 3px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Drag-to-reorder handle in the upper-left. Revealed via .can-reorder. */
+    .video-card .drag-handle {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 26px;
+      height: 26px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 13, 13, 0.7);
+      color: #fff;
       border-radius: 4px;
-      padding: 5px 9px;
-      font-size: 0.68rem;
+      cursor: grab;
+      z-index: 7;
+      user-select: none;
+      font-size: 0.95rem;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    .videos-grid.can-reorder .video-card .drag-handle { display: flex; }
+    .video-card .drag-handle:active { cursor: grabbing; }
+    .video-card.dragging { opacity: 0.4; }
+    .video-card.drop-target { box-shadow: inset 4px 0 0 var(--accent); }
+    .video-card.drop-target.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
+
+    /* Reset-order button + order-status row, placed in the page-head's
+       head-actions container next to the existing "+ Upload videos" link. */
+    .reset-order-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       cursor: pointer;
-      z-index: 4;
-      transition: background var(--transition);
+      padding: 0;
     }
-    .video-card .thumb-edit-btn:hover { background: var(--accent); }
-    .video-card .thumb-edit-btn:disabled { opacity: 0.55; cursor: progress; }
+    .reset-order-btn:hover { text-decoration: underline; }
+    .reset-order-btn:disabled { opacity: 0.5; cursor: progress; text-decoration: none; }
+    .order-status {
+      font-size: 0.72rem;
+      color: var(--ink-muted);
+      margin: 0 0 var(--space-sm);
+      min-height: 1.1em;
+    }
+    .order-status.error { color: var(--danger); }
+    .order-status.ok { color: var(--success); }
 
     .video-card-body {
       padding: var(--space-md);
@@ -289,9 +387,12 @@
     <div class="page-head">
       <h1>Videos</h1>
       <div class="head-actions">
+        <button type="button" class="reset-order-btn" id="resetOrderBtn" style="display:none;" title="Clear the manual order so tiles fall back to upload date (newest first)">Reset to chronological</button>
         <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload videos</a>
       </div>
     </div>
+
+    <div class="order-status" id="orderStatus"></div>
 
     <div id="videosWrap">
       <div class="placeholder">
@@ -401,6 +502,27 @@
     // Triangle play marker shown over every thumbnail so the user knows
     // the surface is clickable. White on dark via the .play-badge bg.
     const PLAY_GLYPH_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
+    // Hide-toggle eye + pencil for the editor overlays.
+    const EYE_OPEN_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const EYE_OFF_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.5 19.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a19.5 19.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    const PENCIL_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+
+    // Module-level state — persists across loadVideos re-renders.
+    let projectInfo = {};
+
+    function applyOrder(files, order) {
+      const byName = new Map(files.map((f) => [f.name, f]));
+      const ordered = [];
+      const seen = new Set();
+      (order || []).forEach((name) => {
+        const f = byName.get(name);
+        if (f) { ordered.push(f); seen.add(name); }
+      });
+      const remaining = files
+        .filter((f) => !seen.has(f.name))
+        .sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
+      return ordered.concat(remaining);
+    }
 
     async function loadVideos(project) {
       const isAdmin = !!(window.me && await window.me.isAdmin());
@@ -411,23 +533,28 @@
         return;
       }
       try {
-        const res = await fetch(`/api/video/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
-        const videos = await res.json();
-        // Server already sorts uploadedAt desc, but re-sort defensively.
-        videos.sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
+        const [filesRes, infoRes] = await Promise.all([
+          fetch(`/api/video/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" }),
+          fetch(`/api/project-info?project=${encodeURIComponent(project)}`),
+        ]);
+        if (!filesRes.ok) throw new Error((await filesRes.json().catch(() => ({}))).error || `HTTP ${filesRes.status}`);
+        const videos = await filesRes.json();
+        projectInfo = infoRes.ok ? await infoRes.json() : { videoOrder: [] };
 
         if (videos.length === 0) {
           wrap.innerHTML = '<div class="placeholder"><div class="placeholder-icon">&#127916;</div><p>No videos uploaded for this project yet.</p></div>';
           return;
         }
 
+        const ordered = applyOrder(videos, projectInfo.videoOrder);
+
         const grid = document.createElement("div");
         grid.className = "videos-grid";
+        grid.id = "videosGrid";
 
-        videos.forEach((v) => {
+        ordered.forEach((v) => {
           const card = document.createElement("div");
-          card.className = "video-card";
+          card.className = "video-card" + (v.hidden ? " is-hidden" : "");
           card.dataset.file = v.name;
           card.dataset.display = v.displayName;
           // Thumbnail: admin-uploaded image when present, otherwise the
@@ -436,13 +563,14 @@
           const thumbInner = v.thumbnailUrl
             ? `<img src="${escapeAttr(v.thumbnailUrl)}" alt="${escapeAttr(v.displayName)}" loading="lazy" draggable="false">`
             : `<span class="placeholder-glyph">${VIDEO_GLYPH_SVG}</span>`;
-          const editThumbBtnLabel = v.thumbnailUrl ? "Replace thumb" : "Set thumb";
           card.innerHTML = `
+            <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="video-card-thumb" data-action="play">
               ${thumbInner}
               <span class="play-badge">${PLAY_GLYPH_SVG}</span>
-              <button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="Upload a card thumbnail for this video">${editThumbBtnLabel}</button>
+              <button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}" aria-label="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}">${PENCIL_SVG}</button>
             </div>
+            <button type="button" class="hide-toggle-btn" data-file="${escapeAttr(v.name)}" data-hidden="${v.hidden ? "1" : "0"}" title="${v.hidden ? "Unhide video" : "Hide video"}" aria-label="${v.hidden ? "Unhide video" : "Hide video"}">${v.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>
             <div class="video-card-body">
               <span class="video-card-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>
               <div class="video-card-meta">
@@ -462,6 +590,34 @@
 
         wrap.innerHTML = "";
         wrap.appendChild(grid);
+
+        // Hide / unhide toggle.
+        grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const wasHidden = btn.dataset.hidden === "1";
+            btn.disabled = true;
+            try {
+              const r = await fetch("/api/video/visibility", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              loadVideos(project);
+            } catch (err) {
+              alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);
+              btn.disabled = false;
+            }
+          });
+        });
+
+        // Enable drag-to-reorder for admins (the only callers that reach
+        // this point; the non-admin notice returned above).
+        enableReorder(grid);
+        const resetBtn = document.getElementById("resetOrderBtn");
+        resetBtn.style.display = (projectInfo.videoOrder && projectInfo.videoOrder.length > 0) ? "" : "none";
 
         // Click the thumb (anywhere except the Edit-thumb button) → open
         // the Plyr modal. Edit-thumb takes precedence so admins can swap
@@ -583,6 +739,116 @@
         wrap.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
       }
     }
+
+    // ---- Drag-to-reorder (admin only — videos are admin-only) ----
+    let draggingCard = null;
+    let dropTargetCard = null;
+    let dropAfter = false;
+
+    function setOrderStatus(text, kind) {
+      const el = document.getElementById("orderStatus");
+      el.textContent = text || "";
+      el.className = "order-status" + (kind ? " " + kind : "");
+    }
+    function clearDropTarget() {
+      if (dropTargetCard) {
+        dropTargetCard.classList.remove("drop-target", "drop-after");
+        dropTargetCard = null;
+      }
+      dropAfter = false;
+    }
+    function enableReorder(grid) {
+      grid.classList.add("can-reorder");
+      grid.querySelectorAll(".video-card").forEach((card) => {
+        card.draggable = true;
+        card.addEventListener("dragstart", (e) => {
+          draggingCard = card;
+          card.classList.add("dragging");
+          try { e.dataTransfer.setData("text/plain", card.dataset.file); } catch {}
+          e.dataTransfer.effectAllowed = "move";
+        });
+        card.addEventListener("dragend", async () => {
+          card.classList.remove("dragging");
+          clearDropTarget();
+          if (!draggingCard) return;
+          draggingCard = null;
+          await persistOrder();
+        });
+        card.addEventListener("dragover", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const rect = card.getBoundingClientRect();
+          dropAfter = (e.clientX - rect.left) > rect.width / 2;
+          if (dropTargetCard !== card || card.classList.contains("drop-after") !== dropAfter) {
+            clearDropTarget();
+            dropTargetCard = card;
+            card.classList.add("drop-target");
+            if (dropAfter) card.classList.add("drop-after");
+          }
+        });
+        card.addEventListener("dragleave", (e) => {
+          if (e.target === card && dropTargetCard === card) clearDropTarget();
+        });
+        card.addEventListener("drop", (e) => {
+          if (!draggingCard || card === draggingCard) return;
+          e.preventDefault();
+          if (dropAfter && card.nextSibling) grid.insertBefore(draggingCard, card.nextSibling);
+          else if (dropAfter) grid.appendChild(draggingCard);
+          else grid.insertBefore(draggingCard, card);
+          clearDropTarget();
+        });
+      });
+    }
+    async function persistOrder() {
+      const grid = document.getElementById("videosGrid");
+      if (!grid) return;
+      const order = Array.from(grid.querySelectorAll(".video-card")).map((c) => c.dataset.file);
+      setOrderStatus("Saving order…");
+      try {
+        const r = await fetch("/api/video/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ project, order }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+        const data = await r.json();
+        projectInfo.videoOrder = data.videoOrder || [];
+        setOrderStatus("Order saved.", "ok");
+        document.getElementById("resetOrderBtn").style.display =
+          (projectInfo.videoOrder && projectInfo.videoOrder.length > 0) ? "" : "none";
+        setTimeout(() => setOrderStatus(""), 1500);
+      } catch (err) {
+        setOrderStatus("Save failed: " + err.message, "error");
+      }
+    }
+
+    // ---- Reset-order button (admin only, revealed by loadVideos) ----
+    document.getElementById("resetOrderBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("resetOrderBtn");
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = "Resetting…";
+      setOrderStatus("Resetting order…");
+      try {
+        const r = await fetch("/api/video/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ project, order: [] }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+        projectInfo.videoOrder = [];
+        setOrderStatus("Order cleared — back to chronological.", "ok");
+        setTimeout(() => setOrderStatus(""), 1500);
+        await loadVideos(project);
+      } catch (err) {
+        setOrderStatus("Reset failed: " + err.message, "error");
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
 
     // ---- Player modal (Plyr) ----
     // One Plyr instance shared across all cards. Source swaps on each

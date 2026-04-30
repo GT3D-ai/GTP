@@ -2898,6 +2898,7 @@ app.get("/api/video/files", requireAdmin, async (req, res) => {
         contentType: f.metadata.contentType,
         uploadedBy: meta.uploadedBy || null,
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+        hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
       };
       // Thumbnail is stored as a sibling image under _videos/_thumbs/ and
       // tracked by GCS path on the meta sidecar (so renames don't break it).
@@ -2921,6 +2922,57 @@ app.get("/api/video/files", requireAdmin, async (req, res) => {
     res.json(list);
   } catch (err) {
     console.error("List videos error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: toggle the hidden flag on a video. Stored on GCS custom
+// metadata so the listing's `hidden` field above reflects it directly.
+app.post("/api/video/visibility", requireAdmin, async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+  if (filePath.endsWith(".meta.json")) return res.status(400).json({ error: "cannot hide a meta sidecar directly" });
+  try {
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("Video visibility toggle error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: persist video ordering on project.json (videoOrder).
+app.post("/api/video/order", requireAdmin, async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of video paths or null" });
+  }
+  const videoPrefix = `${project}/_videos/`;
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.startsWith(videoPrefix) && !s.endsWith(".meta.json") && !s.startsWith(`${videoPrefix}_thumbs/`))
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.videoOrder;
+    else meta.videoOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, videoOrder: meta.videoOrder || [] });
+  } catch (err) {
+    console.error("video order error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3194,6 +3246,7 @@ app.get("/api/model/files", async (req, res) => {
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
       .filter((f) => !pairedMtl.has(f.name))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
       .map((f) => {
         const thumbName = f.name + ".thumb.jpg";
         const entry = {
@@ -3213,6 +3266,148 @@ app.get("/api/model/files", async (req, res) => {
     res.json(list);
   } catch (err) {
     console.error("List models error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: list models including hidden ones plus the flag — used by
+// project-models.html so editors can see + unhide what they've hidden.
+app.get("/api/model/files-with-hidden", requireProjectRole("editor"), async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = project + "/";
+    const [files] = await modelBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
+    const pairedMtl = new Set();
+    for (const name of allNames) {
+      if (name.endsWith(".obj")) {
+        const mtl = name.slice(0, -4) + ".mtl";
+        if (allNames.has(mtl)) pairedMtl.add(mtl);
+      }
+    }
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !pairedMtl.has(f.name))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        const entry = {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+        };
+        if (f.name.endsWith(".obj")) {
+          const mtl = f.name.slice(0, -4) + ".mtl";
+          if (allNames.has(mtl)) entry.companions = { mtl };
+        }
+        return entry;
+      });
+    res.json(list);
+  } catch (err) {
+    console.error("List models (with hidden) error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: toggle the hidden flag on a model.
+app.post("/api/model/visibility", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot hide a thumbnail directly" });
+  try {
+    const file = modelBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("Model visibility toggle error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: replace a model in place. Same pattern as /api/2d/replace —
+// preserves custom metadata (hidden flag) and drops the cached thumbnail
+// so the next thumbnail upload reflects the new content.
+app.post("/api/model/replace", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file provided" });
+  const tmpPath = req.file.path;
+  const filePath = req.body && req.body.destName;
+  try {
+    if (!filePath) return res.status(400).json({ error: "destName (existing model path) required" });
+    if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot replace a thumbnail directly" });
+
+    const gcsFile = modelBucket.file(filePath);
+    const [exists] = await gcsFile.exists();
+    if (!exists) return res.status(404).json({ error: "Model not found" });
+
+    const [oldMetadata] = await gcsFile.getMetadata();
+    const preservedCustom = (oldMetadata.metadata && typeof oldMetadata.metadata === "object")
+      ? { ...oldMetadata.metadata }
+      : null;
+
+    const readStream = fs.createReadStream(tmpPath);
+    const writeStream = gcsFile.createWriteStream({
+      resumable: true,
+      metadata: {
+        contentType: req.file.mimetype || oldMetadata.contentType || "application/octet-stream",
+        ...(preservedCustom ? { metadata: preservedCustom } : {}),
+      },
+    });
+    await new Promise((resolve, reject) => {
+      readStream.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+
+    try {
+      const thumb = modelBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) await thumb.delete();
+    } catch (err) {
+      console.warn(`[model/replace] thumb cleanup failed for ${filePath}:`, err.message);
+    }
+
+    res.json({ success: true, file: filePath, fileSize: req.file.size });
+  } catch (err) {
+    console.error("Model replace error:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
+});
+
+// Editor: persist model ordering on project.json (modelOrder).
+app.post("/api/model/order", requireProjectRole("editor"), async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of model paths or null" });
+  }
+  const projectPrefix = `${project}/`;
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.startsWith(projectPrefix) && !s.endsWith(".thumb.jpg"))
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.modelOrder;
+    else meta.modelOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, modelOrder: meta.modelOrder || [] });
+  } catch (err) {
+    console.error("model order error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3317,6 +3512,7 @@ app.get("/api/pointcloud/files", async (req, res) => {
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
       .map((f) => {
         const thumbName = f.name + ".thumb.jpg";
         return {
@@ -3331,6 +3527,133 @@ app.get("/api/pointcloud/files", async (req, res) => {
     res.json(list);
   } catch (err) {
     console.error("List point clouds error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: list point clouds including hidden ones plus the flag.
+app.get("/api/pointcloud/files-with-hidden", requireProjectRole("editor"), async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = project + "/";
+    const [files] = await pointcloudBucket.getFiles({ prefix });
+    const allNames = new Set(files.map((f) => f.name));
+    const list = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: allNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+        };
+      });
+    res.json(list);
+  } catch (err) {
+    console.error("List point clouds (with hidden) error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: toggle the hidden flag on a point cloud.
+app.post("/api/pointcloud/visibility", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: "file is required" });
+  if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot hide a thumbnail directly" });
+  try {
+    const file = pointcloudBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    await file.setMetadata({ metadata: { hidden: hidden ? "true" : null } });
+    res.json({ success: true, hidden: !!hidden });
+  } catch (err) {
+    console.error("Point cloud visibility toggle error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: replace a point cloud in place — preserves custom metadata
+// (hidden flag) and drops the cached thumbnail.
+app.post("/api/pointcloud/replace", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file provided" });
+  const tmpPath = req.file.path;
+  const filePath = req.body && req.body.destName;
+  try {
+    if (!filePath) return res.status(400).json({ error: "destName (existing point cloud path) required" });
+    if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "cannot replace a thumbnail directly" });
+
+    const gcsFile = pointcloudBucket.file(filePath);
+    const [exists] = await gcsFile.exists();
+    if (!exists) return res.status(404).json({ error: "Point cloud not found" });
+
+    const [oldMetadata] = await gcsFile.getMetadata();
+    const preservedCustom = (oldMetadata.metadata && typeof oldMetadata.metadata === "object")
+      ? { ...oldMetadata.metadata }
+      : null;
+
+    const readStream = fs.createReadStream(tmpPath);
+    const writeStream = gcsFile.createWriteStream({
+      resumable: true,
+      metadata: {
+        contentType: req.file.mimetype || oldMetadata.contentType || "application/octet-stream",
+        ...(preservedCustom ? { metadata: preservedCustom } : {}),
+      },
+    });
+    await new Promise((resolve, reject) => {
+      readStream.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+
+    try {
+      const thumb = pointcloudBucket.file(filePath + ".thumb.jpg");
+      const [thumbExists] = await thumb.exists();
+      if (thumbExists) await thumb.delete();
+    } catch (err) {
+      console.warn(`[pointcloud/replace] thumb cleanup failed for ${filePath}:`, err.message);
+    }
+
+    res.json({ success: true, file: filePath, fileSize: req.file.size });
+  } catch (err) {
+    console.error("Point cloud replace error:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
+});
+
+// Editor: persist point cloud ordering on project.json (pointcloudOrder).
+app.post("/api/pointcloud/order", requireProjectRole("editor"), async (req, res) => {
+  const { project, order } = req.body || {};
+  if (!project) return res.status(400).json({ error: "project is required" });
+  if (order != null && !Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of point cloud paths or null" });
+  }
+  const projectPrefix = `${project}/`;
+  const cleaned = Array.isArray(order)
+    ? order
+        .filter((s) => typeof s === "string" && s.startsWith(projectPrefix) && !s.endsWith(".thumb.jpg"))
+        .filter((s, i, arr) => arr.indexOf(s) === i)
+    : [];
+  try {
+    const projectFile = bucket.file(`${project}/project.json`);
+    let meta = {};
+    const [exists] = await projectFile.exists();
+    if (exists) {
+      const [content] = await projectFile.download();
+      try { meta = JSON.parse(content.toString()); } catch { meta = {}; }
+    }
+    if (cleaned.length === 0) delete meta.pointcloudOrder;
+    else meta.pointcloudOrder = cleaned;
+    meta.updatedAt = new Date().toISOString();
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, pointcloudOrder: meta.pointcloudOrder || [] });
+  } catch (err) {
+    console.error("pointcloud order error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
