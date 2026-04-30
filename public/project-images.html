@@ -82,13 +82,15 @@
     .image-card .hide-toggle-btn:disabled { opacity: 0.55; cursor: progress; }
     .image-card .hide-toggle-btn svg { display: block; }
 
-    /* Editor-only "replace thumbnail" pencil in the lower-right of the
-       thumb. Mirrors the hide-toggle visually but anchored bottom-right
-       so the two affordances don't overlap. */
+    /* Editor-only "replace thumbnail" pencil in the lower-left of the
+       thumbnail itself (not the card — the button is rendered inside
+       .image-card-thumb so absolute positioning anchors to the thumb's
+       bounds). Mirrors the hide-toggle visually but bottom-left so the
+       affordances around the thumb don't overlap. */
     .image-card .replace-thumb-btn {
       position: absolute;
       bottom: 8px;
-      right: 8px;
+      left: 8px;
       width: 32px;
       height: 32px;
       display: flex;
@@ -560,9 +562,9 @@
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="image-card-thumb" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
               <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy" draggable="false">
+              ${replaceBtnHtml}
             </div>
             ${hideBtnHtml}
-            ${replaceBtnHtml}
             <div class="image-card-body">
               <div class="image-card-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
               <div class="image-card-meta">
