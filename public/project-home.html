@@ -595,45 +595,7 @@
           </button>
           <div class="home-card-thumb is-placeholder" id="mainCardThumb"><span class="glyph">&#128194;</span></div>
           <div class="home-card-body">
-            <!-- Editors get a streamlined admin-action set instead of the
-                 full nav cluster (which they have via the hamburger). The
-                 viewer block below is the original nav-style list and stays
-                 visible for everyone who isn't an editor. -->
-            <div class="home-card-actions" id="mainCardEditorActions" style="display:none;">
-              <a href="#" class="primary" id="mainUploadLink">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                <span>Upload</span>
-              </a>
-              <a href="#" id="mainUsersLink">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                  <circle cx="9" cy="7" r="4"/>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-                <span>Users</span>
-              </a>
-              <a href="#" id="mainStatsLink" title="Coming soon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <line x1="18" y1="20" x2="18" y2="10"/>
-                  <line x1="12" y1="20" x2="12" y2="4"/>
-                  <line x1="6" y1="20" x2="6" y2="14"/>
-                </svg>
-                <span>Stats</span>
-              </a>
-              <a href="#" id="mainEditProjectLink" style="display:none;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-                <span>Edit Project</span>
-              </a>
-            </div>
-            <div class="home-card-actions" id="mainCardViewerActions">
+            <div class="home-card-actions">
               <a href="#" class="primary" id="mainMapLink">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="9"/>
@@ -713,6 +675,7 @@
             </div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="mapCardOpen">Open map</a>
+              <a href="#" id="mapCardEdit" class="editor-only" style="display:none;">Edit map</a>
             </div>
           </div>
         </div>
@@ -1014,30 +977,13 @@
         }
       }
 
-      // Main card — viewer link cluster (shown when not an editor)
+      // Main card links
       document.getElementById("mainMapLink").href = `/map-viewer/${enc}`;
       document.getElementById("mainImagesLink").href = `/images/${enc}`;
       document.getElementById("mainPlansLink").href = `/plans/${enc}`;
       document.getElementById("mainModelsLink").href = `/models/${enc}`;
       document.getElementById("mainDocumentsLink").href = `/documents/${enc}`;
       document.getElementById("mainPointcloudsLink").href = `/pointclouds/${enc}`;
-
-      // Main card — editor admin-action cluster. Swapped in for editors
-      // (see toggle below). "Stats" is a placeholder for future analytics —
-      // the click is suppressed so the # href doesn't scroll the page.
-      document.getElementById("mainUploadLink").href = `/uploads.html?project=${enc}`;
-      document.getElementById("mainUsersLink").href = `/users.html?project=${enc}`;
-      document.getElementById("mainEditProjectLink").href = `/edit-project.html?project=${enc}`;
-      document.getElementById("mainStatsLink").addEventListener("click", (e) => e.preventDefault());
-
-      if (canEditProject) {
-        document.getElementById("mainCardViewerActions").style.display = "none";
-        document.getElementById("mainCardEditorActions").style.display = "";
-        // Edit Project is admin-only; non-admin editors don't see it.
-        if (window.me && await window.me.isAdmin()) {
-          document.getElementById("mainEditProjectLink").style.display = "";
-        }
-      }
 
       // Map card links (default open map; level param updated later)
       document.getElementById("mapThumbLink").href = `/map-viewer/${enc}`;
@@ -1174,6 +1120,11 @@
         : `/map-viewer/${enc}`;
       document.getElementById("mapThumbLink").href = mapTarget;
       document.getElementById("mapCardOpen").href = mapTarget;
+      // Editor "Edit map" link → map-editor scoped to the same level
+      const editTarget = level
+        ? `/map-editor.html?project=${enc}&level=${encodeURIComponent(level)}`
+        : `/map-editor.html?project=${enc}`;
+      document.getElementById("mapCardEdit").href = editTarget;
 
       thumb.innerHTML = "";
       if (path) {
