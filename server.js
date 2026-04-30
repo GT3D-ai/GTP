@@ -1311,7 +1311,7 @@ app.post("/api/project-card-order", requireProjectRole("editor"), async (req, re
 
 app.post("/api/project-thumbnail", requireProjectRole("editor"), async (req, res) => {
   const { project, card, file } = req.body;
-  const validCards = new Set(["main", "images", "plans", "models", "pointclouds"]);
+  const validCards = new Set(["main", "images", "plans", "models", "pointclouds", "documents"]);
   if (!project || !card) return res.status(400).json({ error: "project and card are required" });
   if (!validCards.has(card)) return res.status(400).json({ error: "invalid card" });
   try {

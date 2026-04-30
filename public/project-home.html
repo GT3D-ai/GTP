@@ -547,6 +547,7 @@
         <a id="imagesLink" href="#">2D Images</a>
         <a id="plansLink" href="#">2D Plans</a>
         <a id="modelsLink" href="#">3D Models</a>
+        <a id="documentsLink" href="#">Documents</a>
         <a id="pointcloudsLink" href="#">Point Clouds</a>
         <a id="uploadsLink" href="#" style="display:none;">Uploads</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
@@ -561,6 +562,7 @@
         <a id="imagesMenuItem" href="#">2D Images</a>
         <a id="plansMenuItem" href="#">2D Plans</a>
         <a id="modelsMenuItem" href="#">3D Models</a>
+        <a id="documentsMenuItem" href="#">Documents</a>
         <a id="pointcloudsMenuItem" href="#">Point Clouds</a>
         <a id="uploadsMenuItem" href="#" style="display:none;">Uploads</a>
         <a href="https://gt3d.com" target="_blank" rel="noopener">GT3D Home</a>
@@ -626,6 +628,16 @@
                   <line x1="12" y1="22.08" x2="12" y2="12"/>
                 </svg>
                 <span>3D Models &mdash; View / Download</span>
+              </a>
+              <a href="#" id="mainDocumentsLink">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="8" y1="13" x2="16" y2="13"/>
+                  <line x1="8" y1="17" x2="16" y2="17"/>
+                  <line x1="8" y1="9" x2="10" y2="9"/>
+                </svg>
+                <span>Documents &mdash; View / Download</span>
               </a>
               <a href="#" id="mainPointcloudsLink">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -732,6 +744,23 @@
             <div class="home-card-meta" id="pointcloudCardMeta"></div>
             <div class="home-card-actions">
               <a href="#" class="primary" id="pointcloudCardOpen">View Point Clouds</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- DOCUMENT: most recent unhidden -->
+        <div class="home-card" id="documentCard">
+          <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
+          <a href="#" class="edit-thumb-link" data-card="documents">Edit</a>
+          <a id="documentThumbLink" href="#" aria-label="Open documents">
+            <div class="home-card-thumb is-placeholder" id="documentCardThumb"><span class="glyph">&#128209;</span></div>
+          </a>
+          <div class="home-card-body">
+            <div class="home-card-eyebrow">Most recent document</div>
+            <div class="home-card-title" id="documentCardTitle">—</div>
+            <div class="home-card-meta" id="documentCardMeta"></div>
+            <div class="home-card-actions">
+              <a href="#" class="primary" id="documentCardOpen">View Documents</a>
             </div>
           </div>
         </div>
@@ -888,6 +917,7 @@
       document.getElementById("imagesLink").href = `/images/${enc}`;
       document.getElementById("plansLink").href = `/plans/${enc}`;
       document.getElementById("modelsLink").href = `/models/${enc}`;
+      document.getElementById("documentsLink").href = `/documents/${enc}`;
       document.getElementById("pointcloudsLink").href = `/pointclouds/${enc}`;
       document.getElementById("uploadsLink").href = `/uploads.html?project=${enc}`;
       // Mirror the same hrefs into the mobile dropdown menu
@@ -895,6 +925,7 @@
       document.getElementById("imagesMenuItem").href = `/images/${enc}`;
       document.getElementById("plansMenuItem").href = `/plans/${enc}`;
       document.getElementById("modelsMenuItem").href = `/models/${enc}`;
+      document.getElementById("documentsMenuItem").href = `/documents/${enc}`;
       document.getElementById("pointcloudsMenuItem").href = `/pointclouds/${enc}`;
       document.getElementById("uploadsMenuItem").href = `/uploads.html?project=${enc}`;
       // Reveal Uploads link for admins only — uploading is admin-gated
@@ -951,6 +982,7 @@
       document.getElementById("mainImagesLink").href = `/images/${enc}`;
       document.getElementById("mainPlansLink").href = `/plans/${enc}`;
       document.getElementById("mainModelsLink").href = `/models/${enc}`;
+      document.getElementById("mainDocumentsLink").href = `/documents/${enc}`;
       document.getElementById("mainPointcloudsLink").href = `/pointclouds/${enc}`;
 
       // Map card links (default open map; level param updated later)
@@ -966,6 +998,8 @@
       document.getElementById("pointcloudCardOpen").href = `/pointclouds/${enc}`;
       document.getElementById("imageThumbLink").href = `/images/${enc}`;
       document.getElementById("imageCardOpen").href = `/images/${enc}`;
+      document.getElementById("documentThumbLink").href = `/documents/${enc}`;
+      document.getElementById("documentCardOpen").href = `/documents/${enc}`;
 
       // Kick off all loads in parallel
       await Promise.all([
@@ -975,6 +1009,7 @@
         loadPlanCard(),
         loadModelCard(),
         loadPointcloudCard(),
+        loadDocumentCard(),
       ]);
     }
 
@@ -1311,6 +1346,41 @@
       }
     }
 
+    // ---- Document card: most recently uploaded unhidden document ----
+    async function loadDocumentCard() {
+      try {
+        const res = await fetch(`/api/document/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const files = await res.json();
+        // Admin callers receive private docs too (with a `visibility` field).
+        // Filter them out — the card always reflects what a non-admin viewer
+        // would see. Non-admin responses omit the field, so unfiltered entries
+        // pass through.
+        const visibleFiles = files.filter((d) => !d.visibility || d.visibility === "public");
+        if (visibleFiles.length === 0 && !cardThumbnails.documents) {
+          document.getElementById("documentCardTitle").textContent = "No documents yet";
+          document.getElementById("documentCardMeta").innerHTML = '<span class="skeleton">Uploaded documents will appear here.</span>';
+          return;
+        }
+        // Server already sorts by uploadedAt desc, but re-sort defensively.
+        visibleFiles.sort((a, b) => (b.uploadedAt || b.updated || "").localeCompare(a.uploadedAt || a.updated || ""));
+        const latest = visibleFiles[0];
+        if (latest) {
+          document.getElementById("documentCardTitle").textContent = latest.displayName;
+          document.getElementById("documentCardMeta").textContent =
+            `${formatDate(latest.uploadedAt || latest.updated)} · ${formatSize(latest.size)}`;
+        }
+        // Editor override → use a 2D image; otherwise leave the placeholder
+        // glyph since documents have no native server-side thumbnails.
+        if (cardThumbnails.documents) {
+          renderCardThumbImage("documentCardThumb", cardThumbnails.documents, "&#128209;");
+        }
+      } catch (err) {
+        document.getElementById("documentCardMeta").innerHTML =
+          `<span class="error-msg" style="display:inline-block; padding:6px 8px;">${err.message}</span>`;
+      }
+    }
+
     // ---- Thumbnail picker modal ----
     const thumbModal = document.getElementById("thumbModal");
     const thumbModalTitle = document.getElementById("thumbModalTitle");
@@ -1322,7 +1392,7 @@
     const thumbClearBtn = document.getElementById("thumbClearBtn");
     let activeCard = null;
 
-    const cardLabels = { main: "Project cover", map: "Map", images: "2D Images", plans: "2D Plans", models: "3D Models", pointclouds: "Point Clouds" };
+    const cardLabels = { main: "Project cover", map: "Map", images: "2D Images", plans: "2D Plans", models: "3D Models", pointclouds: "Point Clouds", documents: "Documents" };
 
     function setThumbStatus(msg, isError) {
       thumbStatus.textContent = msg || "";
@@ -1408,6 +1478,7 @@
           else if (activeCard === "plans") await loadPlanCard();
           else if (activeCard === "models") await loadModelCard();
           else if (activeCard === "pointclouds") await loadPointcloudCard();
+          else if (activeCard === "documents") await loadDocumentCard();
         }
         setThumbStatus("Saved.");
         closeThumbModal();
@@ -1448,6 +1519,7 @@
         else if (activeCard === "plans") await loadPlanCard();
         else if (activeCard === "models") await loadModelCard();
         else if (activeCard === "pointclouds") await loadPointcloudCard();
+        else if (activeCard === "documents") await loadDocumentCard();
         closeThumbModal();
       } catch (err) {
         setThumbStatus(err.message, true);
@@ -1497,13 +1569,14 @@
     });
 
     // ---- Home card drag-to-reorder ----
-    // Editors can drag any of the six home cards (mainCard / mapCard /
-    // imageCard / planCard / modelCard / pointcloudCard) into any order.
+    // Editors can drag any of the seven home cards (mainCard / mapCard /
+    // imageCard / planCard / modelCard / pointcloudCard / documentCard)
+    // into any order.
     // The order is stored on project.json under cardOrder and applied for
     // every visitor (viewer or editor); only editors see drag handles
     // and the Reset button. The main card keeps its full-width style
     // wherever it lands because .home-card.main { grid-column: 1 / -1 }.
-    const KNOWN_CARDS = ["mainCard", "mapCard", "imageCard", "planCard", "modelCard", "pointcloudCard"];
+    const KNOWN_CARDS = ["mainCard", "mapCard", "imageCard", "planCard", "modelCard", "pointcloudCard", "documentCard"];
     let cardDraggingEl = null;
     let cardDropTargetEl = null;
     let cardDropAfter = false;
