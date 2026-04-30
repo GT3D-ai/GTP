@@ -45,6 +45,9 @@ pathMatchers:
     - /api/pointcloud/download-url
     - /api/document/files
     - /api/document/download-url
+    - /api/video/files
+    - /api/video/stream-url
+    - /api/video/download-url
     - /api/image
     - /api/thumbnail
     - /api/mappings

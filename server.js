@@ -281,9 +281,9 @@ app.get("/documents/:project", async (req, res) => {
 });
 
 // Per-project videos listing: /videos/<project-name>. Page renders for
-// anyone (so the URL doesn't 404 when an editor/admin shares it), but
-// /api/video/files is admin-only and the page surfaces an "admin-only"
-// notice for non-admin visitors instead of firing the request.
+// anyone — the video list is filtered by role inside /api/video/files
+// (non-admins see only non-hidden videos with no uploader info) and
+// admins fetch the full set via /api/admin/video/files.
 app.get("/videos/:project", async (req, res) => {
   if (await maybeRedirectCanonical(req, res, "/videos", req.params.project)) return;
   res.sendFile(path.join(__dirname, "public", "project-videos.html"));
@@ -2849,9 +2849,13 @@ app.post("/api/document/delete", requireAdmin, async (req, res) => {
 });
 
 // ---- Video endpoints (image bucket, {project}/_videos/ prefix) ----
-// Same admin-only-end-to-end pattern as documents: list, download, rename,
-// delete. No public surface exists; videos never appear in any viewer-
-// facing list. Per-file metadata (uploadedBy, uploadedAt) lives on a
+// Public viewers can browse + play + download non-hidden videos via the
+// /api/video/* routes (filtered listing, hidden-aware stream/download).
+// Admins use the /api/admin/video/* mirrors to see hidden videos and
+// uploader info — those stay off the public URL-map matcher so they
+// route through IAP and preserve admin identity. Mutations (visibility,
+// order, rename, delete, thumbnail upload/clear) are admin-only.
+// Per-file metadata (uploadedBy, uploadedAt, thumbnail path) lives on a
 // sibling .meta.json sidecar.
 
 const VIDEOS_PREFIX_SEG = "/_videos/";
@@ -2876,7 +2880,12 @@ async function writeVideoMeta(filePath, meta) {
   );
 }
 
-app.get("/api/video/files", requireAdmin, async (req, res) => {
+// Admin: full video listing including hidden videos and uploader info.
+// Mirror of /api/video/files but kept OFF the public URL-map matcher
+// so it routes through the IAP backend — the public listing endpoint
+// can't see admin identity (it sits behind the no-IAP backend serving
+// /videos/<project>) and would silently filter hidden videos out.
+app.get("/api/admin/video/files", requireAdmin, async (req, res) => {
   try {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
@@ -2911,6 +2920,53 @@ app.get("/api/video/files", requireAdmin, async (req, res) => {
             expires: Date.now() + 15 * 60 * 1000,
           });
           entry.thumbnail = meta.thumbnail;
+          entry.thumbnailUrl = signed;
+        } catch (err) {
+          console.warn(`[video] thumbnail signed-url failed for ${meta.thumbnail}:`, err.message);
+        }
+      }
+      return entry;
+    }));
+    list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list);
+  } catch (err) {
+    console.error("Admin list videos error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List videos in a project. Public route — non-admin viewers see only
+// non-hidden videos with no uploader info. Hidden videos are skipped
+// entirely so viewers don't even know they exist. Admins use
+// /api/admin/video/files (above) to see the full set.
+app.get("/api/video/files", async (req, res) => {
+  try {
+    const project = req.query.project;
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const prefix = `${project}/_videos/`;
+    const [files] = await imageBucket.getFiles({ prefix });
+    const videos = files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"))
+      .filter((f) => !f.name.startsWith(`${prefix}_thumbs/`))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"));
+    const list = await Promise.all(videos.map(async (f) => {
+      const meta = await readVideoMeta(f.name);
+      const entry = {
+        name: f.name,
+        displayName: f.name.replace(prefix, ""),
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+      };
+      if (meta.thumbnail) {
+        try {
+          const [signed] = await imageBucket.file(meta.thumbnail).getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 15 * 60 * 1000,
+          });
           entry.thumbnailUrl = signed;
         } catch (err) {
           console.warn(`[video] thumbnail signed-url failed for ${meta.thumbnail}:`, err.message);
@@ -2977,15 +3033,42 @@ app.post("/api/video/order", requireAdmin, async (req, res) => {
   }
 });
 
-// Inline streaming URL — same signed-URL pattern as download-url, but
-// without the attachment Content-Disposition so a <video src> tag can
-// play it directly in the browser. Admin-only.
-app.get("/api/video/stream-url", requireAdmin, async (req, res) => {
+// Admin: signed inline streaming URL for any video (including hidden).
+// Kept OFF the public URL-map matcher so it routes through IAP and
+// preserves admin identity — same reason as the listing mirror above.
+app.get("/api/admin/video/stream-url", requireAdmin, async (req, res) => {
   try {
     const filePath = req.query.file;
     if (!filePath) return res.status(400).json({ error: "file is required" });
     if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
     const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+    });
+    res.json({ streamUrl: url });
+  } catch (err) {
+    console.error("Admin video stream-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Inline streaming URL — same signed-URL pattern as download-url, but
+// without the attachment Content-Disposition so a <video src> tag can
+// play it directly in the browser. Public route, but hidden videos 403.
+app.get("/api/video/stream-url", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    const [metadata] = await file.getMetadata();
+    if (metadata.metadata && metadata.metadata.hidden === "true") {
+      return res.status(403).json({ error: "Video not available" });
+    }
+    const [url] = await file.getSignedUrl({
       version: "v4",
       action: "read",
       expires: Date.now() + 15 * 60 * 1000,
@@ -3114,13 +3197,42 @@ app.post("/api/video/uploaded", requireAdmin, async (req, res) => {
   }
 });
 
-// Signed download URL for a video — admin only (15-min expiry).
-app.get("/api/video/download-url", requireAdmin, async (req, res) => {
+// Admin: signed download URL for any video (including hidden). Kept
+// OFF the public URL-map matcher so it routes through IAP — same
+// rationale as the admin listing/stream mirrors above.
+app.get("/api/admin/video/download-url", requireAdmin, async (req, res) => {
   try {
     const filePath = req.query.file;
     if (!filePath) return res.status(400).json({ error: "file is required" });
     if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
     const [url] = await imageBucket.file(filePath).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 15 * 60 * 1000,
+      responseDisposition: `attachment; filename="${filePath.split("/").pop()}"`,
+    });
+    res.json({ downloadUrl: url });
+  } catch (err) {
+    console.error("Admin video download-url error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Signed download URL for a video — public route (15-min expiry).
+// Hidden videos 403 so they don't leak to non-admin viewers.
+app.get("/api/video/download-url", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: "file is required" });
+    if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
+    const file = imageBucket.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    const [metadata] = await file.getMetadata();
+    if (metadata.metadata && metadata.metadata.hidden === "true") {
+      return res.status(403).json({ error: "Video not available" });
+    }
+    const [url] = await file.getSignedUrl({
       version: "v4",
       action: "read",
       expires: Date.now() + 15 * 60 * 1000,

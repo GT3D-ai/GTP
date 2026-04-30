@@ -290,15 +290,6 @@
     .placeholder .placeholder-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
     .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
 
-    .not-admin {
-      background: var(--warning-bg);
-      border: 1px solid var(--accent);
-      color: var(--ink);
-      padding: var(--space-lg);
-      text-align: center;
-      font-size: 0.9rem;
-    }
-
     /* Full-screen video player modal — same shell as the image lightbox
        in project-images.html. Plyr renders inside the body. */
     .video-modal {
@@ -526,15 +517,17 @@
 
     async function loadVideos(project) {
       const isAdmin = !!(window.me && await window.me.isAdmin());
-      // /api/video/files is admin-only. Rather than fire a request that's
-      // guaranteed to 403, surface a friendly notice for non-admins.
-      if (!isAdmin) {
-        wrap.innerHTML = '<div class="not-admin">Videos are admin-only for this project.</div>';
-        return;
-      }
       try {
+        // Admins must hit the admin-routed listing — the public listing
+        // sits behind the no-IAP backend (so /videos/<project> is
+        // anonymous-reachable) and can't see admin identity, so it would
+        // hide hidden videos and uploader info from admins. The admin
+        // endpoint stays off the public URL-map and routes through IAP.
+        const listUrl = isAdmin
+          ? `/api/admin/video/files?project=${encodeURIComponent(project)}`
+          : `/api/video/files?project=${encodeURIComponent(project)}`;
         const [filesRes, infoRes] = await Promise.all([
-          fetch(`/api/video/files?project=${encodeURIComponent(project)}`, { credentials: "same-origin" }),
+          fetch(listUrl, { credentials: "same-origin" }),
           fetch(`/api/project-info?project=${encodeURIComponent(project)}`),
         ]);
         if (!filesRes.ok) throw new Error((await filesRes.json().catch(() => ({}))).error || `HTTP ${filesRes.status}`);
@@ -563,25 +556,45 @@
           const thumbInner = v.thumbnailUrl
             ? `<img src="${escapeAttr(v.thumbnailUrl)}" alt="${escapeAttr(v.displayName)}" loading="lazy" draggable="false">`
             : `<span class="placeholder-glyph">${VIDEO_GLYPH_SVG}</span>`;
+          // Admin-only overlays + action buttons. Non-admin viewers get
+          // a clean play-only card with download.
+          const dragHandleHtml = isAdmin
+            ? `<span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>`
+            : "";
+          const editThumbHtml = isAdmin
+            ? `<button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}" aria-label="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}">${PENCIL_SVG}</button>`
+            : "";
+          const hideToggleHtml = isAdmin
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(v.name)}" data-hidden="${v.hidden ? "1" : "0"}" title="${v.hidden ? "Unhide video" : "Hide video"}" aria-label="${v.hidden ? "Unhide video" : "Hide video"}">${v.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+            : "";
+          const nameHtml = isAdmin
+            ? `<span class="video-card-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>`
+            : `<span class="video-card-name" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>`;
+          const uploaderHtml = isAdmin
+            ? `<span>${escapeHtml(v.uploadedBy || "—")}</span>`
+            : "";
+          const adminActionsHtml = isAdmin
+            ? `${v.thumbnailUrl ? '<button type="button" class="btn btn-outline btn-sm clear-thumb-btn">Clear thumb</button>' : ""}
+               <button type="button" class="btn btn-outline btn-sm btn-danger delete-btn">Delete</button>`
+            : "";
           card.innerHTML = `
-            <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
+            ${dragHandleHtml}
             <div class="video-card-thumb" data-action="play">
               ${thumbInner}
               <span class="play-badge">${PLAY_GLYPH_SVG}</span>
-              <button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}" aria-label="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}">${PENCIL_SVG}</button>
+              ${editThumbHtml}
             </div>
-            <button type="button" class="hide-toggle-btn" data-file="${escapeAttr(v.name)}" data-hidden="${v.hidden ? "1" : "0"}" title="${v.hidden ? "Unhide video" : "Hide video"}" aria-label="${v.hidden ? "Unhide video" : "Hide video"}">${v.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>
+            ${hideToggleHtml}
             <div class="video-card-body">
-              <span class="video-card-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>
+              ${nameHtml}
               <div class="video-card-meta">
                 <span>${formatDate(v.uploadedAt || v.updated)}</span>
                 <span>${formatSize(v.size)}</span>
-                <span>${escapeHtml(v.uploadedBy || "—")}</span>
+                ${uploaderHtml}
               </div>
               <div class="video-card-actions">
                 <button type="button" class="btn btn-outline btn-sm download-btn">Download</button>
-                ${v.thumbnailUrl ? '<button type="button" class="btn btn-outline btn-sm clear-thumb-btn">Clear thumb</button>' : ""}
-                <button type="button" class="btn btn-outline btn-sm btn-danger delete-btn">Delete</button>
+                ${adminActionsHtml}
               </div>
             </div>
           `;
@@ -591,7 +604,50 @@
         wrap.innerHTML = "";
         wrap.appendChild(grid);
 
-        // Hide / unhide toggle.
+        // Click the thumb opens the player modal — applies to everyone.
+        // Edit-thumb (admin only) takes precedence so admins can swap a
+        // thumbnail without accidentally launching the player.
+        grid.querySelectorAll(".video-card-thumb").forEach((thumb) => {
+          thumb.addEventListener("click", (e) => {
+            const editBtn = e.target.closest('[data-action="edit-thumb"]');
+            if (editBtn) {
+              e.stopPropagation();
+              const card = thumb.closest(".video-card");
+              promptThumbnailUpload(card.dataset.file);
+              return;
+            }
+            const card = thumb.closest(".video-card");
+            openPlayer(card.dataset.file, card.dataset.display, isAdmin);
+          });
+        });
+
+        // Download — public for everyone; admins go through the
+        // admin-routed endpoint so hidden videos still work for them.
+        grid.querySelectorAll(".download-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const card = btn.closest(".video-card");
+            const filePath = card.dataset.file;
+            btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
+            try {
+              const dlUrl = isAdmin
+                ? `/api/admin/video/download-url?file=${encodeURIComponent(filePath)}`
+                : `/api/video/download-url?file=${encodeURIComponent(filePath)}`;
+              const r = await fetch(dlUrl, { credentials: "same-origin" });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              const { downloadUrl } = await r.json();
+              window.location.href = downloadUrl;
+            } catch (err) {
+              alert("Download failed: " + err.message);
+            } finally {
+              btn.disabled = false; btn.textContent = orig;
+            }
+          });
+        });
+
+        // Everything below is admin-only — hide/unhide, drag-to-reorder,
+        // clear-thumb, inline rename, delete.
+        if (!isAdmin) return;
+
         grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             e.stopPropagation();
@@ -613,30 +669,10 @@
           });
         });
 
-        // Enable drag-to-reorder for admins (the only callers that reach
-        // this point; the non-admin notice returned above).
         enableReorder(grid);
         const resetBtn = document.getElementById("resetOrderBtn");
         resetBtn.style.display = (projectInfo.videoOrder && projectInfo.videoOrder.length > 0) ? "" : "none";
 
-        // Click the thumb (anywhere except the Edit-thumb button) → open
-        // the Plyr modal. Edit-thumb takes precedence so admins can swap
-        // a thumbnail without accidentally launching the player.
-        grid.querySelectorAll(".video-card-thumb").forEach((thumb) => {
-          thumb.addEventListener("click", (e) => {
-            const editBtn = e.target.closest('[data-action="edit-thumb"]');
-            if (editBtn) {
-              e.stopPropagation();
-              const card = thumb.closest(".video-card");
-              promptThumbnailUpload(card.dataset.file);
-              return;
-            }
-            const card = thumb.closest(".video-card");
-            openPlayer(card.dataset.file, card.dataset.display);
-          });
-        });
-
-        // Clear-thumbnail per card.
         grid.querySelectorAll(".clear-thumb-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const card = btn.closest(".video-card");
@@ -694,25 +730,6 @@
           });
         });
 
-        // Download — fetch a 15-min signed URL and follow it.
-        grid.querySelectorAll(".download-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const card = btn.closest(".video-card");
-            const filePath = card.dataset.file;
-            btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
-            try {
-              const r = await fetch(`/api/video/download-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" });
-              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-              const { downloadUrl } = await r.json();
-              window.location.href = downloadUrl;
-            } catch (err) {
-              alert("Download failed: " + err.message);
-            } finally {
-              btn.disabled = false; btn.textContent = orig;
-            }
-          });
-        });
-
         grid.querySelectorAll(".delete-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const card = btn.closest(".video-card");
@@ -740,7 +757,7 @@
       }
     }
 
-    // ---- Drag-to-reorder (admin only — videos are admin-only) ----
+    // ---- Drag-to-reorder (admin only) ----
     let draggingCard = null;
     let dropTargetCard = null;
     let dropAfter = false;
@@ -872,14 +889,24 @@
       return plyrInstance;
     }
 
-    async function openPlayer(filePath, displayName) {
+    async function openPlayer(filePath, displayName, isAdmin) {
       videoModalTitle.textContent = displayName || "";
       videoModalDownload.removeAttribute("href");
       videoModal.classList.add("visible");
       try {
+        // Admins go through the admin-routed endpoints so hidden videos
+        // still play / download for them; non-admins use the public
+        // routes that 403 on hidden videos (which they shouldn't see
+        // listed anyway).
+        const streamUrlPath = isAdmin
+          ? `/api/admin/video/stream-url?file=${encodeURIComponent(filePath)}`
+          : `/api/video/stream-url?file=${encodeURIComponent(filePath)}`;
+        const dlUrlPath = isAdmin
+          ? `/api/admin/video/download-url?file=${encodeURIComponent(filePath)}`
+          : `/api/video/download-url?file=${encodeURIComponent(filePath)}`;
         const [streamRes, dlRes] = await Promise.all([
-          fetch(`/api/video/stream-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" }),
-          fetch(`/api/video/download-url?file=${encodeURIComponent(filePath)}`, { credentials: "same-origin" }),
+          fetch(streamUrlPath, { credentials: "same-origin" }),
+          fetch(dlUrlPath, { credentials: "same-origin" }),
         ]);
         if (!streamRes.ok) throw new Error((await streamRes.json().catch(() => ({}))).error || `HTTP ${streamRes.status}`);
         const { streamUrl } = await streamRes.json();
