@@ -131,21 +131,18 @@
 
   <main class="container-sm">
     <div id="notAdmin" class="not-admin" style="display:none;">
-      Admin access required to upload models.
+      Admin access required to upload plans.
+    </div>
+
+    <div id="missingProject" class="not-admin" style="display:none;">
+      No project specified. Open this page from a project's 2D Plans view (e.g. <code>/plan-upload.html?project=&lt;project-name&gt;</code>).
     </div>
 
     <div id="uploaderWrap" style="display:none;">
       <div class="form-head">
-        <p class="eyebrow">Upload</p>
+        <p class="eyebrow">Upload Plans &mdash; <span id="projectEyebrow"></span></p>
         <h2>Upload plans</h2>
-        <p class="lede">Admin-only. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code>{project}/_plans/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Large files (multi-GB) are supported.</p>
-      </div>
-
-      <div class="field">
-        <label class="field-label" for="projectSelect">Project <span class="required-mark">*</span></label>
-        <select class="field-select" id="projectSelect">
-          <option value="">Select a project…</option>
-        </select>
+        <p class="lede">Admin-only. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code><span id="projectPathHint"></span>/_plans/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Large files (multi-GB) are supported.</p>
       </div>
 
       <div class="drop-zone" id="dropZone">
@@ -217,7 +214,7 @@
 
     const uploaderWrap = document.getElementById("uploaderWrap");
     const notAdmin = document.getElementById("notAdmin");
-    const projectSelect = document.getElementById("projectSelect");
+    const missingProject = document.getElementById("missingProject");
     const dropZone = document.getElementById("dropZone");
     const fileInput = document.getElementById("fileInput");
     const fileListEl = document.getElementById("fileList");
@@ -246,31 +243,16 @@
         notAdmin.style.display = "block";
         return;
       }
+      if (!projectFromUrl) {
+        missingProject.style.display = "block";
+        return;
+      }
+      document.getElementById("projectEyebrow").textContent = projectFromUrl;
+      document.getElementById("projectPathHint").textContent = projectFromUrl;
+      document.title = `Upload plans — ${projectFromUrl}`;
       uploaderWrap.style.display = "block";
-
-      try {
-        const res = await fetch("/api/projects");
-        if (res.ok) {
-          const projects = await res.json();
-          projectSelect.innerHTML = '<option value="">Select a project…</option>';
-          projects.forEach((name) => {
-            const opt = document.createElement("option");
-            opt.value = name; opt.textContent = name;
-            projectSelect.appendChild(opt);
-          });
-          if (projectFromUrl) {
-            projectSelect.value = projectFromUrl;
-            projectSelect.disabled = true;
-            loadPlans(projectFromUrl);
-          }
-        }
-      } catch {}
+      loadPlans(projectFromUrl);
     })();
-
-    projectSelect.addEventListener("change", () => {
-      if (projectSelect.value) loadPlans(projectSelect.value);
-      else document.getElementById("plansSection").style.display = "none";
-    });
 
     function renderFileList() {
       fileEntries.innerHTML = "";
@@ -337,13 +319,7 @@
 
     uploadBtn.addEventListener("click", async () => {
       if (selectedFiles.length === 0) return;
-      const project = projectSelect.value;
-      if (!project) {
-        projectSelect.focus();
-        statusMessage.textContent = "Please select a project before uploading.";
-        statusMessage.className = "status-message visible error";
-        return;
-      }
+      const project = projectFromUrl;
 
       uploadBtn.disabled = true;
       uploadBtn.textContent = "Uploading…";
@@ -645,8 +621,7 @@
         thumbStatus.className = "status-message visible success";
         setTimeout(() => {
           closeThumbModal();
-          const project = projectSelect.value;
-          if (project) loadPlans(project);
+          if (projectFromUrl) loadPlans(projectFromUrl);
         }, 600);
       } catch (err) {
         thumbStatus.textContent = "Error: " + err.message;
