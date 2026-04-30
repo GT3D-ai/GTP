@@ -349,6 +349,13 @@
           return;
         }
 
+        // /api/me drives the per-card link cluster: editors (and admins)
+        // see admin tools (Upload/Users/Stats/Edit Project), viewers see
+        // the original read-only nav cluster.
+        const myInfo = (window.me ? await me.getMe() : null) || { isAdmin: false, projects: {} };
+        const isAdminUser = !!myInfo.isAdmin;
+        const myProjectRoles = myInfo.projects || {};
+
         // Fetch metadata + optional fallback cover for each project in parallel
         const infos = await Promise.all(projects.map(async (name) => {
           let info = { name, address: null, coverPhoto: null };
@@ -383,6 +390,23 @@
             ? `<div class="project-card-address" title="${info.address}">${info.address}</div>`
             : "";
 
+          const enc = encodeURIComponent(name);
+          const isEditorForProj = isAdminUser || myProjectRoles[name] === "editor";
+          const actionsHtml = isEditorForProj
+            ? `
+                <a href="/uploads.html?project=${enc}">Upload</a>
+                <a href="/users.html?project=${enc}">Users</a>
+                <a href="#" class="stats-link" title="Coming soon">Stats</a>
+                ${isAdminUser ? `<a href="/edit-project.html?project=${enc}" class="edit-link">Edit Project</a>` : ""}
+              `
+            : `
+                <a href="/${enc}">Home</a>
+                <a href="/map-viewer/${enc}">Map</a>
+                <a href="/images/${enc}">2D Images</a>
+                <a href="/plans/${enc}">2D Plans</a>
+                <a href="/models/${enc}">3D Models</a>
+                <a href="/pointclouds/${enc}">Point Clouds</a>
+              `;
           const card = document.createElement("div");
           card.className = "project-card";
           card.dataset.project = name;
@@ -402,14 +426,7 @@
               <div class="project-card-name">${name}</div>
               ${addressHtml}
               <div class="project-card-actions">
-                <a href="/${encodeURIComponent(name)}">Home</a>
-                <a href="/map-viewer/${encodeURIComponent(name)}">Map</a>
-                <a href="/images/${encodeURIComponent(name)}">2D Images</a>
-                <a href="/plans/${encodeURIComponent(name)}">2D Plans</a>
-                <a href="/models/${encodeURIComponent(name)}">3D Models</a>
-                <a href="/pointclouds/${encodeURIComponent(name)}">Point Clouds</a>
-                <a href="/map-editor.html?project=${encodeURIComponent(name)}">Edit Map</a>
-                <a href="/edit-project.html?project=${encodeURIComponent(name)}" class="edit-link">Edit</a>
+                ${actionsHtml}
               </div>
             </div>
           `;
@@ -419,6 +436,13 @@
               e.preventDefault();
               e.stopPropagation();
               openShareModal(shareBtn.dataset.project);
+              return;
+            }
+            // Stats is a placeholder — swallow the # click so it doesn't
+            // jump-to-top, and don't fall through to the card-open default.
+            if (e.target.closest(".stats-link")) {
+              e.preventDefault();
+              e.stopPropagation();
               return;
             }
             if (e.target.closest("a[href]")) return;
