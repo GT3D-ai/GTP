@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
+  <script src="/shared-assets.js"></script>
   <style>
     /* Project name lives in the body above the category title rather
        than the header — long names were wrapping the user chip and
@@ -354,11 +355,11 @@
 
     async function loadDocuments(project) {
       const me = window.me ? await window.me.getMe() : { email: null, isAdmin: false };
-      // Non-anonymous = any signed-in role (admin/editor/viewer). The
-      // /api/document/view-url endpoint lives behind IAP and rejects
-      // anonymous callers, so the "View" button is gated to mirror.
       const isSignedIn = !!me.email;
       const isAdmin = !!me.isAdmin;
+      // Editors get the same inline action affordances as admins
+      // (B1 widened the API; canEdit covers admin OR project editor).
+      const canEdit = isAdmin || !!(window.me && await window.me.canEdit(project));
       try {
         // Admins must hit the admin-routed endpoint — the public listing
         // sits behind the no-IAP backend (so /documents/<project> is
@@ -383,8 +384,8 @@
         const table = document.createElement("table");
         table.className = "docs-table";
 
-        // Build header — extra columns are added when an admin is viewing.
-        const adminCols = isAdmin
+        // Build header — extended columns shown to editors and admins.
+        const adminCols = canEdit
           ? `<th class="col-uploaded">Uploaded</th><th class="col-by">By</th><th class="col-vis">Visibility</th>`
           : `<th class="col-uploaded">Uploaded</th>`;
         table.innerHTML = `
@@ -404,28 +405,36 @@
         docs.forEach((d) => {
           const tr = document.createElement("tr");
           tr.dataset.file = d.name;
+          if (d.shared) tr.dataset.shared = "1";
+          if (d.ownerProjectId) tr.dataset.ownerProjectId = d.ownerProjectId;
           const typeLabel = fileTypeFor(d.displayName);
-          const nameCell = isAdmin
-            ? `<span class="doc-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>`
-            : `<span class="doc-name" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>`;
-          const adminCells = isAdmin
+          // Shared docs aren't inline-renamable from a project page —
+          // a rename would propagate to every project. Editors of the
+          // owner project can rename via that project's view.
+          const nameEditable = canEdit && !d.shared;
+          // Small "Shared" tag in the Type column for shared rows. Tables
+          // don't accommodate the corner ribbon cleanly.
+          const sharedTag = d.shared
+            ? `<span style="display:inline-block; margin-left:0.5rem; padding:1px 6px; font-size:0.65rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#fff; background:var(--accent); border-radius:2px;" title="Shared from another project on this property">Shared</span>`
+            : "";
+          const nameCell = nameEditable
+            ? `<span class="doc-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>${sharedTag}`
+            : `<span class="doc-name" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>${sharedTag}`;
+          const adminCells = canEdit
             ? `
               <td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>
               <td class="col-by">${escapeHtml(d.uploadedBy || "—")}</td>
               <td class="col-vis">
-                <select class="doc-vis-select">
+                ${d.shared ? `<span style="color:var(--ink-muted); font-size:0.8125rem;">${escapeHtml(d.visibility || "—")}</span>` : `<select class="doc-vis-select">
                   <option value="private"${d.visibility === "private" ? " selected" : ""}>Private</option>
                   <option value="public"${d.visibility === "public" ? " selected" : ""}>Public</option>
-                </select>
+                </select>`}
               </td>`
             : `<td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>`;
-          // PDF docs get an inline "View" button when the caller is
-          // signed in. /api/document/view-url is IAP-gated so anonymous
-          // viewers shouldn't see the button — it would 401.
           const viewBtn = (isSignedIn && isPdfDoc(d))
             ? `<button type="button" class="doc-action-btn doc-view-btn">View</button>`
             : "";
-          const actionsCell = isAdmin
+          const actionsCell = canEdit
             ? `${viewBtn}
                <button type="button" class="doc-action-btn primary doc-download-btn">Download</button>
                <button type="button" class="doc-action-btn danger doc-delete-btn">Delete</button>`
@@ -480,7 +489,7 @@
           });
         });
 
-        if (!isAdmin) return;
+        if (!canEdit) return;
 
         // Inline rename on blur / Enter (admin only)
         table.querySelectorAll(".doc-name.editable").forEach((el) => {
@@ -542,12 +551,40 @@
           });
         });
 
-        // Delete (admin only)
+        // Delete (editor + admin). Shared docs go through the modal —
+        // the destructive option is only available when the requester
+        // is editor on the owner project (or admin).
         table.querySelectorAll(".doc-delete-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const tr = btn.closest("tr");
             const filePath = tr.dataset.file;
             const displayName = tr.querySelector(".doc-name")?.textContent || filePath;
+            const isShared = tr.dataset.shared === "1";
+            if (isShared && window.sharedAssets) {
+              const item = { shared: true, ownerProjectId: tr.dataset.ownerProjectId || null };
+              const canDelete = await window.sharedAssets.canDeleteShared(project, item);
+              const choice = await window.sharedAssets.confirmSharedDelete({ displayName, canDelete });
+              if (choice === "cancel") return;
+              btn.disabled = true; btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              try {
+                if (choice === "hide") {
+                  await window.sharedAssets.setSharedHidden(project, filePath, true);
+                } else {
+                  const r = await fetch("/api/document/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ file: filePath }),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+                }
+                loadDocuments(project);
+              } catch (err) {
+                alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
+                btn.disabled = false; btn.textContent = "Delete";
+              }
+              return;
+            }
             if (!confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
             btn.disabled = true; btn.textContent = "Deleting…";
             try {

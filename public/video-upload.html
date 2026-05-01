@@ -123,7 +123,7 @@
 
   <main class="container-sm">
     <div id="notAdmin" class="not-admin" style="display:none;">
-      Admin access required to manage videos.
+      Editor or admin access required to manage videos.
     </div>
 
     <div id="missingProject" class="not-admin" style="display:none;">
@@ -134,7 +134,7 @@
       <div class="form-head">
         <p class="eyebrow">Upload Videos &mdash; <span id="projectEyebrow"></span></p>
         <h2>Upload videos</h2>
-        <p class="lede">Admin-only. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code><span id="projectPathHint"></span>/_videos/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Videos are not surfaced anywhere viewers can see.</p>
+        <p class="lede">Editors and admins. Files upload directly to Google Cloud Storage (<code>gt_platform_image_storage</code> under <code><span id="projectPathHint"></span>/_videos/</code>) via a 1-hour signed URL, bypassing the Cloud Run request-size cap. Videos are not surfaced anywhere viewers can see.</p>
       </div>
 
       <div class="drop-zone" id="dropZone">
@@ -145,6 +145,11 @@
         </p>
       </div>
       <input type="file" id="fileInput" accept="video/*" multiple>
+
+      <label style="display:flex; align-items:center; gap:0.5rem; margin-top:var(--space-sm); font-size:0.875rem; color:var(--ink-muted);">
+        <input type="checkbox" id="sharedToggle">
+        <span><strong style="color:var(--ink); font-weight:500;">Save as property-shared</strong> &middot; visible on every project at this property</span>
+      </label>
 
       <div class="file-list-wrap" id="fileList">
         <div class="file-list-header">
@@ -230,13 +235,13 @@
     }
 
     (async () => {
-      const myInfo = await me.getMe();
-      if (!myInfo.isAdmin) {
-        notAdmin.style.display = "block";
-        return;
-      }
       if (!projectFromUrl) {
         missingProject.style.display = "block";
+        return;
+      }
+      const allowed = window.me ? await window.me.canEdit(projectFromUrl) : false;
+      if (!allowed) {
+        notAdmin.style.display = "block";
         return;
       }
       document.getElementById("projectEyebrow").textContent = projectFromUrl;
@@ -366,7 +371,7 @@
     });
 
     async function uploadVideo(file, project, onProgress) {
-      // 1. Request a signed URL (admin-only on the server)
+      const shared = document.getElementById("sharedToggle").checked;
       const res = await fetch("/api/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -375,19 +380,22 @@
           project,
           fileName: file.name,
           contentType: file.type || "application/octet-stream",
+          ...(shared ? { scope: "shared" } : {}),
         }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
       }
-      const { uploadUrl, gcsPath } = await res.json();
+      const { uploadUrl, gcsPath, requiredHeaders } = await res.json();
 
-      // 2. PUT directly to GCS with progress reporting
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        if (requiredHeaders && typeof requiredHeaders === "object") {
+          for (const [k, v] of Object.entries(requiredHeaders)) xhr.setRequestHeader(k, v);
+        }
         xhr.upload.addEventListener("progress", (e) => {
           if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
         });

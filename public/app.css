@@ -308,6 +308,26 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
 @media (min-width: 640px) { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 1024px) { .cards-grid { grid-template-columns: repeat(3, 1fr); } }
 
+/* ----- Property-shared corner ribbon -----
+   Marks gallery items that come from the property's _shared/ pool
+   (Phase B of cross-project sharing). Pure CSS triangular flag in the
+   top-right corner of any positioned ancestor; tooltip via title="Shared".
+   Apply by setting position:relative on the card root and adding
+   <div class="shared-ribbon" title="Shared"></div> as a child. */
+.shared-ribbon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 22px 22px 0 0;
+  border-color: var(--accent) transparent transparent transparent;
+  pointer-events: auto;
+  z-index: 5;
+  cursor: help;
+}
+
 /* ----- Drop zone ----- */
 .drop-zone {
   border: 1px dashed var(--line-strong);

@@ -118,6 +118,15 @@
       </div>
       <input type="file" id="fileInput" multiple accept="image/*">
 
+      <!-- Property-shared toggle. Checked → server writes to
+           <propertyId>/_shared/ instead of <project>/, with the uploading
+           project stamped on object metadata so only its editors (or
+           admins) can later destructively delete. -->
+      <label style="display:flex; align-items:center; gap:0.5rem; margin-top:var(--space-sm); font-size:0.875rem; color:var(--ink-muted);">
+        <input type="checkbox" id="sharedToggle">
+        <span><strong style="color:var(--ink); font-weight:500;">Save as property-shared</strong> &middot; visible on every project at this property</span>
+      </label>
+
       <div class="file-list-wrap" id="fileList">
         <div class="file-list-header">
           <span id="fileCount">0 files selected</span>
@@ -317,11 +326,13 @@
     // project value to the migrated <propertyId>/<projectId> path before
     // the handler runs, so the upload lands where /api/2d/files reads from.
     function uploadOne(file, project, onProgress) {
+      const shared = document.getElementById("sharedToggle").checked;
       return new Promise((resolve, reject) => {
         const fd = new FormData();
         fd.append("file", file);
         fd.append("project", project);
         fd.append("destName", file.name);
+        if (shared) fd.append("scope", "shared");
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/2d/upload");
         xhr.withCredentials = true;

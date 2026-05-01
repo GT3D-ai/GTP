@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
   <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
   <script src="/me.js"></script>
+  <script src="/shared-assets.js"></script>
   <style>
     /* Mirrors project-images.html — see that page for layout comments. */
     a.project-headline {
@@ -517,6 +518,9 @@
 
     async function loadVideos(project) {
       const isAdmin = !!(window.me && await window.me.isAdmin());
+      // Editors get the same inline action affordances as admins
+      // (B1 widened the API; canEdit covers admin OR project editor).
+      const canEdit = isAdmin || !!(window.me && await window.me.canEdit(project));
       try {
         // Admins must hit the admin-routed listing — the public listing
         // sits behind the no-IAP backend (so /videos/<project> is
@@ -547,37 +551,43 @@
 
         ordered.forEach((v) => {
           const card = document.createElement("div");
-          card.className = "video-card" + (v.hidden ? " is-hidden" : "");
+          const isHidden = v.shared ? !!v.hiddenInProject : !!v.hidden;
+          card.className = "video-card" + (isHidden ? " is-hidden" : "");
           card.dataset.file = v.name;
           card.dataset.display = v.displayName;
-          // Thumbnail: admin-uploaded image when present, otherwise the
-          // gradient placeholder + video glyph. Either way the thumb is
-          // clickable and triggers the player modal.
+          if (v.shared) card.dataset.shared = "1";
+          if (v.ownerProjectId) card.dataset.ownerProjectId = v.ownerProjectId;
           const thumbInner = v.thumbnailUrl
             ? `<img src="${escapeAttr(v.thumbnailUrl)}" alt="${escapeAttr(v.displayName)}" loading="lazy" draggable="false">`
             : `<span class="placeholder-glyph">${VIDEO_GLYPH_SVG}</span>`;
-          // Admin-only overlays + action buttons. Non-admin viewers get
-          // a clean play-only card with download.
-          const dragHandleHtml = isAdmin
+          // Editor + admin overlays + action buttons. Non-editors get
+          // a clean play-only card with download. Edit-thumb / clear-
+          // thumb / rename are suppressed on shared items since they
+          // mutate bytes/metadata visible to every project on the property.
+          const dragHandleHtml = canEdit
             ? `<span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>`
             : "";
-          const editThumbHtml = isAdmin
+          const editThumbHtml = (canEdit && !v.shared)
             ? `<button type="button" class="thumb-edit-btn" data-action="edit-thumb" title="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}" aria-label="${v.thumbnailUrl ? "Replace thumbnail" : "Set thumbnail"}">${PENCIL_SVG}</button>`
             : "";
-          const hideToggleHtml = isAdmin
-            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(v.name)}" data-hidden="${v.hidden ? "1" : "0"}" title="${v.hidden ? "Unhide video" : "Hide video"}" aria-label="${v.hidden ? "Unhide video" : "Hide video"}">${v.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+          const hideTitle = v.shared
+            ? (isHidden ? "Show on this project" : "Hide on this project")
+            : (isHidden ? "Unhide video" : "Hide video");
+          const hideToggleHtml = canEdit
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(v.name)}" data-hidden="${isHidden ? "1" : "0"}" data-shared="${v.shared ? "1" : "0"}" title="${escapeAttr(hideTitle)}" aria-label="${escapeAttr(hideTitle)}">${isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
             : "";
-          const nameHtml = isAdmin
+          const nameHtml = (canEdit && !v.shared)
             ? `<span class="video-card-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>`
             : `<span class="video-card-name" title="${escapeAttr(v.displayName)}">${escapeHtml(v.displayName)}</span>`;
-          const uploaderHtml = isAdmin
+          const uploaderHtml = canEdit
             ? `<span>${escapeHtml(v.uploadedBy || "—")}</span>`
             : "";
-          const adminActionsHtml = isAdmin
-            ? `${v.thumbnailUrl ? '<button type="button" class="btn btn-outline btn-sm clear-thumb-btn">Clear thumb</button>' : ""}
+          const adminActionsHtml = canEdit
+            ? `${(v.thumbnailUrl && !v.shared) ? '<button type="button" class="btn btn-outline btn-sm clear-thumb-btn">Clear thumb</button>' : ""}
                <button type="button" class="btn btn-outline btn-sm btn-danger delete-btn">Delete</button>`
             : "";
           card.innerHTML = `
+            ${window.sharedAssets ? window.sharedAssets.ribbonHtml(v) : ""}
             ${dragHandleHtml}
             <div class="video-card-thumb" data-action="play">
               ${thumbInner}
@@ -644,23 +654,29 @@
           });
         });
 
-        // Everything below is admin-only — hide/unhide, drag-to-reorder,
+        // Everything below is editor + admin — hide/unhide, drag-to-reorder,
         // clear-thumb, inline rename, delete.
-        if (!isAdmin) return;
+        if (!canEdit) return;
 
         grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             e.stopPropagation();
             const wasHidden = btn.dataset.hidden === "1";
+            const isShared = btn.dataset.shared === "1";
             btn.disabled = true;
             try {
-              const r = await fetch("/api/video/visibility", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
-                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
-              });
-              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              if (isShared) {
+                if (!window.sharedAssets) throw new Error("shared-assets helper not loaded");
+                await window.sharedAssets.setSharedHidden(project, btn.dataset.file, !wasHidden);
+              } else {
+                const r = await fetch("/api/video/visibility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "same-origin",
+                  body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+                });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              }
               loadVideos(project);
             } catch (err) {
               alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);
@@ -735,6 +751,32 @@
             const card = btn.closest(".video-card");
             const filePath = card.dataset.file;
             const displayName = card.querySelector(".video-card-name")?.textContent || filePath;
+            const isShared = card.dataset.shared === "1";
+            if (isShared && window.sharedAssets) {
+              const item = { shared: true, ownerProjectId: card.dataset.ownerProjectId || null };
+              const canDelete = await window.sharedAssets.canDeleteShared(project, item);
+              const choice = await window.sharedAssets.confirmSharedDelete({ displayName, canDelete });
+              if (choice === "cancel") return;
+              btn.disabled = true; btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              try {
+                if (choice === "hide") {
+                  await window.sharedAssets.setSharedHidden(project, filePath, true);
+                } else {
+                  const r = await fetch("/api/video/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ file: filePath }),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+                }
+                loadVideos(project);
+              } catch (err) {
+                alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
+                btn.disabled = false; btn.textContent = "Delete";
+              }
+              return;
+            }
             if (!confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
             btn.disabled = true; btn.textContent = "Deleting…";
             try {

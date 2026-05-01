@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
+  <script src="/shared-assets.js"></script>
   <style>
     /* Project name lives in the body above the category title rather
        than the header — long names were wrapping the user chip and
@@ -542,14 +543,21 @@
 
         ordered.forEach((f) => {
           const card = document.createElement("div");
-          card.className = "model-card" + (f.hidden ? " is-hidden" : "");
+          const isHidden = f.shared ? !!f.hiddenInProject : !!f.hidden;
+          card.className = "model-card" + (isHidden ? " is-hidden" : "");
           card.dataset.file = f.name;
-          const editBtn = `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
+          if (f.shared) card.dataset.shared = "1";
+          if (f.ownerProjectId) card.dataset.ownerProjectId = f.ownerProjectId;
+          // Thumb-edit pencil suppressed on shared items — replacing
+          // their thumbnail bytes propagates to all projects.
+          const editBtn = (!f.shared)
+            ? `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 20h9"/>
                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
               </svg>
-            </button>`;
+            </button>`
+            : "";
           const thumbBust = replacedThumbAt.get(f.name);
           const thumbSrc = f.thumbnail
             ? `/api/model/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust ? `&v=${thumbBust}` : ""}`
@@ -561,10 +569,14 @@
           const thumbHtml = isViewable(f.displayName)
             ? `<div class="${thumbClass}">${editBtn}<a class="model-card-thumb-link" href="/model-viewer.html?file=${encodeURIComponent(f.name)}" aria-label="View ${escapeAttr(f.displayName)} in 3D viewer">${innerThumb}</a></div>`
             : `<div class="${thumbClass}">${editBtn}${innerThumb}</div>`;
+          const hideTitle = f.shared
+            ? (isHidden ? "Show on this project" : "Hide on this project")
+            : (isHidden ? "Unhide model" : "Hide model");
           const hideBtnHtml = isEditor
-            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${f.hidden ? "1" : "0"}" title="${f.hidden ? "Unhide model" : "Hide model"}" aria-label="${f.hidden ? "Unhide model" : "Hide model"}">${f.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${isHidden ? "1" : "0"}" data-shared="${f.shared ? "1" : "0"}" title="${escapeAttr(hideTitle)}" aria-label="${escapeAttr(hideTitle)}">${isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
             : "";
           card.innerHTML = `
+            ${window.sharedAssets ? window.sharedAssets.ribbonHtml(f) : ""}
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             ${thumbHtml}
             ${hideBtnHtml}
@@ -587,19 +599,26 @@
         wrap.innerHTML = "";
         wrap.appendChild(grid);
 
-        // Hide / unhide toggle — flips the GCS custom-metadata flag.
+        // Hide / unhide toggle. Shared items toggle per-project hide;
+        // non-shared toggle GCS-level visibility.
         grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             e.stopPropagation();
             const wasHidden = btn.dataset.hidden === "1";
+            const isShared = btn.dataset.shared === "1";
             btn.disabled = true;
             try {
-              const r = await fetch("/api/model/visibility", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
-              });
-              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              if (isShared) {
+                if (!window.sharedAssets) throw new Error("shared-assets helper not loaded");
+                await window.sharedAssets.setSharedHidden(project, btn.dataset.file, !wasHidden);
+              } else {
+                const r = await fetch("/api/model/visibility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+                });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              }
               loadModels(project);
             } catch (err) {
               alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);
@@ -647,15 +666,44 @@
         grid.querySelectorAll(".delete-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const name = btn.dataset.display;
+            const filePath = btn.dataset.file;
+            const card = btn.closest(".model-card");
+            const isShared = card && card.dataset.shared === "1";
+            const orig = btn.textContent;
+            if (isShared && window.sharedAssets) {
+              const item = { shared: true, ownerProjectId: card.dataset.ownerProjectId || null };
+              const canDelete = await window.sharedAssets.canDeleteShared(project, item);
+              const choice = await window.sharedAssets.confirmSharedDelete({ displayName: name, canDelete });
+              if (choice === "cancel") return;
+              btn.disabled = true;
+              btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              try {
+                if (choice === "hide") {
+                  await window.sharedAssets.setSharedHidden(project, filePath, true);
+                } else {
+                  const r = await fetch("/api/model/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file: filePath }),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+                }
+                loadModels(project);
+              } catch (err) {
+                alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
+                btn.disabled = false;
+                btn.textContent = orig;
+              }
+              return;
+            }
             if (!confirm(`Delete "${name}"? This also removes its thumbnail. This cannot be undone.`)) return;
             btn.disabled = true;
-            const orig = btn.textContent;
             btn.textContent = "Deleting…";
             try {
               const r = await fetch("/api/model/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file }),
+                body: JSON.stringify({ file: filePath }),
               });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
               loadModels(project);

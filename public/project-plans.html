@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
+  <script src="/shared-assets.js"></script>
   <style>
     /* Project name lives in the body above the category title rather
        than the header — long names were wrapping the user chip and
@@ -567,12 +568,13 @@
 
         ordered.forEach((f) => {
           const card = document.createElement("div");
-          card.className = "plan-card" + (f.hidden ? " is-hidden" : "");
+          const isHidden = f.shared ? !!f.hiddenInProject : !!f.hidden;
+          card.className = "plan-card" + (isHidden ? " is-hidden" : "");
           card.dataset.file = f.name;
+          if (f.shared) card.dataset.shared = "1";
+          if (f.ownerProjectId) card.dataset.ownerProjectId = f.ownerProjectId;
           const previewable = canPreview(f);
           const thumbClass = "plan-card-thumb" + (previewable ? " previewable" : "");
-          // Cache-bust the thumbnail URL after a recent thumbnail upload
-          // so the gallery picks up the new image without a hard reload.
           const thumbBust = replacedThumbAt.get(f.name);
           const thumbSrc = f.thumbnail
             ? `/api/plan/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust ? `&v=${thumbBust}` : ""}`
@@ -581,15 +583,21 @@
             ? `<img src="${thumbSrc}" alt="${escapeAttr(f.displayName)}" loading="lazy" onerror="this.parentElement.classList.add('placeholder'); this.outerHTML='&lt;span class=&quot;glyph&quot;&gt;&amp;#128196;&lt;/span&gt;'">`
             : `<span class="glyph">&#128196;</span>`;
           const thumbDivClass = thumbSrc ? thumbClass : `${thumbClass} placeholder`;
-          // Editor-only overlays: hide-toggle (upper-right), pencil
-          // (lower-left, replaces the .thumb.jpg sidecar via signed URL).
+          // Editor overlays: hide-toggle (upper-right) + pencil
+          // (lower-left). For shared items the pencil is suppressed
+          // since replacing bytes propagates to all projects; the eye
+          // toggles per-project hide instead of GCS-level visibility.
+          const hideTitle = f.shared
+            ? (isHidden ? "Show on this project" : "Hide on this project")
+            : (isHidden ? "Unhide plan" : "Hide plan");
           const hideBtnHtml = isEditor
-            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${f.hidden ? "1" : "0"}" title="${f.hidden ? "Unhide plan" : "Hide plan"}" aria-label="${f.hidden ? "Unhide plan" : "Hide plan"}">${f.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${isHidden ? "1" : "0"}" data-shared="${f.shared ? "1" : "0"}" title="${escapeAttr(hideTitle)}" aria-label="${escapeAttr(hideTitle)}">${isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
             : "";
-          const replaceBtnHtml = isEditor
+          const replaceBtnHtml = (isEditor && !f.shared)
             ? `<button type="button" class="replace-thumb-btn" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" title="Replace thumbnail image" aria-label="Replace thumbnail image">${PENCIL_SVG}</button>`
             : "";
           card.innerHTML = `
+            ${window.sharedAssets ? window.sharedAssets.ribbonHtml(f) : ""}
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="${thumbDivClass}" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
               ${thumbInner}
@@ -644,15 +652,44 @@
         grid.querySelectorAll(".delete-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const name = btn.dataset.display;
+            const filePath = btn.dataset.file;
+            const card = btn.closest(".plan-card");
+            const isShared = card && card.dataset.shared === "1";
+            const orig = btn.textContent;
+            if (isShared && window.sharedAssets) {
+              const item = { shared: true, ownerProjectId: card.dataset.ownerProjectId || null };
+              const canDelete = await window.sharedAssets.canDeleteShared(project, item);
+              const choice = await window.sharedAssets.confirmSharedDelete({ displayName: name, canDelete });
+              if (choice === "cancel") return;
+              btn.disabled = true;
+              btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              try {
+                if (choice === "hide") {
+                  await window.sharedAssets.setSharedHidden(project, filePath, true);
+                } else {
+                  const r = await fetch("/api/plan/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file: filePath }),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+                }
+                loadPlans(project);
+              } catch (err) {
+                alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
+                btn.disabled = false;
+                btn.textContent = orig;
+              }
+              return;
+            }
             if (!confirm(`Delete "${name}"? This also removes its thumbnail. This cannot be undone.`)) return;
             btn.disabled = true;
-            const orig = btn.textContent;
             btn.textContent = "Deleting…";
             try {
               const r = await fetch("/api/plan/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file }),
+                body: JSON.stringify({ file: filePath }),
               });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
               loadPlans(project);
@@ -664,20 +701,26 @@
           });
         });
 
-        // Hide / unhide toggle — flips the GCS custom-metadata flag and
-        // re-renders so the badge + opacity update with the new state.
+        // Hide / unhide toggle. Shared items flip per-project hide;
+        // non-shared items flip GCS-level visibility.
         grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             e.stopPropagation();
             const wasHidden = btn.dataset.hidden === "1";
+            const isShared = btn.dataset.shared === "1";
             btn.disabled = true;
             try {
-              const r = await fetch("/api/plan/visibility", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
-              });
-              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              if (isShared) {
+                if (!window.sharedAssets) throw new Error("shared-assets helper not loaded");
+                await window.sharedAssets.setSharedHidden(project, btn.dataset.file, !wasHidden);
+              } else {
+                const r = await fetch("/api/plan/visibility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+                });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              }
               loadPlans(project);
             } catch (err) {
               alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
   <script src="/me.js"></script>
+  <script src="/shared-assets.js"></script>
   <style>
     /* Project name lives in the body above the category title rather
        than the header — long names were wrapping the user chip and
@@ -552,19 +553,33 @@
 
         ordered.forEach((f) => {
           const card = document.createElement("div");
-          card.className = "image-card" + (f.hidden ? " is-hidden" : "");
+          // Shared items track per-project hide via hiddenInProject;
+          // project-owned items use the GCS-level hidden flag. The visual
+          // "hidden" state on the card reflects whichever applies.
+          const isHidden = f.shared ? !!f.hiddenInProject : !!f.hidden;
+          card.className = "image-card" + (isHidden ? " is-hidden" : "");
           card.dataset.file = f.name;
           const src = imageProxy(f.name);
           // Editor-only hide/unhide eye in the corner of the thumbnail.
-          // Title flips with the current state so the action label is
-          // always meaningful.
+          // Shared items: the eye toggles per-project hide via /api/project/
+          // shared-visibility (other projects on the property are unaffected).
+          // Non-shared items: existing GCS-level visibility flow.
+          const hideTitle = f.shared
+            ? (isHidden ? "Show on this project" : "Hide on this project")
+            : (isHidden ? "Unhide image" : "Hide image");
           const hideBtnHtml = isEditor
-            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${f.hidden ? "1" : "0"}" title="${f.hidden ? "Unhide image" : "Hide image"}" aria-label="${f.hidden ? "Unhide image" : "Hide image"}">${f.hidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
+            ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${isHidden ? "1" : "0"}" data-shared="${f.shared ? "1" : "0"}" title="${escapeAttr(hideTitle)}" aria-label="${escapeAttr(hideTitle)}">${isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
             : "";
-          const replaceBtnHtml = isEditor
+          // Replace is suppressed on shared items — overwriting bytes
+          // would propagate to every project. Manage from the property
+          // page (Phase C) instead.
+          const replaceBtnHtml = (isEditor && !f.shared)
             ? `<button type="button" class="replace-thumb-btn" data-file="${escapeAttr(f.name)}" title="Replace thumbnail image" aria-label="Replace thumbnail image">${PENCIL_SVG}</button>`
             : "";
+          if (f.shared) card.dataset.shared = "1";
+          if (f.ownerProjectId) card.dataset.ownerProjectId = f.ownerProjectId;
           card.innerHTML = `
+            ${window.sharedAssets ? window.sharedAssets.ribbonHtml(f) : ""}
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             <div class="image-card-thumb" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">
               <img src="${src}" alt="${escapeAttr(f.displayName)}" loading="lazy" draggable="false">
@@ -596,19 +611,50 @@
         wrap.innerHTML = "";
         wrap.appendChild(grid);
 
-        // Editor-only delete buttons
+        // Editor-only delete buttons. Shared items go through a three-
+        // option modal: delete-everywhere (only when the requester is
+        // editor on the owner project), hide-on-this-project, or cancel.
         grid.querySelectorAll(".delete-btn").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const name = btn.dataset.display;
+            const filePath = btn.dataset.file;
+            const card = btn.closest(".image-card");
+            const isShared = card && card.dataset.shared === "1";
+            const orig = btn.textContent;
+            if (isShared && window.sharedAssets) {
+              const item = { shared: true, ownerProjectId: card.dataset.ownerProjectId || null };
+              const canDelete = await window.sharedAssets.canDeleteShared(project, item);
+              const choice = await window.sharedAssets.confirmSharedDelete({ displayName: name, canDelete });
+              if (choice === "cancel") return;
+              btn.disabled = true;
+              btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              try {
+                if (choice === "hide") {
+                  await window.sharedAssets.setSharedHidden(project, filePath, true);
+                } else {
+                  const r = await fetch("/api/2d/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file: filePath }),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+                }
+                loadImages(project);
+              } catch (err) {
+                alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
+                btn.disabled = false;
+                btn.textContent = orig;
+              }
+              return;
+            }
             if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
             btn.disabled = true;
-            const orig = btn.textContent;
             btn.textContent = "Deleting…";
             try {
               const r = await fetch("/api/2d/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file }),
+                body: JSON.stringify({ file: filePath }),
               });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
               loadImages(project);
@@ -634,20 +680,29 @@
           });
         });
 
-        // Hide / unhide toggle — flips the GCS custom-metadata flag and
-        // re-renders so the badge + opacity update with the new state.
+        // Hide / unhide toggle. Non-shared items flip the GCS-level
+        // hidden flag (visible/invisible to all viewers). Shared items
+        // flip per-project hide via /api/project/shared-visibility — the
+        // GCS object is untouched, so other projects on the property are
+        // unaffected.
         grid.querySelectorAll(".hide-toggle-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             e.stopPropagation();
             const wasHidden = btn.dataset.hidden === "1";
+            const isShared = btn.dataset.shared === "1";
             btn.disabled = true;
             try {
-              const r = await fetch("/api/2d/visibility", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
-              });
-              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              if (isShared) {
+                if (!window.sharedAssets) throw new Error("shared-assets helper not loaded");
+                await window.sharedAssets.setSharedHidden(project, btn.dataset.file, !wasHidden);
+              } else {
+                const r = await fetch("/api/2d/visibility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ file: btn.dataset.file, hidden: !wasHidden }),
+                });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+              }
               loadImages(project);
             } catch (err) {
               alert((wasHidden ? "Unhide" : "Hide") + " failed: " + err.message);
