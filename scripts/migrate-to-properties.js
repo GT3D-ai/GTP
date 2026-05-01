@@ -277,7 +277,14 @@ async function migrateProject(ctx, oldName) {
   const main = buckets.main;
   const log = (...a) => console.log(`[${oldName}]`, ...a);
 
-  // Idempotency via slug index — already done?
+  // Idempotency via slug index — already done? Two cases to detect:
+  //   (a) canonical[oldName] is layout:"new"  — would only happen if a
+  //       prior migration left the legacy entry in canonical (it
+  //       doesn't, post-recordMigration), but cheap to check first.
+  //   (b) alias[oldName] points at a canonical with layout:"new" — the
+  //       state recordMigration actually leaves behind. Without this
+  //       check, re-running --all silently re-migrates everything,
+  //       allocating fresh propertyIds and orphaning the prior tree.
   const idx =
     (await readJson(main, "_platform/slug-index.json")) || {
       canonical: {},
@@ -286,6 +293,11 @@ async function migrateProject(ctx, oldName) {
   const existing = idx.canonical[oldName];
   if (existing && existing.layout === "new") {
     log("already migrated, skipping");
+    return null;
+  }
+  const aliasTarget = idx.alias && idx.alias[oldName];
+  if (aliasTarget && idx.canonical[aliasTarget] && idx.canonical[aliasTarget].layout === "new") {
+    log(`already migrated (alias -> ${aliasTarget}), skipping`);
     return null;
   }
 
