@@ -3052,14 +3052,23 @@ app.get("/api/document/files", async (req, res) => {
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"))
       .filter((f) => !hiddenShared.has(f.name));
+    // canSeeAll covers admin and project editors — both need to see
+    // private docs (so editors can manage what they uploaded) and the
+    // uploadedBy / visibility metadata (project-documents.html shows
+    // the uploader on hover and lets editors flip visibility).
     const isAdminCaller = !!req.user?.isAdmin;
+    const canSeeAll = isAdminCaller || (
+      req.projectCanonical
+        ? await hasAliasAwareAccess(req.user?.email, req.projectCanonical, "editor")
+        : false
+    );
     const [list, sharedList] = await Promise.all([
       Promise.all(docs.map(async (f) => {
         const meta = await readDocumentMeta(f.name);
         const visibility = meta.visibility === "public" ? "public" : "private";
-        // Skip private documents for non-admin callers — they shouldn't even
-        // know they exist.
-        if (!isAdminCaller && visibility !== "public") return null;
+        // Private docs hidden from anonymous and viewer-role callers —
+        // they shouldn't even know they exist.
+        if (!canSeeAll && visibility !== "public") return null;
         const entry = {
           name: f.name,
           displayName: f.name.replace(prefix, ""),
@@ -3068,7 +3077,7 @@ app.get("/api/document/files", async (req, res) => {
           contentType: f.metadata.contentType,
           uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
         };
-        if (isAdminCaller) {
+        if (canSeeAll) {
           entry.uploadedBy = meta.uploadedBy || null;
           entry.visibility = visibility;
         }
@@ -3077,7 +3086,7 @@ app.get("/api/document/files", async (req, res) => {
       Promise.all(sharedDocs.map(async (f) => {
         const meta = await readDocumentMeta(f.name);
         const visibility = meta.visibility === "public" ? "public" : "private";
-        if (!isAdminCaller && visibility !== "public") return null;
+        if (!canSeeAll && visibility !== "public") return null;
         const entry = {
           name: f.name,
           displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
@@ -3088,7 +3097,7 @@ app.get("/api/document/files", async (req, res) => {
           ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
-        if (isAdminCaller) {
+        if (canSeeAll) {
           entry.uploadedBy = meta.uploadedBy || null;
           entry.visibility = visibility;
         }
