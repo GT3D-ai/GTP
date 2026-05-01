@@ -434,7 +434,7 @@
 
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
-        if (window.me && await window.me.isAdmin()) {
+        if (isEditor) {
           const a = document.getElementById("adminUploadLink");
           a.href = `/video-upload.html?project=${enc}`;
           a.style.display = "";

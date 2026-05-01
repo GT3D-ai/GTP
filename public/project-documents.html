@@ -287,7 +287,7 @@
       // Editors get the shared editor-nav hamburger cluster + project menu.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
-        if (window.me && await window.me.isAdmin()) {
+        if (isEditor) {
           const a = document.getElementById("adminUploadLink");
           a.href = `/document-upload.html?project=${encodeURIComponent(project)}`;
           a.style.display = "";

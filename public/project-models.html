@@ -440,7 +440,7 @@
       // editors, swap to the shared editor-nav hamburger cluster.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
-        if (window.me && await window.me.isAdmin()) {
+        if (isEditor) {
           const a = document.getElementById("adminUploadLink");
           a.href = `/model-upload.html?project=${encodeURIComponent(project)}`;
           a.style.display = "";

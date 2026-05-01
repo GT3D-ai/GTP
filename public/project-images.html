@@ -350,6 +350,7 @@
       <h1>2D Images</h1>
       <div class="head-actions">
         <button type="button" class="reset-order-btn" id="resetOrderBtn" style="display:none;" title="Clear the manual order so tiles fall back to upload date (newest first)">Reset to chronological</button>
+        <a href="#" class="link-action" id="adminUploadLink" style="display:none;">+ Upload images</a>
       </div>
     </div>
 
@@ -412,6 +413,11 @@
       // top-right hamburger cluster + project menu set as the home page.
       (async () => {
         const isEditor = window.me ? await window.me.canEdit(project) : false;
+        if (isEditor) {
+          const a = document.getElementById("adminUploadLink");
+          a.href = `/upload.html?project=${encodeURIComponent(project)}`;
+          a.style.display = "";
+        }
         if (!isEditor) {
           const logo = document.querySelector(".site-header .logo");
           // Non-editors land on the no-IAP /public/<project> mirror so the
