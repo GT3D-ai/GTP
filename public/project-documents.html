@@ -47,92 +47,78 @@
     }
     .page-head .upload-link:hover { text-decoration: underline; }
 
-    .docs-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.875rem;
+    /* Mobile-first stacked list. Each row: name + view/download links on
+       line 1; type · size · uploaded (uploader on hover) on line 2;
+       editor actions (rename / public-private toggle / delete) on an
+       optional line 3. Long filenames get truncated to 20 chars in
+       the visible label with the full name in title= for hover. */
+    .docs-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
       background: var(--bg-elevated);
       border: 1px solid var(--line);
     }
-    .docs-table th, .docs-table td {
-      text-align: left;
-      padding: 0.7rem 0.85rem;
+    .doc-row {
+      position: relative;
+      padding: 0.75rem 1rem;
       border-bottom: 1px solid var(--line);
-      vertical-align: middle;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
     }
-    .docs-table tr:last-child td { border-bottom: none; }
-    .docs-table th {
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--ink-muted);
-      background: var(--bg);
+    .doc-row:last-child { border-bottom: none; }
+    .doc-row.is-hidden { opacity: 0.55; }
+    .doc-row-primary {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
     }
-    .docs-table td.empty { text-align: center; color: var(--ink-subtle); padding: var(--space-md); }
-    .docs-table .col-name { min-width: 200px; }
-    .docs-table .col-type { width: 100px; white-space: nowrap; color: var(--ink-muted); text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.04em; }
-    .docs-table .col-size { width: 110px; white-space: nowrap; color: var(--ink-muted); }
-    .docs-table .col-uploaded { white-space: nowrap; color: var(--ink-muted); font-size: 0.8rem; }
-    .docs-table .col-by { white-space: nowrap; color: var(--ink-muted); font-size: 0.8rem; }
-    .docs-table .col-vis { width: 110px; }
-    .docs-table .col-actions { width: 1px; white-space: nowrap; text-align: right; }
-
     .doc-name {
       font-weight: 500;
       color: var(--ink);
-      display: inline-block;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      cursor: default;
     }
-    .doc-name.editable {
-      cursor: text;
-      padding: 2px 4px;
-      margin: -2px -4px;
-      border-radius: 3px;
-    }
-    .doc-name.editable:focus {
-      outline: 2px solid var(--accent);
-      background: var(--bg);
-    }
-
-    .doc-vis-select {
-      padding: 4px 6px;
-      background: var(--bg);
-      border: 1px solid var(--line-strong);
-      color: var(--ink);
-      font-size: 0.8rem;
-      font-family: inherit;
-    }
-
-    .doc-action-btn {
-      background: none;
-      border: 1px solid var(--line-strong);
+    .doc-row-meta {
+      font-size: 0.75rem;
       color: var(--ink-muted);
-      padding: 5px 10px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .doc-row-meta .doc-type {
       text-transform: uppercase;
-      cursor: pointer;
-      margin-left: 4px;
-      text-decoration: none;
-      display: inline-block;
+      letter-spacing: 0.06em;
+      font-weight: 600;
     }
-    .doc-action-btn:hover { color: var(--ink); border-color: var(--ink); }
-    .doc-action-btn.primary {
+    .doc-row-meta .doc-uploaded { cursor: help; }
+    .doc-row-meta .doc-vis-tag {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      font-size: 0.68rem;
+    }
+    .doc-row-meta .doc-vis-tag.private { color: var(--ink-subtle); }
+    .doc-row-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      padding-top: 0.35rem;
+      margin-top: 0.15rem;
+      border-top: 1px dashed var(--line);
+      font-size: 0.75rem;
+    }
+    .doc-link {
       color: var(--accent);
-      border-color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 0.8125rem;
     }
-    .doc-action-btn.primary:hover {
-      background: var(--accent);
-      color: #fff;
-    }
-    .doc-action-btn.danger { color: var(--danger); border-color: var(--danger); }
-    .doc-action-btn.danger:hover { background: var(--danger); color: #fff; }
-    .doc-action-btn:disabled { opacity: 0.55; cursor: progress; }
+    .doc-link:hover { text-decoration: underline; }
+    .doc-link.danger { color: var(--danger); }
+    .doc-link[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 
     .placeholder {
       text-align: center;
@@ -381,98 +367,93 @@
           return;
         }
 
-        const table = document.createElement("table");
-        table.className = "docs-table";
+        function truncate20(s) {
+          const str = String(s || "");
+          return str.length > 20 ? str.slice(0, 20) + "…" : str;
+        }
 
-        // Build header — extended columns shown to editors and admins.
-        const adminCols = canEdit
-          ? `<th class="col-uploaded">Uploaded</th><th class="col-by">By</th><th class="col-vis">Visibility</th>`
-          : `<th class="col-uploaded">Uploaded</th>`;
-        table.innerHTML = `
-          <thead>
-            <tr>
-              <th class="col-name">File name</th>
-              <th class="col-type">Type</th>
-              <th class="col-size">Size</th>
-              ${adminCols}
-              <th class="col-actions"></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        `;
+        const ul = document.createElement("ul");
+        ul.className = "docs-list";
 
-        const tbody = table.querySelector("tbody");
         docs.forEach((d) => {
-          const tr = document.createElement("tr");
-          tr.dataset.file = d.name;
-          if (d.shared) tr.dataset.shared = "1";
-          if (d.ownerProjectId) tr.dataset.ownerProjectId = d.ownerProjectId;
+          const li = document.createElement("li");
+          li.className = "doc-row";
+          li.dataset.file = d.name;
+          if (d.shared) li.dataset.shared = "1";
+          if (d.ownerProjectId) li.dataset.ownerProjectId = d.ownerProjectId;
+
           const typeLabel = fileTypeFor(d.displayName);
-          // Shared docs aren't inline-renamable from a project page —
-          // a rename would propagate to every project. Editors of the
-          // owner project can rename via that project's view.
-          const nameEditable = canEdit && !d.shared;
-          // Small "Shared" tag in the Type column for shared rows. Tables
-          // don't accommodate the corner ribbon cleanly.
-          const sharedTag = d.shared
-            ? `<span style="display:inline-block; margin-left:0.5rem; padding:1px 6px; font-size:0.65rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#fff; background:var(--accent); border-radius:2px;" title="Shared from another project on this property">Shared</span>`
+          // Uploader email goes on a hover-tooltip over the date cell;
+          // /api/document/files only includes uploadedBy for admin callers
+          // today, so non-admins see the date with no extra detail.
+          const uploadedTitle = d.uploadedBy ? `Uploaded by ${d.uploadedBy}` : "";
+          const visibilityTag = d.visibility
+            ? `<span class="doc-vis-tag${d.visibility === "private" ? " private" : ""}">${escapeHtml(d.visibility)}</span>`
             : "";
-          const nameCell = nameEditable
-            ? `<span class="doc-name editable" contenteditable="true" spellcheck="false" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>${sharedTag}`
-            : `<span class="doc-name" title="${escapeAttr(d.displayName)}">${escapeHtml(d.displayName)}</span>${sharedTag}`;
-          const adminCells = canEdit
-            ? `
-              <td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>
-              <td class="col-by">${escapeHtml(d.uploadedBy || "—")}</td>
-              <td class="col-vis">
-                ${d.shared ? `<span style="color:var(--ink-muted); font-size:0.8125rem;">${escapeHtml(d.visibility || "—")}</span>` : `<select class="doc-vis-select">
-                  <option value="private"${d.visibility === "private" ? " selected" : ""}>Private</option>
-                  <option value="public"${d.visibility === "public" ? " selected" : ""}>Public</option>
-                </select>`}
-              </td>`
-            : `<td class="col-uploaded">${formatWhen(d.uploadedAt || d.updated)}</td>`;
-          const viewBtn = (isSignedIn && isPdfDoc(d))
-            ? `<button type="button" class="doc-action-btn doc-view-btn">View</button>`
+          const viewLink = (isSignedIn && isPdfDoc(d))
+            ? `<a class="doc-link doc-view-link" href="#">view</a>`
             : "";
-          const actionsCell = canEdit
-            ? `${viewBtn}
-               <button type="button" class="doc-action-btn primary doc-download-btn">Download</button>
-               <button type="button" class="doc-action-btn danger doc-delete-btn">Delete</button>`
-            : `${viewBtn}
-               <button type="button" class="doc-action-btn primary doc-download-btn">Download</button>`;
-          tr.innerHTML = `
-            <td class="col-name">${nameCell}</td>
-            <td class="col-type">${typeLabel}</td>
-            <td class="col-size">${formatSize(d.size)}</td>
-            ${adminCells}
-            <td class="col-actions">${actionsCell}</td>
+          // Editor extras: rename + visibility toggle suppressed on
+          // shared docs (they propagate property-wide; manage from the
+          // owner project). Delete is available for everyone with edit
+          // rights — the modal handles the shared confirmation flow.
+          let editorActions = "";
+          if (canEdit) {
+            const parts = [];
+            if (!d.shared) {
+              parts.push(`<a class="doc-link doc-rename-link" href="#">rename</a>`);
+              const next = d.visibility === "public" ? "private" : "public";
+              parts.push(`<a class="doc-link doc-vis-link" href="#" data-next="${next}">make ${next}</a>`);
+            }
+            parts.push(`<a class="doc-link danger doc-delete-link" href="#">delete</a>`);
+            editorActions = `<div class="doc-row-actions">${parts.join("")}</div>`;
+          }
+
+          li.innerHTML = `
+            ${window.sharedAssets ? window.sharedAssets.ribbonHtml(d) : ""}
+            <div class="doc-row-primary">
+              <span class="doc-name" title="${escapeAttr(d.displayName)}">${escapeHtml(truncate20(d.displayName))}</span>
+              ${viewLink}
+              <a class="doc-link doc-download-link" href="#">download</a>
+            </div>
+            <div class="doc-row-meta">
+              <span class="doc-type">${escapeHtml(typeLabel)}</span>
+              <span>·</span>
+              <span class="doc-size">${escapeHtml(formatSize(d.size))}</span>
+              <span>·</span>
+              <span class="doc-uploaded" title="${escapeAttr(uploadedTitle)}">${escapeHtml(formatWhen(d.uploadedAt || d.updated))}</span>
+              ${visibilityTag ? `<span>·</span>${visibilityTag}` : ""}
+            </div>
+            ${editorActions}
           `;
-          tbody.appendChild(tr);
+          ul.appendChild(li);
         });
 
         wrap.innerHTML = "";
-        wrap.appendChild(table);
+        wrap.appendChild(ul);
 
-        // View (PDFs only, signed-in callers only). Opens an inline
-        // <iframe> against the IAP-gated /api/document/view-url; the
-        // browser's native PDF viewer renders without forcing a download.
-        table.querySelectorAll(".doc-view-btn").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const tr = btn.closest("tr");
-            const filePath = tr.dataset.file;
-            const displayName = tr.querySelector(".doc-name")?.textContent || filePath;
+        function rowOf(target) { return target.closest(".doc-row"); }
+
+        // View (PDFs, signed-in callers only).
+        ul.querySelectorAll(".doc-view-link").forEach((a) => {
+          a.addEventListener("click", (e) => {
+            e.preventDefault();
+            const li = rowOf(a);
+            const filePath = li.dataset.file;
+            const displayName = li.querySelector(".doc-name")?.title || filePath;
             openPdfPreview(filePath, displayName);
           });
         });
 
-        // Download — admins go through the admin-routed download-url
-        // endpoint so they can download private docs (the public route
-        // sits behind no-IAP and would 403 on anything not visibility=public).
-        table.querySelectorAll(".doc-download-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const tr = btn.closest("tr");
-            const filePath = tr.dataset.file;
-            btn.disabled = true; const orig = btn.textContent; btn.textContent = "…";
+        // Download — admins use the admin-routed signed URL so private
+        // docs work; everyone else hits the public route which respects
+        // visibility.
+        ul.querySelectorAll(".doc-download-link").forEach((a) => {
+          a.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const li = rowOf(a);
+            const filePath = li.dataset.file;
+            a.setAttribute("aria-disabled", "true"); const orig = a.textContent; a.textContent = "…";
             try {
               const dlUrl = isAdmin
                 ? `/api/admin/document/download-url?file=${encodeURIComponent(filePath)}`
@@ -484,88 +465,85 @@
             } catch (err) {
               alert("Download failed: " + err.message);
             } finally {
-              btn.disabled = false; btn.textContent = orig;
+              a.removeAttribute("aria-disabled"); a.textContent = orig;
             }
           });
         });
 
         if (!canEdit) return;
 
-        // Inline rename on blur / Enter (admin only)
-        table.querySelectorAll(".doc-name.editable").forEach((el) => {
-          const original = el.textContent;
-          el.dataset.original = original;
-          el.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") { e.preventDefault(); el.blur(); }
-            if (e.key === "Escape") { el.textContent = el.dataset.original; el.blur(); }
-          });
-          el.addEventListener("blur", async () => {
-            const newName = el.textContent.trim();
-            if (!newName || newName === el.dataset.original) {
-              el.textContent = el.dataset.original;
-              return;
-            }
-            const tr = el.closest("tr");
-            const filePath = tr.dataset.file;
+        // Rename via prompt — mobile-friendly replacement for the previous
+        // contenteditable inline-edit. The full filename (including
+        // extension) is editable; server-side validation handles bad input.
+        ul.querySelectorAll(".doc-rename-link").forEach((a) => {
+          a.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const li = rowOf(a);
+            const filePath = li.dataset.file;
+            const current = li.querySelector(".doc-name")?.title || "";
+            const next = window.prompt("Rename document to:", current);
+            if (next == null) return;
+            const trimmed = next.trim();
+            if (!trimmed || trimmed === current) return;
+            a.setAttribute("aria-disabled", "true");
             try {
               const r = await fetch("/api/document/rename", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
-                body: JSON.stringify({ file: filePath, newName }),
+                body: JSON.stringify({ file: filePath, newName: trimmed }),
               });
               const data = await r.json().catch(() => ({}));
               if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
               loadDocuments(project);
             } catch (err) {
               alert("Rename failed: " + err.message);
-              el.textContent = el.dataset.original;
+              a.removeAttribute("aria-disabled");
             }
           });
         });
 
-        // Visibility selector (admin only)
-        table.querySelectorAll(".doc-vis-select").forEach((sel) => {
-          const previous = sel.value;
-          sel.dataset.previous = previous;
-          sel.addEventListener("change", async () => {
-            const tr = sel.closest("tr");
-            const filePath = tr.dataset.file;
-            const prev = sel.dataset.previous;
-            sel.disabled = true;
+        // Visibility toggle — single-click flip between public and private.
+        ul.querySelectorAll(".doc-vis-link").forEach((a) => {
+          a.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const li = rowOf(a);
+            const filePath = li.dataset.file;
+            const next = a.dataset.next;
+            a.setAttribute("aria-disabled", "true");
             try {
               const r = await fetch("/api/document/visibility", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
-                body: JSON.stringify({ file: filePath, visibility: sel.value }),
+                body: JSON.stringify({ file: filePath, visibility: next }),
               });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-              sel.dataset.previous = sel.value;
+              loadDocuments(project);
             } catch (err) {
               alert("Visibility change failed: " + err.message);
-              sel.value = prev;
-            } finally {
-              sel.disabled = false;
+              a.removeAttribute("aria-disabled");
             }
           });
         });
 
         // Delete (editor + admin). Shared docs go through the modal —
-        // the destructive option is only available when the requester
-        // is editor on the owner project (or admin).
-        table.querySelectorAll(".doc-delete-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const tr = btn.closest("tr");
-            const filePath = tr.dataset.file;
-            const displayName = tr.querySelector(".doc-name")?.textContent || filePath;
-            const isShared = tr.dataset.shared === "1";
+        // destructive delete is only offered when the requester is
+        // editor on the owner project (or admin).
+        ul.querySelectorAll(".doc-delete-link").forEach((a) => {
+          a.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const li = rowOf(a);
+            const filePath = li.dataset.file;
+            const displayName = li.querySelector(".doc-name")?.title || filePath;
+            const isShared = li.dataset.shared === "1";
             if (isShared && window.sharedAssets) {
-              const item = { shared: true, ownerProjectId: tr.dataset.ownerProjectId || null };
+              const item = { shared: true, ownerProjectId: li.dataset.ownerProjectId || null };
               const canDelete = await window.sharedAssets.canDeleteShared(project, item);
               const choice = await window.sharedAssets.confirmSharedDelete({ displayName, canDelete });
               if (choice === "cancel") return;
-              btn.disabled = true; btn.textContent = choice === "delete" ? "Deleting…" : "Hiding…";
+              a.setAttribute("aria-disabled", "true"); const orig = a.textContent;
+              a.textContent = choice === "delete" ? "deleting…" : "hiding…";
               try {
                 if (choice === "hide") {
                   await window.sharedAssets.setSharedHidden(project, filePath, true);
@@ -581,12 +559,13 @@
                 loadDocuments(project);
               } catch (err) {
                 alert((choice === "hide" ? "Hide" : "Delete") + " failed: " + err.message);
-                btn.disabled = false; btn.textContent = "Delete";
+                a.removeAttribute("aria-disabled"); a.textContent = orig;
               }
               return;
             }
             if (!confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
-            btn.disabled = true; btn.textContent = "Deleting…";
+            a.setAttribute("aria-disabled", "true"); const orig = a.textContent;
+            a.textContent = "deleting…";
             try {
               const r = await fetch("/api/document/delete", {
                 method: "POST",
@@ -598,7 +577,7 @@
               loadDocuments(project);
             } catch (err) {
               alert("Delete failed: " + err.message);
-              btn.disabled = false; btn.textContent = "Delete";
+              a.removeAttribute("aria-disabled"); a.textContent = orig;
             }
           });
         });
