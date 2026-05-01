@@ -2023,6 +2023,52 @@ app.post("/api/mappings", requireProjectRole("editor"), saveMappingsHandler);
 // 2D images page (they're still reachable via /api/mappings for the
 // map viewer / editor / project-home map card). Falls back to an empty
 // set if the project has no mappings yet or the file can't be read.
+// Property-level shared assets — Phase A of the cross-project sharing
+// design. Files at <propertyId>/_shared/[<sub>] are merged into each
+// per-project listing for projects on the same property, tagged with
+// shared:true so the frontend can render a "Shared" badge. A project's
+// project.json may carry a hiddenSharedAssets[] of full GCS paths to
+// hide specific shared items on this project only — viewers and the
+// non-with-hidden endpoints filter those out; the editor "with-hidden"
+// endpoints surface them with hiddenInProject:true so the editor UI
+// (Phase B) can offer a per-project unhide toggle.
+//
+// Returns the property's shared prefix, optionally with a sub-path
+// (e.g. "_plans/", "_documents/"). Null when the project is on the
+// legacy <oldName> layout — there's no property to share from.
+function sharedPrefixFor(req, sub = "") {
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) return null;
+  const propertyId = base.split("/")[0];
+  if (!propertyId || propertyId === "_thumbs" || propertyId === "_platform") return null;
+  return `${propertyId}/_shared/${sub}`;
+}
+
+// Per-project hide list for shared assets — already cached on
+// req.projectResolved by the resolver middleware (project.json is read
+// once per request and spread onto the resolved object), so this is
+// synchronous and free.
+function getProjectHiddenSharedSet(req) {
+  const arr = req.projectResolved && req.projectResolved.hiddenSharedAssets;
+  return new Set(Array.isArray(arr) ? arr.filter((s) => typeof s === "string") : []);
+}
+
+// Fetch the property's shared GCS files for a given bucket + sub-prefix.
+// Mirrors getFiles' [files] shape; returns { files: [], prefix: null }
+// for legacy-layout projects. Errors are logged and swallowed so a
+// shared-listing failure can't take down a project listing.
+async function fetchSharedFiles(req, bucketRef, sub = "") {
+  const prefix = sharedPrefixFor(req, sub);
+  if (!prefix) return { files: [], prefix: null };
+  try {
+    const [files] = await bucketRef.getFiles({ prefix });
+    return { files, prefix };
+  } catch (err) {
+    console.warn(`[shared] list failed for ${prefix}:`, err.message);
+    return { files: [], prefix };
+  }
+}
+
 async function getProjectFloorPlanPaths(project) {
   if (!project) return new Set();
   try {
@@ -2057,8 +2103,12 @@ app.get("/api/2d/files", async (req, res) => {
       prefix = project + "/";
       options.prefix = prefix;
     }
-    const [files] = await imageBucket.getFiles(options);
-    const floorPlans = await getProjectFloorPlanPaths(project);
+    const [[files], shared, floorPlans] = await Promise.all([
+      imageBucket.getFiles(options),
+      fetchSharedFiles(req, imageBucket),
+      getProjectFloorPlanPaths(project),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/")) // plans are managed separately
@@ -2073,7 +2123,22 @@ app.get("/api/2d/files", async (req, res) => {
         updated: f.metadata.updated,
         contentType: f.metadata.contentType,
       }));
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/"))
+      .filter((f) => !f.name.includes("/_documents/"))
+      .filter((f) => !f.name.includes("/_videos/"))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .filter((f) => !hiddenShared.has(f.name))
+      .map((f) => ({
+        name: f.name,
+        displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        shared: true,
+      }));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List 2D files error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2091,8 +2156,12 @@ app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
       prefix = project + "/";
       options.prefix = prefix;
     }
-    const [files] = await imageBucket.getFiles(options);
-    const floorPlans = await getProjectFloorPlanPaths(project);
+    const [[files], shared, floorPlans] = await Promise.all([
+      imageBucket.getFiles(options),
+      fetchSharedFiles(req, imageBucket),
+      getProjectFloorPlanPaths(project),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/"))
@@ -2107,7 +2176,22 @@ app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
         contentType: f.metadata.contentType,
         hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
       }));
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/"))
+      .filter((f) => !f.name.includes("/_documents/"))
+      .filter((f) => !f.name.includes("/_videos/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+        hiddenInProject: hiddenShared.has(f.name),
+        shared: true,
+      }));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List 2D admin files error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2141,8 +2225,12 @@ app.get("/api/2d/files-with-hidden", requireProjectRole("editor"), async (req, r
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
-    const [files] = await imageBucket.getFiles({ prefix });
-    const floorPlans = await getProjectFloorPlanPaths(project);
+    const [[files], shared, floorPlans] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket),
+      getProjectFloorPlanPaths(project),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.includes("/_plans/"))
@@ -2157,7 +2245,22 @@ app.get("/api/2d/files-with-hidden", requireProjectRole("editor"), async (req, r
         contentType: f.metadata.contentType,
         hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
       }));
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.includes("/_plans/"))
+      .filter((f) => !f.name.includes("/_documents/"))
+      .filter((f) => !f.name.includes("/_videos/"))
+      .map((f) => ({
+        name: f.name,
+        displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+        size: Number(f.metadata.size),
+        updated: f.metadata.updated,
+        contentType: f.metadata.contentType,
+        hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+        hiddenInProject: hiddenShared.has(f.name),
+        shared: true,
+      }));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List 2D editor files error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2365,8 +2468,13 @@ app.get("/api/plan/files", async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_plans/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_plans/"),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
@@ -2382,7 +2490,24 @@ app.get("/api/plan/files", async (req, res) => {
           thumbnail: allNames.has(thumbName) ? thumbName : null,
         };
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .filter((f) => !hiddenShared.has(f.name))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          shared: true,
+        };
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List plans error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2397,8 +2522,13 @@ app.get("/api/plan/files-with-hidden", requireProjectRole("editor"), async (req,
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_plans/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_plans/"),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
@@ -2414,7 +2544,24 @@ app.get("/api/plan/files-with-hidden", requireProjectRole("editor"), async (req,
           hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
         };
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+          hiddenInProject: hiddenShared.has(f.name),
+          shared: true,
+        };
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List plans (with hidden) error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2656,25 +2803,50 @@ app.get("/api/admin/document/files", requireAdmin, async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_documents/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_documents/"),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const docs = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"));
-    const list = await Promise.all(docs.map(async (f) => {
-      const meta = await readDocumentMeta(f.name);
-      return {
-        name: f.name,
-        displayName: f.name.replace(prefix, ""),
-        size: Number(f.metadata.size),
-        updated: f.metadata.updated,
-        contentType: f.metadata.contentType,
-        uploadedBy: meta.uploadedBy || null,
-        uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
-        visibility: meta.visibility === "public" ? "public" : "private",
-      };
-    }));
+    const sharedDocs = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"));
+    const [list, sharedList] = await Promise.all([
+      Promise.all(docs.map(async (f) => {
+        const meta = await readDocumentMeta(f.name);
+        return {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          uploadedBy: meta.uploadedBy || null,
+          uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+          visibility: meta.visibility === "public" ? "public" : "private",
+        };
+      })),
+      Promise.all(sharedDocs.map(async (f) => {
+        const meta = await readDocumentMeta(f.name);
+        return {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          uploadedBy: meta.uploadedBy || null,
+          uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+          visibility: meta.visibility === "public" ? "public" : "private",
+          hiddenInProject: hiddenShared.has(f.name),
+          shared: true,
+        };
+      })),
+    ]);
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
-    res.json(list);
+    sharedList.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("Admin list documents error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2712,33 +2884,63 @@ app.get("/api/document/files", async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_documents/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_documents/"),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const docs = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"));
+    const sharedDocs = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"))
+      .filter((f) => !hiddenShared.has(f.name));
     const isAdminCaller = !!req.user?.isAdmin;
-    const list = (await Promise.all(docs.map(async (f) => {
-      const meta = await readDocumentMeta(f.name);
-      const visibility = meta.visibility === "public" ? "public" : "private";
-      // Skip private documents for non-admin callers — they shouldn't even
-      // know they exist.
-      if (!isAdminCaller && visibility !== "public") return null;
-      const entry = {
-        name: f.name,
-        displayName: f.name.replace(prefix, ""),
-        size: Number(f.metadata.size),
-        updated: f.metadata.updated,
-        contentType: f.metadata.contentType,
-        uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
-      };
-      if (isAdminCaller) {
-        entry.uploadedBy = meta.uploadedBy || null;
-        entry.visibility = visibility;
-      }
-      return entry;
-    }))).filter(Boolean);
+    const [list, sharedList] = await Promise.all([
+      Promise.all(docs.map(async (f) => {
+        const meta = await readDocumentMeta(f.name);
+        const visibility = meta.visibility === "public" ? "public" : "private";
+        // Skip private documents for non-admin callers — they shouldn't even
+        // know they exist.
+        if (!isAdminCaller && visibility !== "public") return null;
+        const entry = {
+          name: f.name,
+          displayName: f.name.replace(prefix, ""),
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+        };
+        if (isAdminCaller) {
+          entry.uploadedBy = meta.uploadedBy || null;
+          entry.visibility = visibility;
+        }
+        return entry;
+      })).then((arr) => arr.filter(Boolean)),
+      Promise.all(sharedDocs.map(async (f) => {
+        const meta = await readDocumentMeta(f.name);
+        const visibility = meta.visibility === "public" ? "public" : "private";
+        if (!isAdminCaller && visibility !== "public") return null;
+        const entry = {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+          shared: true,
+        };
+        if (isAdminCaller) {
+          entry.uploadedBy = meta.uploadedBy || null;
+          entry.visibility = visibility;
+        }
+        return entry;
+      })).then((arr) => arr.filter(Boolean)),
+    ]);
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
-    res.json(list);
+    sharedList.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List documents error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2969,18 +3171,27 @@ app.get("/api/admin/video/files", requireAdmin, async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_videos/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_videos/"),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const videos = files
       // Skip the _thumbs/ subtree — those are sidecar images for the
       // videos themselves, not videos we want to list.
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"))
       .filter((f) => !f.name.startsWith(`${prefix}_thumbs/`));
-    const list = await Promise.all(videos.map(async (f) => {
+    const sharedVideos = shared.prefix ? shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"))
+      .filter((f) => !f.name.startsWith(`${shared.prefix}_thumbs/`))
+      : [];
+    const buildEntry = async (f, displayPrefix, opts = {}) => {
       const meta = await readVideoMeta(f.name);
       const entry = {
         name: f.name,
-        displayName: f.name.replace(prefix, ""),
+        displayName: displayPrefix ? f.name.replace(displayPrefix, "") : f.name,
         size: Number(f.metadata.size),
         updated: f.metadata.updated,
         contentType: f.metadata.contentType,
@@ -2988,6 +3199,10 @@ app.get("/api/admin/video/files", requireAdmin, async (req, res) => {
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
         hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
       };
+      if (opts.shared) {
+        entry.shared = true;
+        entry.hiddenInProject = hiddenShared.has(f.name);
+      }
       // Thumbnail is stored as a sibling image under _videos/_thumbs/ and
       // tracked by GCS path on the meta sidecar (so renames don't break it).
       // Sign a 15-min URL inline — admins consume the listing immediately.
@@ -3005,9 +3220,14 @@ app.get("/api/admin/video/files", requireAdmin, async (req, res) => {
         }
       }
       return entry;
-    }));
+    };
+    const [list, sharedList] = await Promise.all([
+      Promise.all(videos.map((f) => buildEntry(f, prefix))),
+      Promise.all(sharedVideos.map((f) => buildEntry(f, shared.prefix, { shared: true }))),
+    ]);
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
-    res.json(list);
+    sharedList.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("Admin list videos error:", err.message);
     res.status(500).json({ error: err.message });
@@ -3023,22 +3243,34 @@ app.get("/api/video/files", async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = `${project}/_videos/`;
-    const [files] = await imageBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      imageBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, imageBucket, "_videos/"),
+    ]);
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const videos = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".meta.json"))
       .filter((f) => !f.name.startsWith(`${prefix}_thumbs/`))
       .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"));
-    const list = await Promise.all(videos.map(async (f) => {
+    const sharedVideos = shared.prefix ? shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".meta.json"))
+      .filter((f) => !f.name.startsWith(`${shared.prefix}_thumbs/`))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .filter((f) => !hiddenShared.has(f.name))
+      : [];
+    const buildEntry = async (f, displayPrefix, opts = {}) => {
       const meta = await readVideoMeta(f.name);
       const entry = {
         name: f.name,
-        displayName: f.name.replace(prefix, ""),
+        displayName: displayPrefix ? f.name.replace(displayPrefix, "") : f.name,
         size: Number(f.metadata.size),
         updated: f.metadata.updated,
         contentType: f.metadata.contentType,
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
       };
+      if (opts.shared) entry.shared = true;
       if (meta.thumbnail) {
         try {
           const [signed] = await imageBucket.file(meta.thumbnail).getSignedUrl({
@@ -3052,9 +3284,14 @@ app.get("/api/video/files", async (req, res) => {
         }
       }
       return entry;
-    }));
+    };
+    const [list, sharedList] = await Promise.all([
+      Promise.all(videos.map((f) => buildEntry(f, prefix))),
+      Promise.all(sharedVideos.map((f) => buildEntry(f, shared.prefix, { shared: true }))),
+    ]);
     list.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
-    res.json(list);
+    sharedList.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List videos error:", err.message);
     res.status(500).json({ error: err.message });
@@ -3420,8 +3657,13 @@ app.get("/api/model/files", async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
-    const [files] = await modelBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      modelBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, modelBucket),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
 
     // Identify MTL files paired to a same-basename OBJ — they get hidden from
     // the visible list and attached as a companion to the OBJ entry instead.
@@ -3430,6 +3672,13 @@ app.get("/api/model/files", async (req, res) => {
       if (name.endsWith(".obj")) {
         const mtl = name.slice(0, -4) + ".mtl";
         if (allNames.has(mtl)) pairedMtl.add(mtl);
+      }
+    }
+    const sharedPairedMtl = new Set();
+    for (const name of sharedAllNames) {
+      if (name.endsWith(".obj")) {
+        const mtl = name.slice(0, -4) + ".mtl";
+        if (sharedAllNames.has(mtl)) sharedPairedMtl.add(mtl);
       }
     }
 
@@ -3454,7 +3703,30 @@ app.get("/api/model/files", async (req, res) => {
         }
         return entry;
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !sharedPairedMtl.has(f.name))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .filter((f) => !hiddenShared.has(f.name))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        const entry = {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          shared: true,
+        };
+        if (f.name.endsWith(".obj")) {
+          const mtl = f.name.slice(0, -4) + ".mtl";
+          if (sharedAllNames.has(mtl)) entry.companions = { mtl };
+        }
+        return entry;
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List models error:", err.message);
     res.status(500).json({ error: err.message });
@@ -3468,13 +3740,25 @@ app.get("/api/model/files-with-hidden", requireProjectRole("editor"), async (req
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
-    const [files] = await modelBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      modelBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, modelBucket),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const pairedMtl = new Set();
     for (const name of allNames) {
       if (name.endsWith(".obj")) {
         const mtl = name.slice(0, -4) + ".mtl";
         if (allNames.has(mtl)) pairedMtl.add(mtl);
+      }
+    }
+    const sharedPairedMtl = new Set();
+    for (const name of sharedAllNames) {
+      if (name.endsWith(".obj")) {
+        const mtl = name.slice(0, -4) + ".mtl";
+        if (sharedAllNames.has(mtl)) sharedPairedMtl.add(mtl);
       }
     }
     const list = files
@@ -3498,7 +3782,30 @@ app.get("/api/model/files-with-hidden", requireProjectRole("editor"), async (req
         }
         return entry;
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !sharedPairedMtl.has(f.name))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        const entry = {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+          hiddenInProject: hiddenShared.has(f.name),
+          shared: true,
+        };
+        if (f.name.endsWith(".obj")) {
+          const mtl = f.name.slice(0, -4) + ".mtl";
+          if (sharedAllNames.has(mtl)) entry.companions = { mtl };
+        }
+        return entry;
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List models (with hidden) error:", err.message);
     res.status(500).json({ error: err.message });
@@ -3698,8 +4005,13 @@ app.get("/api/pointcloud/files", async (req, res) => {
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
-    const [files] = await pointcloudBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      pointcloudBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, pointcloudBucket),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
@@ -3715,7 +4027,24 @@ app.get("/api/pointcloud/files", async (req, res) => {
           thumbnail: allNames.has(thumbName) ? thumbName : null,
         };
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .filter((f) => !(f.metadata.metadata && f.metadata.metadata.hidden === "true"))
+      .filter((f) => !hiddenShared.has(f.name))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          shared: true,
+        };
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List point clouds error:", err.message);
     res.status(500).json({ error: err.message });
@@ -3728,8 +4057,13 @@ app.get("/api/pointcloud/files-with-hidden", requireProjectRole("editor"), async
     const project = req.query.project;
     if (!project) return res.status(400).json({ error: "project is required" });
     const prefix = project + "/";
-    const [files] = await pointcloudBucket.getFiles({ prefix });
+    const [[files], shared] = await Promise.all([
+      pointcloudBucket.getFiles({ prefix }),
+      fetchSharedFiles(req, pointcloudBucket),
+    ]);
     const allNames = new Set(files.map((f) => f.name));
+    const sharedAllNames = new Set(shared.files.map((f) => f.name));
+    const hiddenShared = getProjectHiddenSharedSet(req);
     const list = files
       .filter((f) => !f.name.endsWith("/"))
       .filter((f) => !f.name.endsWith(".thumb.jpg"))
@@ -3745,7 +4079,24 @@ app.get("/api/pointcloud/files-with-hidden", requireProjectRole("editor"), async
           hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
         };
       });
-    res.json(list);
+    const sharedList = shared.files
+      .filter((f) => !f.name.endsWith("/"))
+      .filter((f) => !f.name.endsWith(".thumb.jpg"))
+      .map((f) => {
+        const thumbName = f.name + ".thumb.jpg";
+        return {
+          name: f.name,
+          displayName: shared.prefix ? f.name.replace(shared.prefix, "") : f.name,
+          size: Number(f.metadata.size),
+          updated: f.metadata.updated,
+          contentType: f.metadata.contentType,
+          thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
+          hiddenInProject: hiddenShared.has(f.name),
+          shared: true,
+        };
+      });
+    res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List point clouds (with hidden) error:", err.message);
     res.status(500).json({ error: err.message });
