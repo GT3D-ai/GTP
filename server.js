@@ -2570,6 +2570,158 @@ app.post("/api/2d/delete", requireProjectRole("editor"), async (req, res) => {
   }
 });
 
+// List sibling projects on the same property as the current one. Used by
+// the "Make shared" modal so the editor can pick which projects on the
+// property the asset should be visible on. Editor-or-admin gated since
+// it leaks the property's project roster.
+app.get("/api/property-projects", requireProjectRole("editor"), async (req, res) => {
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) return res.json([]);
+  const propertyId = base.split("/")[0];
+  const currentProjectId = base.split("/")[1];
+  try {
+    const idx = await projectResolver.getIndex();
+    if (!idx || !idx.canonical) return res.json([]);
+    const matches = [];
+    for (const [slug, ref] of Object.entries(idx.canonical)) {
+      if (ref && ref.layout === "new" && ref.propertyId === propertyId) {
+        matches.push({ canonicalSlug: slug, projectId: ref.projectId });
+      }
+    }
+    // Enrich with the human-readable project name from each project.json.
+    const enriched = await Promise.all(matches.map(async (m) => {
+      try {
+        const f = bucket.file(`${propertyId}/${m.projectId}/project.json`);
+        const [exists] = await f.exists();
+        if (!exists) return { ...m, name: m.canonicalSlug, isCurrent: m.projectId === currentProjectId };
+        const [content] = await f.download();
+        const data = JSON.parse(content.toString());
+        return { ...m, name: data.name || m.canonicalSlug, isCurrent: m.projectId === currentProjectId };
+      } catch {
+        return { ...m, name: m.canonicalSlug, isCurrent: m.projectId === currentProjectId };
+      }
+    }));
+    enriched.sort((a, b) => {
+      // Current project first so the modal can highlight context, then alpha.
+      if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+    res.json(enriched);
+  } catch (err) {
+    console.error("List property projects error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Convert an owned 2D image to a property-shared asset. Moves the bytes
+// from <propertyId>/<projectId>/<file> to <propertyId>/_shared/<file>,
+// stamps ownerProjectId on the object's custom metadata so the listing
+// layer can attribute it back, drops the old path from this project's
+// imageOrder, and adds the new shared path to hiddenSharedAssets[] on
+// any sibling project the editor explicitly excluded. Body:
+//   { file: "<propertyId>/<projectId>/<basename>", projects: ["__all__"] | [<canonicalSlug>, ...] }
+// "__all__" (or an empty allow-list) makes the asset visible on every
+// project on the property.
+app.post("/api/2d/share", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, projects } = req.body || {};
+  if (!filePath || typeof filePath !== "string") return res.status(400).json({ error: "file is required" });
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) return res.status(400).json({ error: "project is not in property layout" });
+  if (!filePath.startsWith(base + "/")) return res.status(400).json({ error: "file is not in this project" });
+  if (filePath.includes("/_plans/") || filePath.includes("/_documents/") || filePath.includes("/_videos/")) {
+    return res.status(400).json({ error: "this file type cannot be shared from /api/2d/share" });
+  }
+  if (filePath.startsWith(base.split("/")[0] + "/_shared/")) {
+    return res.status(400).json({ error: "file is already shared" });
+  }
+  const propertyId = base.split("/")[0];
+  const currentProjectId = base.split("/")[1];
+  const baseName = filePath.substring(base.length + 1);
+  const newPath = `${propertyId}/_shared/${baseName}`;
+
+  try {
+    const src = imageBucket.file(filePath);
+    const [srcExists] = await src.exists();
+    if (!srcExists) return res.status(404).json({ error: "Source file not found" });
+    // Bail if a shared file with the same name already exists — silently
+    // overwriting would clobber another project's shared asset.
+    const dest = imageBucket.file(newPath);
+    const [destExists] = await dest.exists();
+    if (destExists) return res.status(409).json({ error: "A shared asset with this name already exists on the property" });
+
+    // Read existing custom metadata before the move so we can re-apply
+    // it (with ownerProjectId added) at the destination — move() preserves
+    // metadata, but explicitly setting it here protects against any
+    // future change in copy semantics.
+    const [oldMeta] = await src.getMetadata();
+    const customMeta = (oldMeta.metadata && typeof oldMeta.metadata === "object")
+      ? { ...oldMeta.metadata }
+      : {};
+    customMeta.ownerProjectId = currentProjectId;
+
+    await src.move(newPath);
+    await imageBucket.file(newPath).setMetadata({ metadata: customMeta });
+
+    // Drop the old path from this project's imageOrder. The new shared
+    // path will be appended to the listing automatically (Phase A merge).
+    try {
+      const projectFile = bucket.file(`${base}/project.json`);
+      const [exists] = await projectFile.exists();
+      if (exists) {
+        const [content] = await projectFile.download();
+        const meta = JSON.parse(content.toString());
+        if (Array.isArray(meta.imageOrder) && meta.imageOrder.includes(filePath)) {
+          meta.imageOrder = meta.imageOrder.filter((p) => p !== filePath);
+          await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+        }
+      }
+    } catch (err) {
+      console.warn("[2d/share] imageOrder cleanup failed:", err.message);
+    }
+
+    // For excluded sibling projects, append the new shared path to
+    // hiddenSharedAssets[] so the asset doesn't surface on their gallery.
+    const allowList = Array.isArray(projects) ? projects : ["__all__"];
+    const shareWithAll = allowList.length === 0 || allowList.includes("__all__");
+
+    let excludedCount = 0;
+    if (!shareWithAll) {
+      const idx = await projectResolver.getIndex();
+      if (idx && idx.canonical) {
+        for (const [slug, ref] of Object.entries(idx.canonical)) {
+          if (!ref || ref.layout !== "new" || ref.propertyId !== propertyId) continue;
+          if (ref.projectId === currentProjectId) continue;
+          if (allowList.includes(slug)) continue;
+          try {
+            const sibFile = bucket.file(`${propertyId}/${ref.projectId}/project.json`);
+            const [sibExists] = await sibFile.exists();
+            if (!sibExists) continue;
+            const [c] = await sibFile.download();
+            const sibMeta = JSON.parse(c.toString());
+            const arr = Array.isArray(sibMeta.hiddenSharedAssets)
+              ? sibMeta.hiddenSharedAssets.filter((s) => typeof s === "string")
+              : [];
+            if (!arr.includes(newPath)) {
+              arr.push(newPath);
+              sibMeta.hiddenSharedAssets = arr;
+              await sibFile.save(JSON.stringify(sibMeta, null, 2), { contentType: "application/json" });
+              excludedCount++;
+            }
+          } catch (err) {
+            console.warn(`[2d/share] sibling hide failed for ${slug}:`, err.message);
+          }
+        }
+      }
+    }
+
+    console.log(`Shared 2D: ${filePath} -> ${newPath} (owner=${currentProjectId}, excluded=${excludedCount})`);
+    res.json({ success: true, newPath, ownerProjectId: currentProjectId, sharedWithAll: shareWithAll, excludedCount });
+  } catch (err) {
+    console.error("2D share error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Proxy 2D image from GCS (PUBLIC — hidden images return 404)
 app.get("/api/2d/image", async (req, res) => {
   try {
