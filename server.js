@@ -389,10 +389,15 @@ function makeQueryMutable(req) {
 // on the same request are no-ops. Read-only handlers that need the
 // pre-mutation slug should use `req.projectDisplay`.
 async function ensureProjectResolved(req) {
-  if (req.projectResolved !== undefined) return;
+  // Truthy short-circuit only — a previous null result means the first
+  // call ran before the body was parsed (multer hasn't fired yet on
+  // multipart routes), so a retry from requireProjectRole is allowed to
+  // resolve once req.body.project becomes available. A real resolved
+  // object still short-circuits subsequent calls.
+  if (req.projectResolved) return;
   const raw = resolveProjectFromRequest(req);
   if (!raw) {
-    req.projectResolved = null;
+    if (req.projectResolved === undefined) req.projectResolved = null;
     return;
   }
   let proj = null;

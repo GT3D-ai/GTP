@@ -415,7 +415,7 @@
         const isEditor = window.me ? await window.me.canEdit(project) : false;
         if (isEditor) {
           const a = document.getElementById("adminUploadLink");
-          a.href = `/upload.html?project=${encodeURIComponent(project)}`;
+          a.href = `/image-upload.html?project=${encodeURIComponent(project)}`;
           a.style.display = "";
         }
         if (!isEditor) {

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload Images — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    #fileInput { display: none; }
+    .file-entry-icon { color: var(--ink-subtle); font-size: 1rem; flex-shrink: 0; }
+    .file-entry-info { flex: 1; min-width: 0; }
+    .file-list-wrap { display: none; margin-top: var(--space-sm); }
+    .file-list-wrap.visible { display: block; }
+    .clear-all { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+    .clear-all:hover { text-decoration: underline; }
+    .progress-container { display: none; margin-top: var(--space-sm); }
+    .progress-container.visible { display: block; }
+    .upload-btn-wrap { display: none; margin-top: var(--space-md); }
+    .upload-btn-wrap.visible { display: block; }
+    .form-head h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.375rem, 2.5vw, 1.75rem); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+    .form-head p.lede { margin-bottom: var(--space-lg); }
+
+    .per-file-progress {
+      height: 2px;
+      background: var(--line);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .per-file-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.2s;
+    }
+
+    /* Existing images list — same row layout as plan-upload.html so the
+       page reads consistently next to its peers. */
+    .images-section { margin-top: var(--space-xl); }
+    .images-header {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: var(--space-sm);
+    }
+    .image-row {
+      display: flex; align-items: center; gap: var(--space-sm);
+      padding: 0.75rem 1rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+      border-top: none;
+      font-size: 0.875rem;
+    }
+    .image-row:first-child { border-top: 1px solid var(--line); }
+    .image-row-thumb {
+      width: 44px; height: 44px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .image-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .image-row-info { flex: 1; min-width: 0; }
+    .image-row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .image-row-meta { font-size: 0.72rem; color: var(--ink-subtle); margin-top: 2px; }
+
+    .not-allowed {
+      background: var(--warning-bg);
+      border: 1px solid var(--accent);
+      color: var(--ink);
+      padding: var(--space-lg);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body class="admin-layout">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+      <nav class="nav-primary" aria-label="Primary">
+        <a href="/">Projects</a>
+        <a href="/image-upload.html" class="is-active">Upload Images</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container-sm">
+    <div id="notAllowed" class="not-allowed" style="display:none;">
+      Editor or admin access required to upload images.
+    </div>
+
+    <div id="missingProject" class="not-allowed" style="display:none;">
+      No project specified. Open this page from a project's 2D Images view (e.g. <code>/image-upload.html?project=&lt;project-name&gt;</code>).
+    </div>
+
+    <div id="uploaderWrap" style="display:none;">
+      <div class="form-head">
+        <p class="eyebrow">Upload Images &mdash; <span id="projectEyebrow"></span></p>
+        <h2>Upload images</h2>
+        <p class="lede">Editors and admins. Files post directly to the 2D image bucket (<code>gt_platform_image_storage</code>) under the project's images path. Common formats: .jpg .jpeg .png .gif .webp.</p>
+      </div>
+
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">&#128444;</div>
+        <p>Drag &amp; drop image files here, or <strong>browse</strong></p>
+        <p style="font-size:0.72rem; color:var(--ink-subtle); margin-top:6px;">
+          Accepts most image types. Large files may hit the request-size limit; if so, upload them in smaller batches.
+        </p>
+      </div>
+      <input type="file" id="fileInput" multiple accept="image/*">
+
+      <div class="file-list-wrap" id="fileList">
+        <div class="file-list-header">
+          <span id="fileCount">0 files selected</span>
+          <button class="clear-all" id="clearAll">Clear all</button>
+        </div>
+        <div id="fileEntries"></div>
+      </div>
+
+      <div class="upload-btn-wrap" id="uploadBtnWrap">
+        <button class="btn btn-primary btn-block" id="uploadBtn">Upload Images</button>
+      </div>
+
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">0%</div>
+      </div>
+
+      <div class="status-message" id="statusMessage"></div>
+
+      <div class="images-section" id="imagesSection" style="display:none;">
+        <div class="images-header">Project Images</div>
+        <div id="imagesList"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const projectFromUrl = params.get("project");
+
+    const uploaderWrap = document.getElementById("uploaderWrap");
+    const notAllowed = document.getElementById("notAllowed");
+    const missingProject = document.getElementById("missingProject");
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const fileListEl = document.getElementById("fileList");
+    const fileEntries = document.getElementById("fileEntries");
+    const fileCount = document.getElementById("fileCount");
+    const clearAllBtn = document.getElementById("clearAll");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const uploadBtnWrap = document.getElementById("uploadBtnWrap");
+    const progressContainer = document.getElementById("progressContainer");
+    const progressFill = document.getElementById("progressFill");
+    const progressText = document.getElementById("progressText");
+    const statusMessage = document.getElementById("statusMessage");
+
+    let selectedFiles = [];
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    (async () => {
+      if (!projectFromUrl) { missingProject.style.display = "block"; return; }
+      // Editor-or-admin gate. canEdit returns true for both.
+      const allowed = window.me ? await window.me.canEdit(projectFromUrl) : false;
+      if (!allowed) { notAllowed.style.display = "block"; return; }
+      document.getElementById("projectEyebrow").textContent = projectFromUrl;
+      document.title = `Upload images — ${projectFromUrl}`;
+      uploaderWrap.style.display = "block";
+      loadImages(projectFromUrl);
+    })();
+
+    function renderFileList() {
+      fileEntries.innerHTML = "";
+      selectedFiles.forEach((file, i) => {
+        const entry = document.createElement("div");
+        entry.className = "file-entry";
+        entry.style.flexDirection = "column";
+        entry.style.alignItems = "stretch";
+        entry.innerHTML = `
+          <div style="display:flex; align-items:center; gap:0.75rem; width:100%;">
+            <span class="file-entry-icon">&#128444;</span>
+            <div class="file-entry-info">
+              <div class="file-entry-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+              <div class="file-entry-size">${formatSize(file.size)}</div>
+            </div>
+            <span class="file-entry-status pending" id="file-status-${i}">Pending</span>
+            <button class="icon-btn" data-index="${i}" title="Remove">&times;</button>
+          </div>
+          <div class="per-file-progress" id="pfp-wrap-${i}" style="display:none;">
+            <div class="per-file-progress-fill" id="pfp-${i}"></div>
+          </div>
+        `;
+        fileEntries.appendChild(entry);
+      });
+      fileCount.textContent = `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`;
+      fileListEl.classList.toggle("visible", selectedFiles.length > 0);
+      uploadBtnWrap.classList.toggle("visible", selectedFiles.length > 0);
+    }
+
+    function addFiles(files) {
+      const existing = new Set(selectedFiles.map((f) => f.name + f.size));
+      for (const file of files) {
+        if (!existing.has(file.name + file.size)) selectedFiles.push(file);
+      }
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+      renderFileList();
+    }
+
+    function clearFiles() {
+      selectedFiles = [];
+      fileInput.value = "";
+      fileListEl.classList.remove("visible");
+      uploadBtnWrap.classList.remove("visible");
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.remove("visible");
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault(); dropZone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) { addFiles(fileInput.files); fileInput.value = ""; }
+    });
+    fileEntries.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-index]");
+      if (btn) { selectedFiles.splice(parseInt(btn.dataset.index), 1); renderFileList(); }
+    });
+    clearAllBtn.addEventListener("click", clearFiles);
+
+    uploadBtn.addEventListener("click", async () => {
+      if (selectedFiles.length === 0) return;
+      const project = projectFromUrl;
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Uploading…";
+      statusMessage.classList.remove("visible");
+      progressContainer.classList.add("visible");
+
+      const total = selectedFiles.length;
+      let completed = 0, failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const file = selectedFiles[i];
+        const statusEl = document.getElementById(`file-status-${i}`);
+        const pfpWrap = document.getElementById(`pfp-wrap-${i}`);
+        const pfp = document.getElementById(`pfp-${i}`);
+        statusEl.textContent = "Uploading";
+        statusEl.className = "file-entry-status uploading";
+        pfpWrap.style.display = "block";
+        progressFill.style.width = ((i / total) * 100).toFixed(0) + "%";
+        progressText.textContent = `Uploading ${i + 1} of ${total} — ${file.name} (${formatSize(file.size)})`;
+
+        try {
+          await uploadOne(file, project, (loaded, tot) => {
+            if (!tot) return;
+            const pct = (loaded / tot) * 100;
+            pfp.style.width = pct.toFixed(1) + "%";
+          });
+          statusEl.textContent = "Done";
+          statusEl.className = "file-entry-status done";
+          pfp.style.width = "100%";
+          completed++;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "Failed";
+          statusEl.className = "file-entry-status failed";
+          failed++;
+        }
+      }
+
+      progressFill.style.width = "100%";
+      progressText.textContent = "Complete";
+
+      if (failed === 0) {
+        statusMessage.innerHTML = `<strong>${completed}</strong> image${completed !== 1 ? "s" : ""} uploaded to project <strong>${escapeHtml(project)}</strong>.`;
+        statusMessage.className = "status-message visible success";
+      } else {
+        statusMessage.textContent = `${completed} uploaded, ${failed} failed.`;
+        statusMessage.className = "status-message visible error";
+      }
+
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "Upload Images";
+      loadImages(project);
+    });
+
+    // Multipart POST to /api/2d/upload. The server's requireProjectRole
+    // middleware does the alias-aware permission check and resolves the
+    // project value to the migrated <propertyId>/<projectId> path before
+    // the handler runs, so the upload lands where /api/2d/files reads from.
+    function uploadOne(file, project, onProgress) {
+      return new Promise((resolve, reject) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("project", project);
+        fd.append("destName", file.name);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/2d/upload");
+        xhr.withCredentials = true;
+        xhr.upload.addEventListener("progress", (e) => {
+          if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+        });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({}); }
+          } else {
+            let msg = `Upload failed (HTTP ${xhr.status})`;
+            try { const j = JSON.parse(xhr.responseText); if (j.error) msg = j.error; } catch {}
+            reject(new Error(msg));
+          }
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error")));
+        xhr.send(fd);
+      });
+    }
+
+    async function loadImages(project) {
+      const section = document.getElementById("imagesSection");
+      const list = document.getElementById("imagesList");
+      try {
+        // Editor listing: includes hidden so the uploader can see what
+        // they've previously hidden. The visibility toggle itself stays
+        // on the gallery page (project-images.html) — this view is just
+        // an upload-confirmation roster.
+        const res = await fetch(`/api/2d/files-with-hidden?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`Failed to list images (HTTP ${res.status})`);
+        const files = await res.json();
+        section.style.display = "block";
+
+        if (files.length === 0) {
+          list.innerHTML = '<div class="image-row" style="justify-content:center; color:var(--ink-subtle);">No images uploaded yet</div>';
+          return;
+        }
+
+        list.innerHTML = "";
+        files.forEach((f) => {
+          const row = document.createElement("div");
+          row.className = "image-row";
+          const thumbSrc = `/api/2d/image-with-hidden?file=${encodeURIComponent(f.name)}`;
+          const hiddenTag = f.hidden ? ' &middot; <span style="color:var(--ink-subtle);">hidden</span>' : "";
+          row.innerHTML = `
+            <div class="image-row-thumb"><img src="${thumbSrc}" alt="" loading="lazy"></div>
+            <div class="image-row-info">
+              <div class="image-row-name" title="${escapeHtml(f.displayName)}">${escapeHtml(f.displayName)}</div>
+              <div class="image-row-meta">${formatSize(f.size)} &middot; uploaded ${new Date(f.updated).toLocaleString()}${hiddenTag}</div>
+            </div>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger); border-color:var(--danger);" data-delete="${escapeHtml(f.name)}" data-display="${escapeHtml(f.displayName)}">Delete</button>
+          `;
+          list.appendChild(row);
+        });
+
+        list.querySelectorAll("[data-delete]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            if (!confirm(`Delete "${btn.dataset.display}"? This cannot be undone.`)) return;
+            btn.disabled = true;
+            try {
+              const r = await fetch("/api/2d/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ file: btn.dataset.delete }),
+              });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Delete failed");
+              loadImages(project);
+            } catch (err) {
+              alert("Delete failed: " + err.message);
+              btn.disabled = false;
+            }
+          });
+        });
+      } catch (err) {
+        section.style.display = "block";
+        list.innerHTML = `<div class="image-row" style="color:var(--danger);">${escapeHtml(err.message)}</div>`;
+      }
+    }
+  </script>
+</body>
+</html>
