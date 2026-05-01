@@ -1638,35 +1638,35 @@ app.get("/api/files", async (req, res) => {
 // Storage:
 //   "plan" writes to the image bucket at <project>/_plans/<fileName>
 app.post("/api/upload-url", async (req, res) => {
-  const { bucket: bucketKind, project, fileName, contentType, level } = req.body || {};
+  const { bucket: bucketKind, project, fileName, contentType, level, scope: rawScope } = req.body || {};
   if (!bucketKind || !fileName || !contentType) {
     return res.status(400).json({ error: "bucket, fileName, and contentType are required" });
   }
   if (!project) return res.status(400).json({ error: "project is required" });
+  const scope = rawScope === "shared" ? "shared" : "project";
 
-  // Authorization
-  if (bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud" || bucketKind === "document" || bucketKind === "video") {
-    // Per-file thumbnails (<file>.thumb.jpg) for plans, models and point
-    // clouds pair with files editors already manage on the showcase pages,
-    // so they're editor-gated. Everything else in the model/plan/pointcloud
-    // /document/video buckets stays admin-only — documents and videos are
-    // admin-only across the board.
-    const isAssetThumbnail =
-      (bucketKind === "model" || bucketKind === "pointcloud" || bucketKind === "plan") &&
-      fileName.endsWith(".thumb.jpg");
-    if (isAssetThumbnail) {
-      if (!req.user?.isAdmin) {
-        const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
-        if (!ok) return res.status(403).json({ error: `editor access to ${project} required` });
-      }
-    } else if (!req.user?.isAdmin) {
-      return res.status(403).json({ error: `Admin required for ${bucketKind} uploads` });
-    }
-  } else {
-    if (!req.user?.isAdmin) {
-      const ok = await userService.hasProjectAccess(req.user?.email, project, "editor");
-      if (!ok) return res.status(403).json({ error: `editor access to ${project} required` });
-    }
+  // Authorization. ensureProjectResolved has already mutated req.body.project
+  // to the physical GCS prefix; the alias-aware permission check needs the
+  // canonical slug stashed by the resolver instead — using `project` here
+  // (post-mutation physical path) silently fails for migrated projects
+  // because users.json is keyed by canonical slug. req.projectCanonical is
+  // the right key.
+  const canonicalForAuth = req.projectCanonical || project;
+  const isAssetThumbnail =
+    (bucketKind === "model" || bucketKind === "pointcloud" || bucketKind === "plan") &&
+    fileName.endsWith(".thumb.jpg");
+  // Plans and models stay admin-only for primary uploads — the showcase
+  // pages assume admin-vetted content. Per-file thumbnails on those
+  // categories are editor-gated since they pair with files editors
+  // already manage. Documents and videos are now editor-accessible across
+  // the board (upload/edit/delete) so editors can manage them on projects
+  // they own; admin-only operations remain under /api/admin/.
+  const planModelPcAdminOnly = bucketKind === "model" || bucketKind === "plan" || bucketKind === "pointcloud";
+  if (planModelPcAdminOnly && !isAssetThumbnail) {
+    if (!req.user?.isAdmin) return res.status(403).json({ error: `Admin required for ${bucketKind} uploads` });
+  } else if (!req.user?.isAdmin) {
+    const ok = await hasAliasAwareAccess(req.user?.email, canonicalForAuth, "editor");
+    if (!ok) return res.status(403).json({ error: `editor access to ${req.projectDisplay || canonicalForAuth} required` });
   }
 
   let target, bucketName;
@@ -1678,31 +1678,56 @@ app.post("/api/upload-url", async (req, res) => {
   else if (bucketKind === "video") { target = imageBucket; bucketName = IMAGE_BUCKET_NAME; }
   else { target = bucket; bucketName = BUCKET_NAME; }
 
-  let dest = fileName;
-  if (bucketKind === "plan") {
-    // Plans live under a reserved _plans/ prefix so they don't leak into the
-    // regular 2D images list. The caller passes fileName without the prefix.
-    dest = `${project}/_plans/${fileName}`;
-  } else if (bucketKind === "document") {
-    // Documents share the image bucket but live under _documents/ — same
-    // separation pattern as plans, and they're admin-only end-to-end so they
-    // never appear in any viewer-facing listing.
-    dest = `${project}/_documents/${fileName}`;
-  } else if (bucketKind === "video") {
-    // Videos share the image bucket too, under _videos/. Admin-only across
-    // the board; nothing in any viewer-facing list ever surfaces them.
-    dest = `${project}/_videos/${fileName}`;
-  } else if (project && level) dest = `${project}/${level}/${fileName}`;
-  else if (project) dest = `${project}/${fileName}`;
+  // Sub-prefix per category — matches the per-project layout. Used for
+  // both project-scoped and shared destinations.
+  let sub = "";
+  if (bucketKind === "plan") sub = "_plans/";
+  else if (bucketKind === "document") sub = "_documents/";
+  else if (bucketKind === "video") sub = "_videos/";
+
+  let dest;
+  let extensionHeaders = null;
+  if (scope === "shared") {
+    const base = req.projectPaths && req.projectPaths.base;
+    if (!base || !base.includes("/")) {
+      return res.status(400).json({ error: "shared scope requires a property-layout project" });
+    }
+    const parts = base.split("/");
+    const propertyId = parts[0];
+    const ownerProjectId = parts[1];
+    dest = `${propertyId}/_shared/${sub}${fileName}`;
+    // GCS persists this header as custom metadata so the listing layer
+    // can attribute the shared asset back to its uploading project — the
+    // delete authorization rule (only the owner project's editors can
+    // destructively delete) reads it via f.metadata.metadata.ownerProjectId.
+    // The client must include this header on the PUT or GCS rejects the
+    // signed URL.
+    extensionHeaders = { "x-goog-meta-ownerprojectid": ownerProjectId };
+  } else if (sub) {
+    dest = `${project}/${sub}${fileName}`;
+  } else if (project && level) {
+    dest = `${project}/${level}/${fileName}`;
+  } else if (project) {
+    dest = `${project}/${fileName}`;
+  } else {
+    dest = fileName;
+  }
 
   try {
-    const [url] = await target.file(dest).getSignedUrl({
+    const signOpts = {
       version: "v4",
       action: "write",
       expires: Date.now() + 60 * 60 * 1000, // 60 minutes (large models/plans take time)
       contentType,
+    };
+    if (extensionHeaders) signOpts.extensionHeaders = extensionHeaders;
+    const [url] = await target.file(dest).getSignedUrl(signOpts);
+    res.json({
+      uploadUrl: url,
+      gcsPath: dest,
+      bucket: bucketName,
+      requiredHeaders: extensionHeaders,
     });
-    res.json({ uploadUrl: url, gcsPath: dest, bucket: bucketName });
   } catch (err) {
     console.error("Signed URL error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2069,6 +2094,59 @@ async function fetchSharedFiles(req, bucketRef, sub = "") {
   }
 }
 
+// Find the canonical slug for a project given its propertyId/projectId
+// pair, by scanning the slug-index. Used by shared-asset delete
+// authorization to resolve the owner project from the GCS metadata stamp
+// (ownerProjectId) without doing a full reverse search through users.json.
+async function canonicalSlugFor(propertyId, projectId) {
+  if (!propertyId || !projectId) return null;
+  try {
+    const idx = await projectResolver.getIndex();
+    if (!idx || !idx.canonical) return null;
+    for (const [slug, ref] of Object.entries(idx.canonical)) {
+      if (ref && ref.layout === "new" && ref.propertyId === propertyId && ref.projectId === projectId) {
+        return slug;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn("[canonicalSlugFor] lookup failed:", err.message);
+    return null;
+  }
+}
+
+// Delete authorization for shared paths. requireProjectRole has already
+// confirmed the requester is editor on the project they're acting from.
+// For destructive delete on a shared asset, we additionally require
+// editor on the *owner* project — otherwise an editor on project A
+// could nuke shared content for everyone on the property. Admins bypass.
+// Returns { allowed, error, isShared }; callers use isShared for
+// helpful error messaging only.
+async function authorizeSharedDelete(req, file) {
+  const filePath = file.name;
+  const m = filePath.match(/^([^/]+)\/_shared\//);
+  if (!m) return { allowed: true, error: null, isShared: false };
+  if (req.user && req.user.isAdmin) return { allowed: true, error: null, isShared: true };
+  let metadata;
+  try {
+    [metadata] = await file.getMetadata();
+  } catch (err) {
+    return { allowed: false, error: "could not read shared asset metadata", isShared: true };
+  }
+  const ownerProjectId = metadata && metadata.metadata && metadata.metadata.ownerProjectId;
+  if (!ownerProjectId) {
+    return { allowed: false, error: "shared asset has no owner project; only admins can delete", isShared: true };
+  }
+  const propertyId = m[1];
+  const ownerCanonical = await canonicalSlugFor(propertyId, ownerProjectId);
+  if (!ownerCanonical) {
+    return { allowed: false, error: "owner project not found", isShared: true };
+  }
+  const ok = await hasAliasAwareAccess(req.user && req.user.email, ownerCanonical, "editor");
+  if (!ok) return { allowed: false, error: "only editors of the owner project can delete this shared asset", isShared: true };
+  return { allowed: true, error: null, isShared: true };
+}
+
 async function getProjectFloorPlanPaths(project) {
   if (!project) return new Set();
   try {
@@ -2136,6 +2214,7 @@ app.get("/api/2d/files", async (req, res) => {
         size: Number(f.metadata.size),
         updated: f.metadata.updated,
         contentType: f.metadata.contentType,
+        ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
         shared: true,
       }));
     res.json(list.concat(sharedList));
@@ -2189,6 +2268,7 @@ app.get("/api/admin/2d/files", requireAdmin, async (req, res) => {
         contentType: f.metadata.contentType,
         hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
         hiddenInProject: hiddenShared.has(f.name),
+        ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
         shared: true,
       }));
     res.json(list.concat(sharedList));
@@ -2258,11 +2338,57 @@ app.get("/api/2d/files-with-hidden", requireProjectRole("editor"), async (req, r
         contentType: f.metadata.contentType,
         hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
         hiddenInProject: hiddenShared.has(f.name),
+        ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
         shared: true,
       }));
     res.json(list.concat(sharedList));
   } catch (err) {
     console.error("List 2D editor files error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editor: toggle whether a property-shared asset shows on this
+// project. Per-project hide is stored in project.json under
+// hiddenSharedAssets[]; the listing endpoints filter shared items
+// against that set for the public view and surface hiddenInProject
+// for the editor view. This endpoint just maintains the array — it
+// never touches the shared asset's GCS metadata, so other projects on
+// the property are unaffected.
+app.post("/api/project/shared-visibility", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, hidden } = req.body || {};
+  if (!filePath || typeof filePath !== "string") {
+    return res.status(400).json({ error: "file is required" });
+  }
+  // Sanity-check: the path must be under this property's _shared/. The
+  // resolved project's paths.base gives us the propertyId.
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) {
+    return res.status(400).json({ error: "project is not in property layout" });
+  }
+  const propertyId = base.split("/")[0];
+  if (!filePath.startsWith(`${propertyId}/_shared/`)) {
+    return res.status(400).json({ error: "file is not a shared asset on this property" });
+  }
+  try {
+    const projectFile = bucket.file(`${base}/project.json`);
+    const [exists] = await projectFile.exists();
+    if (!exists) return res.status(404).json({ error: "project.json not found" });
+    const [content] = await projectFile.download();
+    const meta = JSON.parse(content.toString());
+    const current = Array.isArray(meta.hiddenSharedAssets)
+      ? meta.hiddenSharedAssets.filter((s) => typeof s === "string")
+      : [];
+    const set = new Set(current);
+    if (hidden) set.add(filePath);
+    else set.delete(filePath);
+    const next = Array.from(set);
+    if (next.length === 0) delete meta.hiddenSharedAssets;
+    else meta.hiddenSharedAssets = next;
+    await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+    res.json({ success: true, hidden: !!hidden, hiddenSharedAssets: next });
+  } catch (err) {
+    console.error("Shared visibility toggle error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2304,7 +2430,10 @@ app.get("/api/2d/image-with-hidden", requireProjectRole("editor"), async (req, r
   }
 });
 
-// Upload 2D image
+// Upload 2D image. scope=shared writes to <propertyId>/_shared/<file>
+// instead of <project>/<file> and stamps the uploading project's id on
+// custom metadata as ownerProjectId — the listing layer surfaces that
+// so delete authorization can require editor role on the owner project.
 app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file provided" });
@@ -2313,7 +2442,24 @@ app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), 
   const tmpPath = req.file.path;
   const baseName = req.body.destName || req.file.originalname;
   const project = req.body.project;
-  const destName = project ? `${project}/${baseName}` : baseName;
+  const scope = req.body.scope === "shared" ? "shared" : "project";
+
+  let destName;
+  let customMeta = null;
+  if (scope === "shared") {
+    const base = req.projectPaths && req.projectPaths.base;
+    if (!base || !base.includes("/")) {
+      fs.unlink(tmpPath, () => {});
+      return res.status(400).json({ error: "shared scope requires a property-layout project" });
+    }
+    const parts = base.split("/");
+    const propertyId = parts[0];
+    const ownerProjectId = parts[1];
+    destName = `${propertyId}/_shared/${baseName}`;
+    customMeta = { ownerProjectId };
+  } else {
+    destName = project ? `${project}/${baseName}` : baseName;
+  }
   const fileSize = req.file.size;
 
   try {
@@ -2321,7 +2467,10 @@ app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), 
     const readStream = fs.createReadStream(tmpPath);
     const writeStream = gcsFile.createWriteStream({
       resumable: true,
-      metadata: { contentType: req.file.mimetype || "application/octet-stream" },
+      metadata: {
+        contentType: req.file.mimetype || "application/octet-stream",
+        ...(customMeta ? { metadata: customMeta } : {}),
+      },
     });
 
     await new Promise((resolve, reject) => {
@@ -2334,8 +2483,8 @@ app.post("/api/2d/upload", upload.single("file"), requireProjectRole("editor"), 
         .on("finish", resolve);
     });
 
-    console.log(`Uploaded 2D: gs://${IMAGE_BUCKET_NAME}/${destName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
-    res.json({ success: true, fileName: baseName, destName, fileSize, gcsPath: `gs://${IMAGE_BUCKET_NAME}/${destName}`, project: project || null });
+    console.log(`Uploaded 2D: gs://${IMAGE_BUCKET_NAME}/${destName} (${(fileSize / 1024 / 1024).toFixed(2)} MB)${scope === "shared" ? " [shared]" : ""}`);
+    res.json({ success: true, fileName: baseName, destName, fileSize, gcsPath: `gs://${IMAGE_BUCKET_NAME}/${destName}`, project: project || null, scope });
   } catch (err) {
     console.error("2D upload failed:", err.message);
     res.status(500).json({ error: err.message });
@@ -2410,8 +2559,10 @@ app.post("/api/2d/delete", requireProjectRole("editor"), async (req, res) => {
     const file = imageBucket.file(filePath);
     const [exists] = await file.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, file);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     await file.delete();
-    console.log(`Deleted 2D: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted 2D: gs://${IMAGE_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
     res.json({ success: true });
   } catch (err) {
     console.error("2D delete error:", err.message);
@@ -2504,6 +2655,7 @@ app.get("/api/plan/files", async (req, res) => {
           updated: f.metadata.updated,
           contentType: f.metadata.contentType,
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
       });
@@ -2558,6 +2710,7 @@ app.get("/api/plan/files-with-hidden", requireProjectRole("editor"), async (req,
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
           hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
           hiddenInProject: hiddenShared.has(f.name),
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
       });
@@ -2748,8 +2901,10 @@ app.post("/api/plan/delete", requireProjectRole("editor"), async (req, res) => {
     const f = imageBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, f);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     await f.delete();
-    console.log(`Deleted plan: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted plan: gs://${IMAGE_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
     try {
       const thumb = imageBucket.file(filePath + ".thumb.jpg");
       const [thumbExists] = await thumb.exists();
@@ -2840,6 +2995,7 @@ app.get("/api/admin/document/files", requireAdmin, async (req, res) => {
           uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
           visibility: meta.visibility === "public" ? "public" : "private",
           hiddenInProject: hiddenShared.has(f.name),
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
       })),
@@ -2929,6 +3085,7 @@ app.get("/api/document/files", async (req, res) => {
           updated: f.metadata.updated,
           contentType: f.metadata.contentType,
           uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
         if (isAdminCaller) {
@@ -2951,7 +3108,7 @@ app.get("/api/document/files", async (req, res) => {
 // upload URL itself doesn't carry the requesting admin's identity past the
 // PUT, so the client calls this immediately after a successful PUT and the
 // server records the uploader on a sidecar metadata file.
-app.post("/api/document/uploaded", requireAdmin, async (req, res) => {
+app.post("/api/document/uploaded", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
@@ -3037,7 +3194,7 @@ app.get("/api/document/view-url", async (req, res) => {
 // Rename a document — admin only. GCS has no rename, so copy + delete on
 // both the file and its sidecar metadata. The new name must stay inside
 // the same project's _documents/ folder.
-app.post("/api/document/rename", requireAdmin, async (req, res) => {
+app.post("/api/document/rename", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath, newName } = req.body || {};
   if (!filePath || !newName) return res.status(400).json({ error: "file and newName are required" });
   if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
@@ -3081,7 +3238,7 @@ app.post("/api/document/rename", requireAdmin, async (req, res) => {
 // The flag is stored on the sidecar metadata; nothing in the codebase
 // enforces it yet (no viewer endpoint exists), so it's purely metadata
 // captured for future use.
-app.post("/api/document/visibility", requireAdmin, async (req, res) => {
+app.post("/api/document/visibility", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath, visibility } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
@@ -3103,8 +3260,10 @@ app.post("/api/document/visibility", requireAdmin, async (req, res) => {
   }
 });
 
-// Delete a document — admin only. Also removes the sidecar metadata.
-app.post("/api/document/delete", requireAdmin, async (req, res) => {
+// Delete a document — editors and admins. Shared documents additionally
+// require editor on the owner project (or admin); see authorizeSharedDelete.
+// Also removes the sidecar metadata.
+app.post("/api/document/delete", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isDocumentPath(filePath)) return res.status(400).json({ error: "not a document path" });
@@ -3115,8 +3274,10 @@ app.post("/api/document/delete", requireAdmin, async (req, res) => {
     const f = imageBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, f);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     await f.delete();
-    console.log(`Deleted document: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted document: gs://${IMAGE_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
     try {
       const meta = imageBucket.file(metaPathFor(filePath));
       const [metaExists] = await meta.exists();
@@ -3202,6 +3363,7 @@ app.get("/api/admin/video/files", requireAdmin, async (req, res) => {
       if (opts.shared) {
         entry.shared = true;
         entry.hiddenInProject = hiddenShared.has(f.name);
+        entry.ownerProjectId = (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null;
       }
       // Thumbnail is stored as a sibling image under _videos/_thumbs/ and
       // tracked by GCS path on the meta sidecar (so renames don't break it).
@@ -3270,7 +3432,10 @@ app.get("/api/video/files", async (req, res) => {
         contentType: f.metadata.contentType,
         uploadedAt: meta.uploadedAt || f.metadata.timeCreated || f.metadata.updated,
       };
-      if (opts.shared) entry.shared = true;
+      if (opts.shared) {
+        entry.shared = true;
+        entry.ownerProjectId = (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null;
+      }
       if (meta.thumbnail) {
         try {
           const [signed] = await imageBucket.file(meta.thumbnail).getSignedUrl({
@@ -3300,7 +3465,7 @@ app.get("/api/video/files", async (req, res) => {
 
 // Admin: toggle the hidden flag on a video. Stored on GCS custom
 // metadata so the listing's `hidden` field above reflects it directly.
-app.post("/api/video/visibility", requireAdmin, async (req, res) => {
+app.post("/api/video/visibility", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath, hidden } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
@@ -3318,7 +3483,7 @@ app.post("/api/video/visibility", requireAdmin, async (req, res) => {
 });
 
 // Admin: persist video ordering on project.json (videoOrder).
-app.post("/api/video/order", requireAdmin, async (req, res) => {
+app.post("/api/video/order", requireProjectRole("editor"), async (req, res) => {
   const { project, order } = req.body || {};
   if (!project) return res.status(400).json({ error: "project is required" });
   if (order != null && !Array.isArray(order)) {
@@ -3492,7 +3657,7 @@ app.post("/api/admin/video/thumbnail-clear", requireAdmin, async (req, res) => {
 // Acknowledge a completed direct-to-GCS upload — admin only. Stamps the
 // metadata sidecar with the uploader's email and a timestamp so the list
 // view can show who uploaded what.
-app.post("/api/video/uploaded", requireAdmin, async (req, res) => {
+app.post("/api/video/uploaded", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
@@ -3564,7 +3729,7 @@ app.get("/api/video/download-url", async (req, res) => {
 // Rename a video — admin only. GCS has no rename, so copy + delete on
 // both the file and its sidecar metadata. The new name must stay inside
 // the same project's _videos/ folder.
-app.post("/api/video/rename", requireAdmin, async (req, res) => {
+app.post("/api/video/rename", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath, newName } = req.body || {};
   if (!filePath || !newName) return res.status(400).json({ error: "file and newName are required" });
   if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
@@ -3603,10 +3768,11 @@ app.post("/api/video/rename", requireAdmin, async (req, res) => {
   }
 });
 
-// Delete a video — admin only. Also removes the sidecar metadata and
-// the thumbnail GCS object (if any) so deletes don't leak orphan files
-// into _thumbs/.
-app.post("/api/video/delete", requireAdmin, async (req, res) => {
+// Delete a video — editors and admins. Shared videos additionally
+// require editor on the owner project (or admin); see authorizeSharedDelete.
+// Also removes the sidecar metadata and the thumbnail GCS object (if any)
+// so deletes don't leak orphan files into _thumbs/.
+app.post("/api/video/delete", requireProjectRole("editor"), async (req, res) => {
   const { file: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: "file is required" });
   if (!isVideoPath(filePath)) return res.status(400).json({ error: "not a video path" });
@@ -3617,10 +3783,12 @@ app.post("/api/video/delete", requireAdmin, async (req, res) => {
     const f = imageBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, f);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     // Read meta before deleting it so we know which thumbnail to clean up.
     const meta = await readVideoMeta(filePath);
     await f.delete();
-    console.log(`Deleted video: gs://${IMAGE_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted video: gs://${IMAGE_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
     try {
       const metaFile = imageBucket.file(videoMetaPathFor(filePath));
       const [metaExists] = await metaFile.exists();
@@ -3718,6 +3886,7 @@ app.get("/api/model/files", async (req, res) => {
           updated: f.metadata.updated,
           contentType: f.metadata.contentType,
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
         if (f.name.endsWith(".obj")) {
@@ -3797,6 +3966,7 @@ app.get("/api/model/files-with-hidden", requireProjectRole("editor"), async (req
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
           hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
           hiddenInProject: hiddenShared.has(f.name),
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
         if (f.name.endsWith(".obj")) {
@@ -3960,8 +4130,10 @@ app.post("/api/model/delete", requireProjectRole("editor"), async (req, res) => 
     const f = modelBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, f);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     await f.delete();
-    console.log(`Deleted model: gs://${MODEL_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted model: gs://${MODEL_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
 
     // Best-effort: remove the thumbnail if one exists
     try {
@@ -4041,6 +4213,7 @@ app.get("/api/pointcloud/files", async (req, res) => {
           updated: f.metadata.updated,
           contentType: f.metadata.contentType,
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
       });
@@ -4093,6 +4266,7 @@ app.get("/api/pointcloud/files-with-hidden", requireProjectRole("editor"), async
           thumbnail: sharedAllNames.has(thumbName) ? thumbName : null,
           hidden: !!(f.metadata.metadata && f.metadata.metadata.hidden === "true"),
           hiddenInProject: hiddenShared.has(f.name),
+          ownerProjectId: (f.metadata.metadata && f.metadata.metadata.ownerProjectId) || null,
           shared: true,
         };
       });
@@ -4251,8 +4425,10 @@ app.post("/api/pointcloud/delete", requireProjectRole("editor"), async (req, res
     const f = pointcloudBucket.file(filePath);
     const [exists] = await f.exists();
     if (!exists) return res.status(404).json({ error: "File not found" });
+    const auth = await authorizeSharedDelete(req, f);
+    if (!auth.allowed) return res.status(403).json({ error: auth.error });
     await f.delete();
-    console.log(`Deleted point cloud: gs://${POINTCLOUD_BUCKET_NAME}/${filePath}`);
+    console.log(`Deleted point cloud: gs://${POINTCLOUD_BUCKET_NAME}/${filePath}${auth.isShared ? " [shared]" : ""}`);
 
     try {
       const thumb = pointcloudBucket.file(filePath + ".thumb.jpg");
