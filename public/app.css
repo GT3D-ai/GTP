@@ -110,6 +110,14 @@ a:hover { color: var(--accent); text-decoration-color: var(--accent); }
    hamburger remains visible at every breakpoint. */
 @media (min-width: 768px) { .menu-toggle.mobile-only { display: none; } }
 
+/* Content-aware viewer nav: when the inline nav links don't fit beside
+   the logo + user chip, me.js's ResizeObserver adds .nav-wrapped to the
+   body to swap the inline links for the hamburger menu. Editor and
+   admin layouts already always use the hamburger, so we exclude those
+   to avoid stacking !important rules. */
+body.nav-wrapped:not(.editor-nav):not(.admin-layout) .nav-primary { display: none !important; }
+body.nav-wrapped:not(.editor-nav):not(.admin-layout) .menu-toggle { display: flex !important; }
+
 .menu-toggle .bar {
   position: relative;
   display: block;

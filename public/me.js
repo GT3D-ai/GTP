@@ -227,10 +227,55 @@
     }
   }
 
+  // Content-aware viewer nav. The inline .nav-primary links share the
+  // header row with the logo and user chip; when they don't fit, the
+  // existing CSS would either overflow or wrap awkwardly. We instead
+  // measure header-inner.scrollWidth vs clientWidth and toggle a
+  // body.nav-wrapped class that swaps the inline nav for the hamburger.
+  // Editor and admin layouts already use the hamburger always, so we
+  // skip the toggle for those.
+  function setupResponsiveNav() {
+    const inner = document.querySelector(".site-header .header-inner");
+    if (!inner) return;
+    let scheduled = false;
+    function update() {
+      scheduled = false;
+      if (document.body.classList.contains("editor-nav") || document.body.classList.contains("admin-layout")) {
+        document.body.classList.remove("nav-wrapped");
+        return;
+      }
+      // Drop the wrap class momentarily so we can measure the natural
+      // overflow with .nav-primary visible. Both reads + the class
+      // toggle happen in one synchronous tick — the browser only paints
+      // once at the end, so there's no flicker.
+      const wasWrapped = document.body.classList.contains("nav-wrapped");
+      if (wasWrapped) document.body.classList.remove("nav-wrapped");
+      // Force layout
+      void inner.offsetWidth;
+      const overflows = inner.scrollWidth > inner.clientWidth + 1;
+      document.body.classList.toggle("nav-wrapped", overflows);
+    }
+    function schedule() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(update);
+    }
+    schedule();
+    window.addEventListener("resize", schedule);
+    if (typeof ResizeObserver === "function") {
+      try { new ResizeObserver(schedule).observe(inner); } catch {}
+    }
+    // Also re-check after the per-page editor IIFE adds body.editor-nav
+    // (it runs async after autoMount). A short delayed pass catches that.
+    setTimeout(schedule, 250);
+    setTimeout(schedule, 1500);
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", autoMount);
+    document.addEventListener("DOMContentLoaded", () => { autoMount(); setupResponsiveNav(); });
   } else {
     autoMount();
+    setupResponsiveNav();
   }
 
   window.me = { getMe, isAdmin, canView, canEdit, renderUserChip, getProjectInfo, applyProjectHeadline };
