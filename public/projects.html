@@ -356,16 +356,21 @@
         const isAdminUser = !!myInfo.isAdmin;
         const myProjectRoles = myInfo.projects || {};
 
-        // Fetch metadata + optional fallback cover for each project in parallel
-        const infos = await Promise.all(projects.map(async (name) => {
-          let info = { name, address: null, coverPhoto: null };
+        // The /api/projects array entries are slugs (the URL form — old
+        // name pre-migration, compound canonical post-migration). The
+        // *display* name comes from /api/project-info.name which is the
+        // human-readable short name (preserved through migration).
+        // Track both so URL/perm checks use the slug and labels use the
+        // short name.
+        const infos = await Promise.all(projects.map(async (slug) => {
+          let info = { name: slug, address: null, coverPhoto: null };
           try {
-            const r = await fetch(`/api/project-info?project=${encodeURIComponent(name)}`);
+            const r = await fetch(`/api/project-info?project=${encodeURIComponent(slug)}`);
             if (r.ok) info = await r.json();
           } catch {}
           if (!info.coverPhoto) {
             try {
-              const r2 = await fetch(`/api/2d/files?project=${encodeURIComponent(name)}`);
+              const r2 = await fetch(`/api/2d/files?project=${encodeURIComponent(slug)}`);
               if (r2.ok) {
                 const files = await r2.json();
                 const firstImage = files.find((f) => (f.contentType || "").startsWith("image/"));
@@ -373,25 +378,29 @@
               }
             } catch {}
           }
-          return info;
+          return { slug, info };
         }));
 
         const grid = document.createElement("div");
         grid.className = "projects-grid";
         grid.id = "projectsGrid";
 
-        infos.forEach((info) => {
-          const name = info.name;
+        infos.forEach(({ slug, info }) => {
+          // Slug → URLs and permission lookup. Display name → card UI.
+          const display = info.name || slug;
           const coverHtml = info.coverPhoto
-            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${name}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;project-card-cover-placeholder&quot;&gt;&amp;#128194;&lt;/div&gt;'">`
+            ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${display}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;project-card-cover-placeholder&quot;&gt;&amp;#128194;&lt;/div&gt;'">`
             : `<div class="project-card-cover-placeholder">&#128194;</div>`;
 
           const addressHtml = info.address
             ? `<div class="project-card-address" title="${info.address}">${info.address}</div>`
             : "";
 
-          const enc = encodeURIComponent(name);
-          const isEditorForProj = isAdminUser || myProjectRoles[name] === "editor";
+          const enc = encodeURIComponent(slug);
+          // Permission roles in /api/me are alias-expanded server-side
+          // so this lookup works whether the user's stored key is the
+          // old name or the canonical compound slug.
+          const isEditorForProj = isAdminUser || myProjectRoles[slug] === "editor";
           const actionsHtml = isEditorForProj
             ? `
                 <a href="/uploads.html?project=${enc}">Upload</a>
@@ -409,11 +418,11 @@
               `;
           const card = document.createElement("div");
           card.className = "project-card";
-          card.dataset.project = name;
+          card.dataset.project = slug;
           card.innerHTML = `
             <span class="drag-handle" title="Drag to reorder" aria-label="Drag handle">&#10303;</span>
             ${coverHtml}
-            <button type="button" class="share-icon-btn" data-project="${name}" title="Share project" aria-label="Share project">
+            <button type="button" class="share-icon-btn" data-project="${slug}" title="Share project" aria-label="Share project">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="18" cy="5" r="3"/>
                 <circle cx="6" cy="12" r="3"/>
@@ -423,7 +432,7 @@
               </svg>
             </button>
             <div class="project-card-body">
-              <div class="project-card-name">${name}</div>
+              <div class="project-card-name">${display}</div>
               ${addressHtml}
               <div class="project-card-actions">
                 ${actionsHtml}
@@ -438,15 +447,13 @@
               openShareModal(shareBtn.dataset.project);
               return;
             }
-            // Stats is a placeholder — swallow the # click so it doesn't
-            // jump-to-top, and don't fall through to the card-open default.
             if (e.target.closest(".stats-link")) {
               e.preventDefault();
               e.stopPropagation();
               return;
             }
             if (e.target.closest("a[href]")) return;
-            window.location.href = `/${encodeURIComponent(name)}`;
+            window.location.href = `/${encodeURIComponent(slug)}`;
           });
           grid.appendChild(card);
         });

@@ -436,6 +436,26 @@ async function blockedDuringMigration(req) {
   return !!(proj && proj.migrating === true);
 }
 
+// Permission roster (users.json) is keyed by whatever name was in use
+// when the entry was last written: the old project name pre-switchover,
+// the compound canonical slug post-switchover, or any historical alias.
+// Try the canonical first, then any alias pointing to it, so a user
+// keeps access through both states without an atomic flip.
+async function hasAliasAwareAccess(email, canonical, minRole) {
+  if (await userService.hasProjectAccess(email, canonical, minRole)) return true;
+  try {
+    const idx = await projectResolver.getIndex();
+    if (idx && idx.alias) {
+      for (const [alias, target] of Object.entries(idx.alias)) {
+        if (target !== canonical) continue;
+        if (alias === canonical) continue;
+        if (await userService.hasProjectAccess(email, alias, minRole)) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
 function requireProjectRole(minRole) {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
@@ -456,9 +476,7 @@ function requireProjectRole(minRole) {
       res.set("Retry-After", "60");
       return res.status(503).json({ error: "Project is being migrated; try again shortly" });
     }
-    // Permission roster keys by canonical slug — pre-switchover that's
-    // the project name (== canonical), post-switchover the compound slug.
-    const ok = await userService.hasProjectAccess(req.user.email, canonical, minRole);
+    const ok = await hasAliasAwareAccess(req.user.email, canonical, minRole);
     if (!ok) return res.status(403).json({ error: `${minRole} access to ${req.projectDisplay || canonical} required` });
     req.projectName = req.projectPaths ? req.projectPaths.base : canonical;
     next();
@@ -636,30 +654,55 @@ app.post(
 app.get("/api/projects", async (req, res) => {
   try {
     if (!req.user) return res.json([]);
-    const [, , apiResponse] = await bucket.getFiles({ delimiter: "/", autoPaginate: false });
-    const prefixes = apiResponse.prefixes || [];
-    const allProjects = prefixes
-      .map((p) => p.replace(/\/$/, ""))
-      // Filter out reserved prefixes and the post-migration property-id
-      // folders (`prop_<16hex>/`) which are storage roots, not projects.
-      .filter((p) => p !== "_thumbs" && p !== "_platform" && !/^prop_[0-9a-f]{16}$/.test(p));
-    const accessible = await userService.accessibleProjects(req.user.email, allProjects);
-    // Apply the admin-managed order: items in the saved order first (only
-    // those still accessible), then any remaining accessible projects in
-    // GCS's lexicographic order — so newly created projects land at the
-    // end of the manual order without disrupting it.
+
+    // Drive from the slug index — its canonical entries are the
+    // authoritative project list. Listing GCS prefixes was leaking
+    // both stale pre-migration folders AND the post-migration
+    // property-id roots, and would silently break post-switchover
+    // (when users.json keys flip but GCS folders don't).
+    const idx = await projectResolver.getIndex();
+    const canonicals = Object.keys(idx.canonical || {});
+
+    // Reverse-alias map: canonical -> [aliases pointing at it]. Used
+    // both for permission matching (users.json may key by any alias)
+    // and for resolving project-order entries through aliases.
+    const reverseAlias = new Map();
+    for (const [alias, target] of Object.entries(idx.alias || {})) {
+      if (!reverseAlias.has(target)) reverseAlias.set(target, []);
+      reverseAlias.get(target).push(alias);
+    }
+
+    let accessible;
+    if (req.user.isAdmin) {
+      accessible = canonicals.slice();
+    } else {
+      const userKeys = new Set(Object.keys(req.user.projects || {}));
+      accessible = canonicals.filter((canonical) => {
+        if (userKeys.has(canonical)) return true;
+        const aliases = reverseAlias.get(canonical) || [];
+        return aliases.some((a) => userKeys.has(a));
+      });
+    }
+
+    // Admin-managed order. Pre-switchover this file holds old names;
+    // post-switchover the switchover script will replace it with
+    // property-order.json (different shape — handled separately when
+    // it lands). For now resolve old names through aliases to
+    // canonicals so saved order survives migration without manual
+    // re-ordering.
     const savedOrder = await loadProjectOrder();
     const accessibleSet = new Set(accessible);
     const ordered = [];
     const placed = new Set();
     for (const name of savedOrder) {
-      if (accessibleSet.has(name) && !placed.has(name)) {
-        ordered.push(name);
-        placed.add(name);
+      const target = (idx.alias && idx.alias[name]) || name;
+      if (accessibleSet.has(target) && !placed.has(target)) {
+        ordered.push(target);
+        placed.add(target);
       }
     }
-    for (const name of accessible) {
-      if (!placed.has(name)) ordered.push(name);
+    for (const c of accessible) {
+      if (!placed.has(c)) ordered.push(c);
     }
     res.json(ordered);
   } catch (err) {
@@ -3882,23 +3925,28 @@ app.get("/api/me", async (req, res) => {
     return res.json({ email, authorized: false, isAdmin: false, projects: {} });
   }
   // Expand the projects map so canEdit/canView work whether the URL
-  // slug is the original project name (pre-switchover) or the
-  // canonical compound slug (post-switchover, post-301). Each user
-  // permission gets indexed under both its stored key and its
-  // canonical form.
+  // slug is the original project name, the canonical compound slug, or
+  // any historical alias. For each stored permission, also add the
+  // canonical form AND every reverse-alias that points to it. Cheap —
+  // single getIndex() call, then in-memory iteration.
   const stored = profile.projects || {};
   const expanded = { ...stored };
-  for (const [k, role] of Object.entries(stored)) {
-    try {
-      const canonical = await projectResolver.getCanonicalSlug(k);
-      if (canonical && canonical !== k && !expanded[canonical]) {
-        expanded[canonical] = role;
-      }
-    } catch (err) {
-      // Resolver hiccup — just skip the expansion for this entry; the
-      // original key still works for unmigrated projects.
-      console.warn(`[me] alias expansion failed for ${k}:`, err.message);
+  try {
+    const idx = await projectResolver.getIndex();
+    const reverseAlias = new Map();
+    for (const [alias, target] of Object.entries(idx.alias || {})) {
+      if (!reverseAlias.has(target)) reverseAlias.set(target, []);
+      reverseAlias.get(target).push(alias);
     }
+    for (const [k, role] of Object.entries(stored)) {
+      const canonical = (idx.alias && idx.alias[k]) || k;
+      if (canonical !== k && !expanded[canonical]) expanded[canonical] = role;
+      for (const a of (reverseAlias.get(canonical) || [])) {
+        if (a !== k && !expanded[a]) expanded[a] = role;
+      }
+    }
+  } catch (err) {
+    console.warn("[me] alias expansion failed:", err.message);
   }
   res.json({
     email: profile.email,
