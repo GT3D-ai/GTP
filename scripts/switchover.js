@@ -224,14 +224,11 @@ async function main() {
     }
   }
 
-  // (b) every layout:"new" canonical must have a matching manifest entry
+  // (b) every manifest entry must be present as a layout:"new" canonical
+  //     and have matching IDs. Deliberately one-way — UI-created projects
+  //     (e.g. /api/create-project on an existing property) are also
+  //     layout:"new" but won't appear in the migration manifest.
   const manifestByCompound = new Map(manifest.map((e) => [e.compoundSlug, e]));
-  for (const [slug, ref] of Object.entries(canonicalMap)) {
-    if (ref.layout !== "new") continue;
-    if (!manifestByCompound.has(slug)) {
-      problems.push(`canonical "${slug}" is layout:"new" but has no manifest entry`);
-    }
-  }
 
   // (c) every manifest entry must be present as a layout:"new" canonical
   for (const e of manifest) {
