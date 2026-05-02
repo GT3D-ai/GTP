@@ -1014,12 +1014,18 @@
       try {
         // Plan thumbnail path is "<plan path>.thumb.jpg" — i.e. the plan
         // filename + .thumb.jpg. We pass the bare relative filename to
-        // /api/upload-url which prepends the {project}/_plans/ prefix.
+        // /api/upload-url which prepends {project}/_plans/ for owned
+        // plans or <propertyId>/_shared/_plans/ for shared (when we
+        // pass scope=shared). The startsWith check below is from the
+        // pre-migration shape and falls through for both migrated
+        // owned and migrated shared paths — the displayName fallback
+        // gives us the right basename.
         const planPrefix = `${project}/_plans/`;
         const baseName = filePath.startsWith(planPrefix)
           ? filePath.slice(planPrefix.length)
           : (displayName || filePath.split("/").pop());
         const thumbFileName = baseName + ".thumb.jpg";
+        const isSharedPlan = filePath.includes("/_shared/_plans/");
         const urlRes = await fetch("/api/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1029,6 +1035,7 @@
             project,
             fileName: thumbFileName,
             contentType: file.type || "image/jpeg",
+            ...(isSharedPlan ? { scope: "shared" } : {}),
           }),
         });
         if (!urlRes.ok) throw new Error((await urlRes.json().catch(() => ({}))).error || `HTTP ${urlRes.status}`);
