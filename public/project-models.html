@@ -919,12 +919,14 @@
       thumbStatus.textContent = "";
       thumbStatus.className = "status-message";
 
-      // modelPath is "project/<rel-name>". The thumbnail is stored as
-      // "<modelPath>.thumb.jpg" — derived by adding the suffix to the rel name.
-      const parts = thumbCtx.modelPath.split("/");
-      const proj = parts.shift();
-      const rel = parts.join("/");
-      const thumbFileName = rel + ".thumb.jpg";
+      // Send the URL slug as `project` and just the basename of the
+      // source model as the relative fileName. The server resolves
+      // project to its physical path so the thumb lands next to the
+      // model. For shared models pass scope=shared so the server
+      // targets the shared destination instead.
+      const basename = (thumbCtx.modelPath || "").split("/").pop();
+      const thumbFileName = basename + ".thumb.jpg";
+      const thumbIsShared = (thumbCtx.modelPath || "").includes("/_shared/");
 
       try {
         const res = await fetch("/api/upload-url", {
@@ -932,9 +934,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bucket: "model",
-            project: proj,
+            project,
             fileName: thumbFileName,
             contentType: "image/jpeg",
+            ...(thumbIsShared ? { scope: "shared" } : {}),
           }),
         });
         if (!res.ok) {

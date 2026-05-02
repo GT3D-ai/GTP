@@ -605,26 +605,30 @@
       thumbStatus.textContent = "";
       thumbStatus.className = "status-message";
 
-      // Plan paths look like "project/_plans/filename.ext". The server's
-      // upload-url handler will re-add the _plans/ prefix, so strip it here.
-      //   project = first segment
-      //   fileName sent to server = filename.ext.thumb.jpg (no _plans/ prefix)
-      const parts = thumbCtx.modelPath.split("/");
-      const project = parts.shift();
-      if (parts[0] === "_plans") parts.shift();
-      const rel = parts.join("/");           // e.g. "filename.pdf"
-      const thumbFileName = rel + ".thumb.jpg";
+      // Send the URL slug as `project` and just the basename of the
+      // source plan as the relative fileName. The server prepends
+      // `_plans/` and resolves project to its physical path
+      // (<propertyId>/<projectId>) so the thumb lands at
+      // <propertyId>/<projectId>/_plans/<basename>.thumb.jpg next to
+      // the plan. For shared plans (path under <propertyId>/_shared/_plans/)
+      // pass scope=shared so the server builds <propertyId>/_shared/_plans/
+      // <basename>.thumb.jpg. The previous parts.shift() approach worked
+      // for pre-migration single-segment paths but produced a deeply
+      // nested wrong path for migrated plans.
+      const basename = (thumbCtx.modelPath || "").split("/").pop();
+      const thumbFileName = basename + ".thumb.jpg";
+      const thumbIsShared = (thumbCtx.modelPath || "").includes("/_shared/");
 
       try {
-        // 1. Ask for a signed URL (admin-only)
         const res = await fetch("/api/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bucket: "plan",
-            project,
+            project: projectFromUrl,
             fileName: thumbFileName,
-            contentType: "image/jpeg", // stored as .thumb.jpg regardless of source type
+            contentType: "image/jpeg",
+            ...(thumbIsShared ? { scope: "shared" } : {}),
           }),
         });
         if (!res.ok) {

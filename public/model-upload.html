@@ -667,24 +667,25 @@
       thumbStatus.textContent = "";
       thumbStatus.className = "status-message";
 
-      // modelPath looks like "project/modelname.glb". Derive:
-      //   project = first segment
-      //   relativeFileName = rest (modelname.glb.thumb.jpg)
-      const parts = thumbCtx.modelPath.split("/");
-      const project = parts.shift();
-      const rel = parts.join("/");           // e.g. "modelname.glb"
-      const thumbFileName = rel + ".thumb.jpg";
+      // Send the URL slug as `project` and just the basename of the
+      // source model as the relative fileName. The server resolves
+      // project to its physical path so the thumb lands next to the
+      // model. For shared models (path under <propertyId>/_shared/)
+      // pass scope=shared so the server builds the shared destination.
+      const basename = (thumbCtx.modelPath || "").split("/").pop();
+      const thumbFileName = basename + ".thumb.jpg";
+      const thumbIsShared = (thumbCtx.modelPath || "").includes("/_shared/");
 
       try {
-        // 1. Ask for a signed URL (admin-only)
         const res = await fetch("/api/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bucket: "model",
-            project,
+            project: projectFromUrl,
             fileName: thumbFileName,
-            contentType: "image/jpeg", // stored as .thumb.jpg regardless of source type
+            contentType: "image/jpeg",
+            ...(thumbIsShared ? { scope: "shared" } : {}),
           }),
         });
         if (!res.ok) {

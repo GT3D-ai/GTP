@@ -867,10 +867,13 @@
       thumbStatus.textContent = "";
       thumbStatus.className = "status-message";
 
-      const parts = thumbCtx.filePath.split("/");
-      const proj = parts.shift();
-      const rel = parts.join("/");
-      const thumbFileName = rel + ".thumb.jpg";
+      // Send the URL slug as `project` and the basename of the source
+      // point cloud as the relative fileName. Server resolves project
+      // to its physical path so the thumb lands next to the file. For
+      // shared point clouds pass scope=shared.
+      const basename = (thumbCtx.filePath || "").split("/").pop();
+      const thumbFileName = basename + ".thumb.jpg";
+      const thumbIsShared = (thumbCtx.filePath || "").includes("/_shared/");
 
       try {
         const res = await fetch("/api/upload-url", {
@@ -878,9 +881,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bucket: "pointcloud",
-            project: proj,
+            project,
             fileName: thumbFileName,
             contentType: "image/jpeg",
+            ...(thumbIsShared ? { scope: "shared" } : {}),
           }),
         });
         if (!res.ok) {
