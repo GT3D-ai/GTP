@@ -248,6 +248,14 @@ app.get("/map-viewer/:project", async (req, res) => {
   res.sendFile(path.join(__dirname, "public", "map-viewer.html"));
 });
 
+// Property landing page — /property/<propertyId>. Audience is anyone who
+// has access to at least one project on the property; admins see all
+// properties. The page itself fetches /api/property/<id>/overview which
+// enforces the access check.
+app.get("/property/:propertyId", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "property.html"));
+});
+
 // Public, per-project models showcase: /models/<project-name>
 app.get("/models/:project", async (req, res) => {
   if (await maybeRedirectCanonical(req, res, "/models", req.params.project)) return;
@@ -563,6 +571,128 @@ app.get("/api/property/:propertyId", requireAdmin, async (req, res) => {
     res.json(property);
   } catch (err) {
     console.error("Get property error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Property overview for the /property/<id> landing page. Returns the
+// property record + the projects on it that the caller can view.
+// Auth: signed-in user with access to ≥1 project on this property,
+// or admin (admins see all). Anonymous → 401.
+app.get("/api/property/:propertyId/overview", async (req, res) => {
+  if (!req.user || !req.user.email) return res.status(401).json({ error: "Authentication required" });
+  try {
+    const propertyId = req.params.propertyId;
+    const property = await getProperty(propertyId);
+    if (!property) return res.status(404).json({ error: "Property not found" });
+
+    const idx = await projectResolver.getIndex();
+    const matches = [];
+    if (idx && idx.canonical) {
+      for (const [slug, ref] of Object.entries(idx.canonical)) {
+        if (ref && ref.layout === "new" && ref.propertyId === propertyId) {
+          matches.push({ canonicalSlug: slug, projectId: ref.projectId });
+        }
+      }
+    }
+
+    const isAdmin = !!req.user.isAdmin;
+    let canView = isAdmin;
+    if (!canView) {
+      for (const m of matches) {
+        if (await hasAliasAwareAccess(req.user.email, m.canonicalSlug, "viewer")) {
+          canView = true;
+          break;
+        }
+      }
+    }
+    if (!canView) return res.status(403).json({ error: "Access denied" });
+
+    // Pull project name + cover from each project.json. Skip projects
+    // the caller can't view (admins keep them all).
+    const enriched = await Promise.all(matches.map(async (m) => {
+      try {
+        const f = bucket.file(`${propertyId}/${m.projectId}/project.json`);
+        const [exists] = await f.exists();
+        const data = exists ? JSON.parse((await f.download())[0].toString()) : {};
+        return {
+          canonicalSlug: m.canonicalSlug,
+          projectId: m.projectId,
+          name: data.name || m.canonicalSlug,
+          coverPhoto: data.coverPhoto || null,
+        };
+      } catch {
+        return { canonicalSlug: m.canonicalSlug, projectId: m.projectId, name: m.canonicalSlug, coverPhoto: null };
+      }
+    }));
+
+    const visibleProjects = isAdmin
+      ? enriched
+      : (await Promise.all(enriched.map(async (p) => {
+          const ok = await hasAliasAwareAccess(req.user.email, p.canonicalSlug, "viewer");
+          return ok ? p : null;
+        }))).filter(Boolean);
+
+    visibleProjects.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+    res.json({
+      propertyId: property.propertyId,
+      name: property.name,
+      slug: property.slug,
+      address: property.address,
+      coverPhoto: property.coverPhoto || null,
+      isAdmin,
+      canEditProperty: isAdmin,
+      projects: visibleProjects,
+    });
+  } catch (err) {
+    console.error("Property overview error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List the properties the current user can land on. Used by the
+// property selector on /property/<id>: campus managers with multiple
+// properties get a dropdown to switch contexts. Admins see all
+// properties. Returns lightweight summaries (no nested projects).
+app.get("/api/my-properties", async (req, res) => {
+  if (!req.user || !req.user.email) return res.status(401).json({ error: "Authentication required" });
+  try {
+    const data = await loadProperties();
+    const allProperties = Object.values(data.properties || {});
+    const isAdmin = !!req.user.isAdmin;
+
+    let visible;
+    if (isAdmin) {
+      visible = allProperties;
+    } else {
+      const projectKeys = Object.keys(req.user.projects || {});
+      if (projectKeys.length === 0) return res.json([]);
+      const idx = await projectResolver.getIndex();
+      const propertyIds = new Set();
+      if (idx && idx.canonical) {
+        for (const slug of projectKeys) {
+          const canonical = (idx.alias && idx.alias[slug]) || slug;
+          const ref = idx.canonical[canonical];
+          if (ref && ref.layout === "new" && ref.propertyId) {
+            propertyIds.add(ref.propertyId);
+          }
+        }
+      }
+      visible = allProperties.filter((p) => propertyIds.has(p.propertyId));
+    }
+
+    const list = visible.map((p) => ({
+      propertyId: p.propertyId,
+      name: p.name,
+      address: p.address,
+      slug: p.slug,
+      projectCount: (p.projectIds || []).length,
+    }));
+    list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    res.json(list);
+  } catch (err) {
+    console.error("My properties error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

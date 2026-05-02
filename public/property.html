@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Property — GT Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/me.js"></script>
+  <style>
+    /* Light, text-only top bar. Address + edit on the left, property
+       selector + page hamburger on the right. Wraps cleanly on narrow
+       widths so the row never spills over. */
+    .property-top {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      flex-wrap: wrap;
+      padding: var(--space-md) 0 var(--space-sm);
+      border-bottom: 1px solid var(--line);
+      margin-bottom: var(--space-lg);
+    }
+    .property-top-left {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .property-address {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+    .property-address.placeholder { color: var(--ink-subtle); font-style: italic; font-weight: 400; }
+    .property-edit-link {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .property-edit-link:hover { text-decoration: underline; }
+    .property-top-right {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-shrink: 0;
+    }
+    .property-selector {
+      font-family: inherit;
+      font-size: 0.875rem;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+    }
+    .property-selector[disabled] { opacity: 0.7; cursor: not-allowed; }
+    /* Page-local hamburger — separate from the (absent) site-header
+       hamburger so the property page can carry its own menu without
+       coexisting with another. Mirrors the .menu-toggle visual. */
+    .property-menu-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .property-menu-btn:hover { border-color: var(--ink-muted); }
+    .property-menu-btn .bar { position: relative; display: block; width: 16px; height: 2px; background: var(--ink); }
+    .property-menu-btn .bar::before, .property-menu-btn .bar::after {
+      content: ""; position: absolute; left: 0; width: 16px; height: 2px; background: var(--ink);
+    }
+    .property-menu-btn .bar::before { top: -5px; }
+    .property-menu-btn .bar::after { top: 5px; }
+    .property-menu-panel {
+      position: absolute;
+      right: var(--space-md);
+      margin-top: 4px;
+      min-width: 180px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+      display: none;
+      z-index: 50;
+    }
+    .property-menu-panel.is-open { display: block; }
+    .property-menu-panel a, .property-menu-panel span {
+      display: block;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.875rem;
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1px solid var(--line);
+    }
+    .property-menu-panel a:last-child, .property-menu-panel span:last-child { border-bottom: none; }
+    .property-menu-panel a:hover { background: var(--bg); }
+    .property-menu-panel span.disabled { color: var(--ink-subtle); cursor: default; }
+    .property-menu-panel-wrap { position: relative; }
+
+    /* Section heading + grid of project cards. Mirrors the
+       project-home dashboard so editors arrive with a known
+       mental model for navigating to each project. */
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-md);
+    }
+    .section-head h2 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.125rem;
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+    .section-head .add-link {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .section-head .add-link:hover { text-decoration: underline; }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-md);
+    }
+    @media (min-width: 640px) { .projects-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 980px) { .projects-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .project-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--line);
+      text-decoration: none;
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+      transition: border-color var(--transition);
+    }
+    .project-card:hover { border-color: var(--ink-muted); }
+    .project-card-cover {
+      aspect-ratio: 16 / 9;
+      background: linear-gradient(145deg, #e8e4dd 0%, #d4cfc3 100%);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ink-muted);
+      font-size: 1.6rem;
+    }
+    .project-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .project-card-body {
+      padding: var(--space-md);
+    }
+    .project-card-name {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      word-break: break-word;
+    }
+
+    .placeholder {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-md);
+      color: var(--ink-subtle);
+      border: 1px solid var(--line);
+      background: var(--bg-elevated);
+    }
+    .error-msg { color: var(--danger); padding: var(--space-md); background: var(--danger-bg); border: 1px solid var(--danger); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img class="logo__mark" src="https://gt3d.com/images/logo-mark.svg" alt="" width="36" height="36" decoding="async">
+        Ground Truth <span>3D</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="topBar" class="property-top" style="display:none;">
+      <div class="property-top-left">
+        <span class="property-address" id="propertyAddress"></span>
+        <a href="#" class="property-edit-link" id="propertyEditLink" style="display:none;">Edit</a>
+      </div>
+      <div class="property-top-right">
+        <select class="property-selector" id="propertySelector" aria-label="Switch property" style="display:none;"></select>
+        <div class="property-menu-panel-wrap">
+          <button type="button" class="property-menu-btn" id="propertyMenuBtn" aria-label="Property menu" aria-expanded="false">
+            <span class="bar"></span>
+          </button>
+          <div class="property-menu-panel" id="propertyMenuPanel" role="menu">
+            <a href="/users.html" id="menuUsers">Users</a>
+            <span class="disabled" title="Coming soon">Stats</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="content">
+      <div class="placeholder"><p>Loading…</p></div>
+    </div>
+  </main>
+
+  <script>
+    // Extract propertyId from /property/<id>.
+    let propertyId = null;
+    const match = window.location.pathname.match(/^\/property\/(.+?)\/?$/);
+    if (match) propertyId = decodeURIComponent(match[1]);
+
+    const content = document.getElementById("content");
+    const topBar = document.getElementById("topBar");
+    const addressEl = document.getElementById("propertyAddress");
+    const editLink = document.getElementById("propertyEditLink");
+    const selectorEl = document.getElementById("propertySelector");
+    const menuBtn = document.getElementById("propertyMenuBtn");
+    const menuPanel = document.getElementById("propertyMenuPanel");
+    const menuUsers = document.getElementById("menuUsers");
+
+    function escapeHtml(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+
+    if (!propertyId) {
+      content.innerHTML = '<div class="error-msg">No property specified. URL should be /property/&lt;propertyId&gt;.</div>';
+    } else {
+      load();
+    }
+
+    async function load() {
+      try {
+        // Fetch overview + my-properties in parallel — overview drives
+        // the page; my-properties is just for the selector.
+        const [overviewRes, mineRes] = await Promise.all([
+          fetch(`/api/property/${encodeURIComponent(propertyId)}/overview`, { credentials: "same-origin" }),
+          fetch("/api/my-properties", { credentials: "same-origin" }),
+        ]);
+        if (!overviewRes.ok) {
+          const err = await overviewRes.json().catch(() => ({}));
+          if (overviewRes.status === 401) {
+            content.innerHTML = '<div class="placeholder"><p>Sign in to view this property.</p></div>';
+            return;
+          }
+          throw new Error(err.error || `HTTP ${overviewRes.status}`);
+        }
+        const overview = await overviewRes.json();
+        const mine = mineRes.ok ? await mineRes.json() : [];
+
+        renderTopBar(overview, mine);
+        renderProjects(overview);
+      } catch (err) {
+        content.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderTopBar(overview, mine) {
+      topBar.style.display = "";
+      // Address — placeholder when empty so admins can spot it and fill it in.
+      if (overview.address && String(overview.address).trim()) {
+        addressEl.textContent = overview.address;
+        addressEl.classList.remove("placeholder");
+      } else {
+        addressEl.textContent = overview.name || "Untitled property";
+        addressEl.classList.add("placeholder");
+      }
+
+      // Edit link — admin-only. Hops to new-project.html which owns the
+      // property edit flow today.
+      if (overview.canEditProperty) {
+        editLink.href = `/new-project.html?propertyId=${encodeURIComponent(propertyId)}`;
+        editLink.style.display = "";
+      }
+
+      // Property selector — only when the user has access to >1 property.
+      if (Array.isArray(mine) && mine.length > 1) {
+        selectorEl.innerHTML = mine.map((p) => {
+          const label = p.name || p.address || p.propertyId;
+          const sel = p.propertyId === propertyId ? " selected" : "";
+          return `<option value="${escapeAttr(p.propertyId)}"${sel}>${escapeHtml(label)}</option>`;
+        }).join("");
+        selectorEl.style.display = "";
+        selectorEl.addEventListener("change", () => {
+          const next = selectorEl.value;
+          if (next && next !== propertyId) {
+            window.location.assign(`/property/${encodeURIComponent(next)}`);
+          }
+        });
+      }
+
+      // Menu wiring — Users link gets a propertyId param so it can scope
+      // when /users.html supports it (today the param is ignored, which
+      // is fine; the link still works as a global users page).
+      if (menuUsers) menuUsers.href = `/users.html?propertyId=${encodeURIComponent(propertyId)}`;
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = menuPanel.classList.toggle("is-open");
+        menuBtn.setAttribute("aria-expanded", open);
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#propertyMenuPanel") && !e.target.closest("#propertyMenuBtn")) {
+          menuPanel.classList.remove("is-open");
+          menuBtn.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          menuPanel.classList.remove("is-open");
+          menuBtn.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+
+    function renderProjects(overview) {
+      const projects = overview.projects || [];
+      const addLink = overview.canEditProperty
+        ? `<a class="add-link" href="/new-project.html?propertyId=${encodeURIComponent(propertyId)}">+ Add project</a>`
+        : "";
+      const head = `
+        <div class="section-head">
+          <h2>Projects</h2>
+          ${addLink}
+        </div>
+      `;
+      if (projects.length === 0) {
+        content.innerHTML = head + '<div class="placeholder"><p>No projects on this property yet.</p></div>';
+        return;
+      }
+      const cards = projects.map((p) => {
+        const cover = p.coverPhoto
+          ? `<img src="/api/2d/image?file=${encodeURIComponent(p.coverPhoto)}" alt="" loading="lazy" onerror="this.replaceWith(document.createTextNode('🏠'));">`
+          : `<span aria-hidden="true">🏠</span>`;
+        return `
+          <a class="project-card" href="/${encodeURIComponent(p.canonicalSlug)}">
+            <div class="project-card-cover">${cover}</div>
+            <div class="project-card-body">
+              <div class="project-card-name" title="${escapeAttr(p.name)}">${escapeHtml(p.name)}</div>
+            </div>
+          </a>
+        `;
+      }).join("");
+      content.innerHTML = head + `<div class="projects-grid">${cards}</div>`;
+    }
+  </script>
+</body>
+</html>
