@@ -510,14 +510,16 @@
           card.dataset.file = f.name;
           if (f.shared) card.dataset.shared = "1";
           if (f.ownerProjectId) card.dataset.ownerProjectId = f.ownerProjectId;
-          const editBtn = (!f.shared)
-            ? `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
+          // Thumb-edit pencil shown for shared items too — replacing
+          // the .thumb.jpg sidecar is non-destructive and a shared
+          // thumbnail is meant to be visible on every project on the
+          // property.
+          const editBtn = `<button class="thumb-edit-btn editor-only" data-edit-file="${escapeAttr(f.name)}" data-edit-display="${escapeAttr(f.displayName)}" data-edit-thumb="${escapeAttr(f.thumbnail || '')}" title="Edit thumbnail" aria-label="Edit thumbnail" style="display:none;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 20h9"/>
                 <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
               </svg>
-            </button>`
-            : "";
+            </button>`;
           const thumbBust = replacedThumbAt.get(f.name);
           const thumbSrc = f.thumbnail
             ? `/api/pointcloud/thumbnail?file=${encodeURIComponent(f.thumbnail)}${thumbBust ? `&v=${thumbBust}` : ""}`

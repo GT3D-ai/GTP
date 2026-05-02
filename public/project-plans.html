@@ -593,7 +593,13 @@
           const hideBtnHtml = isEditor
             ? `<button type="button" class="hide-toggle-btn" data-file="${escapeAttr(f.name)}" data-hidden="${isHidden ? "1" : "0"}" data-shared="${f.shared ? "1" : "0"}" title="${escapeAttr(hideTitle)}" aria-label="${escapeAttr(hideTitle)}">${isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}</button>`
             : "";
-          const replaceBtnHtml = (isEditor && !f.shared)
+          // Editor-only "replace thumbnail" pencil. Shown for shared
+          // items too — replacing the .thumb.jpg sidecar doesn't touch
+          // the plan's bytes, and a shared thumbnail is by definition
+          // meant to be visible on every project. Replace-of-bytes
+          // (and rename / reorder) for shared items still belongs on
+          // the property landing page.
+          const replaceBtnHtml = isEditor
             ? `<button type="button" class="replace-thumb-btn" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" title="Replace thumbnail image" aria-label="Replace thumbnail image">${PENCIL_SVG}</button>`
             : "";
           card.innerHTML = `
