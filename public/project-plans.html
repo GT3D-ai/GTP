@@ -612,6 +612,7 @@
               </div>
               <div class="plan-card-actions">
                 <button class="btn btn-outline btn-sm download-btn" data-file="${escapeAttr(f.name)}">Download</button>
+                ${(isEditor && !f.shared) ? `<button class="btn btn-outline btn-sm make-shared-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}">Make shared</button>` : ""}
                 <button class="btn btn-outline btn-sm btn-danger delete-btn editor-only" data-file="${escapeAttr(f.name)}" data-display="${escapeAttr(f.displayName)}" style="display:none;">Delete</button>
               </div>
             </div>
@@ -740,6 +741,38 @@
             input.dataset.activeDisplay = btn.dataset.display;
             input.value = "";
             input.click();
+          });
+        });
+
+        // "Make shared" — opens the property-projects picker (helper in
+        // shared-assets.js) and POSTs to /api/plan/share with the
+        // editor's selection.
+        grid.querySelectorAll(".make-shared-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            if (!window.sharedAssets || typeof window.sharedAssets.pickShareTargets !== "function") {
+              alert("Shared-assets helper not loaded.");
+              return;
+            }
+            const result = await window.sharedAssets.pickShareTargets({ project, displayName: btn.dataset.display });
+            if (!result) return;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = "Sharing…";
+            try {
+              const r = await fetch("/api/plan/share", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ project, file: btn.dataset.file, projects: result.targets }),
+              });
+              const data = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+              loadPlans(project);
+            } catch (err) {
+              alert("Share failed: " + err.message);
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
           });
         });
 

@@ -735,98 +735,32 @@
       }
     }
 
-    // Modal: pick which projects on this property the image will be
-    // visible on. Empty allow-list (or "All" picked) shares with every
-    // project; an explicit subset adds the new shared path to
-    // hiddenSharedAssets[] on the projects NOT picked.
+    // Open the shared modal (helper in shared-assets.js) and POST to
+    // /api/2d/share with the editor's selection. The helper handles
+    // sibling fetch, modal rendering, and the All/per-project checkbox
+    // sync; we just need to forward the result to the share endpoint.
     async function openMakeSharedModal(filePath, displayName, sourceBtn) {
-      let siblings = [];
-      try {
-        const r = await fetch(`/api/property-projects?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-        siblings = await r.json();
-      } catch (err) {
-        alert("Couldn't load property projects: " + err.message);
+      if (!window.sharedAssets || typeof window.sharedAssets.pickShareTargets !== "function") {
+        alert("Shared-assets helper not loaded.");
         return;
       }
-      const others = siblings.filter((s) => !s.isCurrent);
-
-      const overlay = document.createElement("div");
-      overlay.className = "make-shared-overlay";
-      overlay.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; display:flex; align-items:center; justify-content:center;";
-      const projectsHtml = others.length
-        ? others.map((s) => `<label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; cursor:pointer; font-size:0.9375rem;"><input type="checkbox" class="share-proj" data-slug="${escapeAttr(s.canonicalSlug)}" checked> <span>${escapeHtml(s.name)}</span></label>`).join("")
-        : `<p style="margin:0; padding:0.4rem 0; color:var(--ink-muted); font-size:0.875rem;">No other projects on this property yet.</p>`;
-      overlay.innerHTML = `
-        <div role="dialog" aria-modal="true" style="background:var(--bg-elevated); border:1px solid var(--line); padding:var(--space-lg); max-width:440px; width:90%; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
-          <h3 style="margin:0 0 var(--space-sm); font-family:var(--font-display); font-size:1.125rem; font-weight:600; letter-spacing:-0.01em;">Make shared</h3>
-          <p style="margin:0 0 var(--space-md); color:var(--ink-muted); font-size:0.9375rem;"><strong style="color:var(--ink); font-weight:500;">${escapeHtml(displayName)}</strong> will move to the property's shared pool. Choose which projects on this property can see it.</p>
-          <label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; cursor:pointer; border-bottom:1px solid var(--line); margin-bottom:0.4rem; font-size:0.9375rem;">
-            <input type="checkbox" id="share-all-checkbox" checked>
-            <strong>All projects on this property</strong>
-          </label>
-          ${projectsHtml}
-          <div style="display:flex; gap:0.5rem; margin-top:var(--space-md);">
-            <button type="button" class="btn btn-outline" data-act="cancel" style="border-color:transparent; flex:1;">Cancel</button>
-            <button type="button" class="btn btn-primary" data-act="confirm" style="flex:2;">Make shared</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      const allBox = overlay.querySelector("#share-all-checkbox");
-      const projBoxes = overlay.querySelectorAll(".share-proj");
-      allBox.addEventListener("change", () => {
-        projBoxes.forEach((cb) => { cb.checked = allBox.checked; });
-      });
-      projBoxes.forEach((cb) => {
-        cb.addEventListener("change", () => {
-          allBox.checked = Array.from(projBoxes).every((c) => c.checked);
+      const result = await window.sharedAssets.pickShareTargets({ project, displayName });
+      if (!result) return;
+      try {
+        if (sourceBtn) { sourceBtn.disabled = true; sourceBtn.textContent = "Sharing…"; }
+        const r = await fetch("/api/2d/share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ project, file: filePath, projects: result.targets }),
         });
-      });
-
-      function close() {
-        if (overlay.parentNode) document.body.removeChild(overlay);
-        document.removeEventListener("keydown", onEsc);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        loadImages(project);
+      } catch (err) {
+        alert("Share failed: " + err.message);
+        if (sourceBtn) { sourceBtn.disabled = false; sourceBtn.textContent = "Make shared"; }
       }
-      function onEsc(e) { if (e.key === "Escape") close(); }
-      document.addEventListener("keydown", onEsc);
-
-      overlay.addEventListener("click", async (e) => {
-        const btn = e.target.closest("[data-act]");
-        if (btn && btn.dataset.act === "cancel") return close();
-        if (btn && btn.dataset.act === "confirm") {
-          const useAll = allBox.checked || projBoxes.length === 0;
-          const selected = useAll
-            ? ["__all__"]
-            : Array.from(projBoxes).filter((c) => c.checked).map((c) => c.dataset.slug);
-          if (!useAll && selected.length === 0) {
-            alert("Pick at least one project, or leave 'All' checked.");
-            return;
-          }
-          btn.disabled = true;
-          const orig = btn.textContent;
-          btn.textContent = "Sharing…";
-          try {
-            const r = await fetch("/api/2d/share", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "same-origin",
-              body: JSON.stringify({ project, file: filePath, projects: selected }),
-            });
-            const data = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-            close();
-            loadImages(project);
-          } catch (err) {
-            alert("Share failed: " + err.message);
-            btn.disabled = false;
-            btn.textContent = orig;
-          }
-          return;
-        }
-        if (e.target === overlay) close();
-      });
     }
 
     // ---- Drag-to-reorder ----

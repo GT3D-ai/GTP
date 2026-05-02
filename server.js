@@ -3202,6 +3202,113 @@ app.post("/api/plan/delete", requireProjectRole("editor"), async (req, res) => {
   }
 });
 
+// Convert an owned plan to a property-shared asset. Mirrors /api/2d/share
+// but for the imageBucket _plans/ subtree. Moves the bytes, the sibling
+// thumbnail (<file>.thumb.jpg) if present, stamps ownerProjectId, drops
+// the old path from this project's planOrder, and adds the new shared
+// path to hiddenSharedAssets[] on excluded sibling projects.
+app.post("/api/plan/share", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, projects } = req.body || {};
+  if (!filePath || typeof filePath !== "string") return res.status(400).json({ error: "file is required" });
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) return res.status(400).json({ error: "project is not in property layout" });
+  if (!filePath.startsWith(`${base}/_plans/`)) return res.status(400).json({ error: "file is not a plan in this project" });
+  if (filePath.endsWith(".thumb.jpg")) return res.status(400).json({ error: "thumbnails move alongside their plan" });
+
+  const propertyId = base.split("/")[0];
+  const currentProjectId = base.split("/")[1];
+  const baseName = filePath.substring((base + "/_plans/").length);
+  const newPath = `${propertyId}/_shared/_plans/${baseName}`;
+  const oldThumb = filePath + ".thumb.jpg";
+  const newThumb = newPath + ".thumb.jpg";
+
+  try {
+    const src = imageBucket.file(filePath);
+    const [srcExists] = await src.exists();
+    if (!srcExists) return res.status(404).json({ error: "Source plan not found" });
+    const dest = imageBucket.file(newPath);
+    const [destExists] = await dest.exists();
+    if (destExists) return res.status(409).json({ error: "A shared plan with this name already exists on the property" });
+
+    const [oldMeta] = await src.getMetadata();
+    const customMeta = (oldMeta.metadata && typeof oldMeta.metadata === "object")
+      ? { ...oldMeta.metadata }
+      : {};
+    customMeta.ownerProjectId = currentProjectId;
+
+    await src.move(newPath);
+    await imageBucket.file(newPath).setMetadata({ metadata: customMeta });
+
+    // Move the sidecar thumbnail too if present. Best-effort — listing
+    // falls back to no-thumbnail if it goes missing.
+    try {
+      const thumbSrc = imageBucket.file(oldThumb);
+      const [thumbExists] = await thumbSrc.exists();
+      if (thumbExists) {
+        await thumbSrc.move(newThumb);
+      }
+    } catch (err) {
+      console.warn("[plan/share] thumbnail move failed:", err.message);
+    }
+
+    // Drop the old path from this project's planOrder. Phase A's listing
+    // append will surface the new shared path automatically.
+    try {
+      const projectFile = bucket.file(`${base}/project.json`);
+      const [exists] = await projectFile.exists();
+      if (exists) {
+        const [content] = await projectFile.download();
+        const meta = JSON.parse(content.toString());
+        if (Array.isArray(meta.planOrder) && meta.planOrder.includes(filePath)) {
+          meta.planOrder = meta.planOrder.filter((p) => p !== filePath);
+          await projectFile.save(JSON.stringify(meta, null, 2), { contentType: "application/json" });
+        }
+      }
+    } catch (err) {
+      console.warn("[plan/share] planOrder cleanup failed:", err.message);
+    }
+
+    const allowList = Array.isArray(projects) ? projects : ["__all__"];
+    const shareWithAll = allowList.length === 0 || allowList.includes("__all__");
+
+    let excludedCount = 0;
+    if (!shareWithAll) {
+      const idx = await projectResolver.getIndex();
+      if (idx && idx.canonical) {
+        for (const [slug, ref] of Object.entries(idx.canonical)) {
+          if (!ref || ref.layout !== "new" || ref.propertyId !== propertyId) continue;
+          if (ref.projectId === currentProjectId) continue;
+          if (allowList.includes(slug)) continue;
+          try {
+            const sibFile = bucket.file(`${propertyId}/${ref.projectId}/project.json`);
+            const [sibExists] = await sibFile.exists();
+            if (!sibExists) continue;
+            const [c] = await sibFile.download();
+            const sibMeta = JSON.parse(c.toString());
+            const arr = Array.isArray(sibMeta.hiddenSharedAssets)
+              ? sibMeta.hiddenSharedAssets.filter((s) => typeof s === "string")
+              : [];
+            if (!arr.includes(newPath)) {
+              arr.push(newPath);
+              sibMeta.hiddenSharedAssets = arr;
+              await sibFile.save(JSON.stringify(sibMeta, null, 2), { contentType: "application/json" });
+              excludedCount++;
+            }
+          } catch (err) {
+            console.warn(`[plan/share] sibling hide failed for ${slug}:`, err.message);
+          }
+        }
+      }
+    }
+
+    console.log(`Shared plan: ${filePath} -> ${newPath} (owner=${currentProjectId}, excluded=${excludedCount})`);
+    res.json({ success: true, newPath, ownerProjectId: currentProjectId, sharedWithAll: shareWithAll, excludedCount });
+  } catch (err) {
+    console.error("Plan share error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- Document endpoints (image bucket, {project}/_documents/ prefix) ----
 // Documents are admin-only across the board: list, download, rename, change
 // visibility, and delete all require admin. The `visibility` flag is stored

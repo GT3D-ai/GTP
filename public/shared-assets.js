@@ -109,10 +109,94 @@
     return data;
   }
 
+  // Modal that asks the editor which projects on the property a soon-to-
+  // be-shared asset should be visible on. Resolves to either:
+  //   { targets: ["__all__"] }                — share with every project
+  //   { targets: ["<canonicalSlug>", ...] }   — share with a subset
+  //   null                                    — cancel
+  // Caller is responsible for the actual POST to /api/<cat>/share.
+  // The first selector is "All projects on this property" which acts as
+  // a master toggle for the per-project checkboxes below it.
+  async function pickShareTargets({ project, displayName }) {
+    let siblings = [];
+    try {
+      const r = await fetch(`/api/property-projects?project=${encodeURIComponent(project)}`, { credentials: "same-origin" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+      siblings = await r.json();
+    } catch (err) {
+      alert("Couldn't load property projects: " + err.message);
+      return null;
+    }
+    const others = (Array.isArray(siblings) ? siblings : []).filter((s) => !s.isCurrent);
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "make-shared-overlay";
+      overlay.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; display:flex; align-items:center; justify-content:center;";
+      const projectsHtml = others.length
+        ? others.map((s) => `<label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; cursor:pointer; font-size:0.9375rem;"><input type="checkbox" class="share-proj" data-slug="${esc(s.canonicalSlug)}" checked> <span>${esc(s.name)}</span></label>`).join("")
+        : `<p style="margin:0; padding:0.4rem 0; color:var(--ink-muted); font-size:0.875rem;">No other projects on this property yet.</p>`;
+      overlay.innerHTML = `
+        <div role="dialog" aria-modal="true" style="background:var(--bg-elevated); border:1px solid var(--line); padding:var(--space-lg); max-width:440px; width:90%; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+          <h3 style="margin:0 0 var(--space-sm); font-family:var(--font-display); font-size:1.125rem; font-weight:600; letter-spacing:-0.01em;">Make shared</h3>
+          <p style="margin:0 0 var(--space-md); color:var(--ink-muted); font-size:0.9375rem;"><strong style="color:var(--ink); font-weight:500;">${esc(displayName)}</strong> will move to the property's shared pool. Choose which projects on this property can see it.</p>
+          <label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; cursor:pointer; border-bottom:1px solid var(--line); margin-bottom:0.4rem; font-size:0.9375rem;">
+            <input type="checkbox" id="share-all-checkbox" checked>
+            <strong>All projects on this property</strong>
+          </label>
+          ${projectsHtml}
+          <div style="display:flex; gap:0.5rem; margin-top:var(--space-md);">
+            <button type="button" class="btn btn-outline" data-act="cancel" style="border-color:transparent; flex:1;">Cancel</button>
+            <button type="button" class="btn btn-primary" data-act="confirm" style="flex:2;">Make shared</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const allBox = overlay.querySelector("#share-all-checkbox");
+      const projBoxes = overlay.querySelectorAll(".share-proj");
+      allBox.addEventListener("change", () => { projBoxes.forEach((cb) => { cb.checked = allBox.checked; }); });
+      projBoxes.forEach((cb) => {
+        cb.addEventListener("change", () => {
+          allBox.checked = Array.from(projBoxes).every((c) => c.checked);
+        });
+      });
+
+      function close(result) {
+        if (overlay.parentNode) document.body.removeChild(overlay);
+        document.removeEventListener("keydown", onEsc);
+        resolve(result);
+      }
+      function onEsc(e) { if (e.key === "Escape") close(null); }
+      document.addEventListener("keydown", onEsc);
+      overlay.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-act]");
+        if (btn && btn.dataset.act === "cancel") return close(null);
+        if (btn && btn.dataset.act === "confirm") {
+          const useAll = allBox.checked || projBoxes.length === 0;
+          const targets = useAll
+            ? ["__all__"]
+            : Array.from(projBoxes).filter((c) => c.checked).map((c) => c.dataset.slug);
+          if (!useAll && targets.length === 0) {
+            alert("Pick at least one project, or leave 'All' checked.");
+            return;
+          }
+          return close({ targets });
+        }
+        if (e.target === overlay) close(null);
+      });
+    });
+  }
+
+  // esc is a local alias for the file-private escapeHtml above; keep
+  // both names so existing inline strings don't have to change.
+  function esc(s) { return escapeHtml(s); }
+
   window.sharedAssets = {
     getProjectMeta,
     canDeleteShared,
     confirmSharedDelete,
+    pickShareTargets,
     ribbonHtml,
     setSharedHidden,
   };
