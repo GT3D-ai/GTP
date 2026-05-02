@@ -166,6 +166,17 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* When the property has multiple projects the address renders as
+       an <a> linking to /property/<id> — same metrics, distinguishable
+       on hover. */
+    a.project-card-address {
+      display: block;
+      text-decoration: none;
+    }
+    a.project-card-address:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
 
     .project-card-actions {
       display: flex;
@@ -392,8 +403,15 @@
             ? `<img class="project-card-cover" src="/api/2d/image?file=${encodeURIComponent(info.coverPhoto)}" alt="${display}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;project-card-cover-placeholder&quot;&gt;&amp;#128194;&lt;/div&gt;'">`
             : `<div class="project-card-cover-placeholder">&#128194;</div>`;
 
+          // When the project's property hosts more than one project, the
+          // address links to /property/<propertyId> so campus managers can
+          // jump straight to the property landing page. Single-project
+          // properties stay plain text — there's no useful place to land.
+          const isMultiProjectProperty = !!info.propertyId && (info.propertyProjectCount || 0) > 1;
           const addressHtml = info.address
-            ? `<div class="project-card-address" title="${info.address}">${info.address}</div>`
+            ? (isMultiProjectProperty
+                ? `<a class="project-card-address" href="/property/${encodeURIComponent(info.propertyId)}" title="${info.address}">${info.address}</a>`
+                : `<div class="project-card-address" title="${info.address}">${info.address}</div>`)
             : "";
 
           const enc = encodeURIComponent(slug);

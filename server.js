@@ -1533,16 +1533,19 @@ app.get("/api/project-info", async (req, res) => {
     const data = JSON.parse(content.toString());
     // For migrated projects (layout:"new"), the address lives on the
     // property record rather than in project.json. Pull it through so
-    // the response shape matches what edit-project.html expects.
-    if (data.propertyId && !data.address) {
+    // the response shape matches what edit-project.html expects, and
+    // surface propertyProjectCount so the projects index can link the
+    // address to /property/<id> when more than one project shares it.
+    if (data.propertyId) {
       try {
         const property = await getProperty(data.propertyId);
         if (property) {
-          data.address = property.address || null;
+          if (!data.address) data.address = property.address || null;
           data.propertyName = property.name || null;
           data.propertyCoverPhoto = property.coverPhoto || null;
+          data.propertyProjectCount = Array.isArray(property.projectIds) ? property.projectIds.length : 0;
         }
-      } catch { /* leave address null on error */ }
+      } catch { /* leave fields null on error */ }
     }
     res.json(data);
   } catch (err) {
