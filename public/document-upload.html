@@ -399,15 +399,12 @@
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
       }
-      const { uploadUrl, gcsPath, requiredHeaders } = await res.json();
+      const { uploadUrl, gcsPath, isShared } = await res.json();
 
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-        if (requiredHeaders && typeof requiredHeaders === "object") {
-          for (const [k, v] of Object.entries(requiredHeaders)) xhr.setRequestHeader(k, v);
-        }
         xhr.upload.addEventListener("progress", (e) => {
           if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
         });
@@ -428,6 +425,20 @@
           body: JSON.stringify({ file: gcsPath }),
         });
       } catch (e) { console.warn("uploaded ack failed", e); }
+
+      // For shared docs, also stamp ownerProjectId on the GCS object's
+      // custom metadata so the listing layer can attribute the asset
+      // back to its uploading project.
+      if (isShared) {
+        try {
+          await fetch("/api/shared/ack", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ project, file: gcsPath, bucket: "document" }),
+          });
+        } catch (e) { console.warn("shared ack failed", e); }
+      }
     }
 
     async function loadDocuments(project) {

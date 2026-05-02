@@ -1819,7 +1819,6 @@ app.post("/api/upload-url", async (req, res) => {
   else if (bucketKind === "video") sub = "_videos/";
 
   let dest;
-  let extensionHeaders = null;
   if (scope === "shared") {
     const base = req.projectPaths && req.projectPaths.base;
     if (!base || !base.includes("/")) {
@@ -1827,15 +1826,15 @@ app.post("/api/upload-url", async (req, res) => {
     }
     const parts = base.split("/");
     const propertyId = parts[0];
-    const ownerProjectId = parts[1];
     dest = `${propertyId}/_shared/${sub}${fileName}`;
-    // GCS persists this header as custom metadata so the listing layer
-    // can attribute the shared asset back to its uploading project — the
-    // delete authorization rule (only the owner project's editors can
-    // destructively delete) reads it via f.metadata.metadata.ownerProjectId.
-    // The client must include this header on the PUT or GCS rejects the
-    // signed URL.
-    extensionHeaders = { "x-goog-meta-ownerprojectid": ownerProjectId };
+    // ownerProjectId is stamped on the GCS object via /api/shared/ack
+    // after the PUT completes. We deliberately don't sign an extension
+    // header here — that would force the browser's CORS preflight to
+    // ask GCS to allow x-goog-meta-* on the request, which fails
+    // unless every bucket's CORS config explicitly whitelists it. The
+    // ack pattern keeps the signed URL CORS-equivalent to a non-shared
+    // upload (just Content-Type) and pushes the metadata write back to
+    // a normal authenticated server endpoint.
   } else if (sub) {
     dest = `${project}/${sub}${fileName}`;
   } else if (project && level) {
@@ -1847,22 +1846,69 @@ app.post("/api/upload-url", async (req, res) => {
   }
 
   try {
-    const signOpts = {
+    const [url] = await target.file(dest).getSignedUrl({
       version: "v4",
       action: "write",
       expires: Date.now() + 60 * 60 * 1000, // 60 minutes (large models/plans take time)
       contentType,
-    };
-    if (extensionHeaders) signOpts.extensionHeaders = extensionHeaders;
-    const [url] = await target.file(dest).getSignedUrl(signOpts);
+    });
     res.json({
       uploadUrl: url,
       gcsPath: dest,
       bucket: bucketName,
-      requiredHeaders: extensionHeaders,
+      // Always null now that we've moved to the ack pattern. Kept in
+      // the response shape so existing clients that look for it don't
+      // need a second deploy to ignore it.
+      requiredHeaders: null,
+      // True when the caller asked for scope=shared and the dest is
+      // under <propertyId>/_shared/. Clients use this to decide whether
+      // to call /api/shared/ack after a successful PUT.
+      isShared: scope === "shared",
     });
   } catch (err) {
     console.error("Signed URL error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Post-upload ack for shared assets. The client calls this after a
+// successful PUT to a shared signed URL; we stamp ownerProjectId on the
+// GCS object's custom metadata so the listing layer can attribute it
+// back and the shared-delete authorization can resolve the owner.
+//
+// Body: { file: "<propertyId>/_shared/...", bucket: "2d"|"plan"|"model"|"pointcloud"|"document"|"video" }
+// (project comes from the resolver as usual.) Editor-gated; the file
+// path must live under this requesting project's property's _shared/
+// prefix.
+app.post("/api/shared/ack", requireProjectRole("editor"), async (req, res) => {
+  const { file: filePath, bucket: bucketKind } = req.body || {};
+  if (!filePath || typeof filePath !== "string") return res.status(400).json({ error: "file is required" });
+  const base = req.projectPaths && req.projectPaths.base;
+  if (!base || !base.includes("/")) return res.status(400).json({ error: "project is not in property layout" });
+  const propertyId = base.split("/")[0];
+  const ownerProjectId = base.split("/")[1];
+  if (!filePath.startsWith(`${propertyId}/_shared/`)) {
+    return res.status(400).json({ error: "file is not a shared asset on this property" });
+  }
+  // Bucket lookup mirrors /api/upload-url. Default to imageBucket
+  // (covers 2d/plan/document/video which all share that bucket).
+  let bucketRef;
+  if (bucketKind === "model") bucketRef = modelBucket;
+  else if (bucketKind === "pointcloud") bucketRef = pointcloudBucket;
+  else bucketRef = imageBucket;
+  try {
+    const file = bucketRef.file(filePath);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(404).json({ error: "File not found" });
+    const [meta] = await file.getMetadata();
+    const existing = (meta.metadata && typeof meta.metadata === "object")
+      ? { ...meta.metadata }
+      : {};
+    existing.ownerProjectId = ownerProjectId;
+    await file.setMetadata({ metadata: existing });
+    res.json({ success: true, ownerProjectId });
+  } catch (err) {
+    console.error("Shared ack error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

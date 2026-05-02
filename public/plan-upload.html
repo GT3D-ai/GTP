@@ -382,8 +382,11 @@
     async function uploadModel(file, project, onProgress) {
       const shared = document.getElementById("sharedToggle").checked;
       // 1. Request a signed URL. scope=shared makes the server write to
-      // <propertyId>/_shared/_plans/ and require an x-goog-meta-ownerprojectid
-      // header on the PUT (returned via requiredHeaders so we can echo it).
+      // <propertyId>/_shared/_plans/ instead of <project>/_plans/. The
+      // ownerProjectId stamp is applied via /api/shared/ack after the
+      // PUT — that keeps the signed URL CORS-equivalent to a non-shared
+      // upload, which avoids the bucket-level CORS config needing to
+      // whitelist x-goog-meta-* extension headers.
       const res = await fetch("/api/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -399,26 +402,40 @@
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed to get upload URL (HTTP ${res.status})`);
       }
-      const { uploadUrl, gcsPath, requiredHeaders } = await res.json();
+      const { uploadUrl, gcsPath, isShared } = await res.json();
 
       // 2. PUT directly to GCS with progress reporting
-      return new Promise((resolve, reject) => {
+      await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-        if (requiredHeaders && typeof requiredHeaders === "object") {
-          for (const [k, v] of Object.entries(requiredHeaders)) xhr.setRequestHeader(k, v);
-        }
         xhr.upload.addEventListener("progress", (e) => {
           if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
         });
         xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve({ destName: gcsPath });
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
           else reject(new Error(`GCS PUT failed (HTTP ${xhr.status})`));
         });
         xhr.addEventListener("error", () => reject(new Error("Network error")));
         xhr.send(file);
       });
+
+      // 3. Best-effort post-upload ack for shared assets. Stamps
+      // ownerProjectId on the GCS object so the shared listing can
+      // attribute it back and the delete-auth helper can find an owner.
+      // If this step fails the file still exists at the shared path —
+      // it just lacks the owner stamp until something writes it.
+      if (isShared) {
+        try {
+          await fetch("/api/shared/ack", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ project, file: gcsPath, bucket: "plan" }),
+          });
+        } catch (e) { console.warn("shared ack failed", e); }
+      }
+      return { destName: gcsPath };
     }
 
     async function loadPlans(project) {
